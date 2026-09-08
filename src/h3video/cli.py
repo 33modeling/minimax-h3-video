@@ -1,4 +1,4 @@
-"""CLI: h3video spec | health | gen | ref | status | fetch | web | plan"""
+"""CLI: h3video spec | health | plan | gen | ref | status | fetch | web | tui"""
 from __future__ import annotations
 
 import argparse
@@ -90,6 +90,11 @@ def cmd_web(a):
           output_dir=Path(a.output_dir), inbox_dir=a.inbox_dir, poll=a.poll)
 
 
+def cmd_tui(a):
+    from .tui import run
+    run(a.endpoint, a.ref_endpoint, Path(a.output_dir), a.inbox_dir, a.poll)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="h3video", description="MiniMax-H3 영상 생성 클라이언트")
     ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT, help="fl2va/t2va SGLang 서버")
@@ -122,6 +127,7 @@ def main(argv=None):
     p = sub.add_parser("fetch"); p.add_argument("video_id"); p.add_argument("--out"); p.set_defaults(fn=cmd_fetch)
     p = sub.add_parser("web", help="로컬호스트 웹 UI"); p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=int(os.environ.get("H3_WEB_PORT", 8790))); p.set_defaults(fn=cmd_web)
+    sub.add_parser("tui", help="터미널 UI (tmux 안에서)").set_defaults(fn=cmd_tui)
     a = ap.parse_args(argv)
     try:
         a.fn(a)

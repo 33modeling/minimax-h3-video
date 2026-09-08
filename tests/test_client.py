@@ -136,3 +136,13 @@ class ClientTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TuiHelpersTest(unittest.TestCase):
+    def test_helpers(self):
+        from h3video.tui import bar, job_progress, strip_template, TEMPLATE
+        self.assertEqual(strip_template(TEMPLATE + "고양이\n# 주석\n두 번째 줄"), "고양이\n두 번째 줄")
+        self.assertEqual(bar(0.5, 10), "█████░░░░░")
+        j = {"status": "running", "scenes": [{"status": "completed", "progress": 1}, {"status": "in_progress", "progress": 0.5}]}
+        self.assertAlmostEqual(job_progress(j), 0.75)
+        self.assertEqual(job_progress({"status": "completed", "scenes": []}), 1.0)

@@ -31,6 +31,7 @@ src/h3video/spec.py      # 사양 상수, 장면 분할
 src/h3video/client.py    # /v1/videos 제출·폴링·다운로드
 src/h3video/jobs.py      # 작업 큐 + 장면 체인(마지막 프레임 → 다음 장면 첫 프레임, ffmpeg concat)
 src/h3video/web.py+ui.html  # 로컬호스트 웹 UI
+src/h3video/tui.py       # 터미널 UI (curses) — tmux 안에서 h3video tui
 src/h3video/cli.py       # h3video spec|health|plan|gen|ref|status|fetch|web
 tests/                   # 모의 SGLang 서버로 CPU 에서 전 구간 검증
 ```
@@ -71,6 +72,22 @@ h3video web --port 8790     # http://127.0.0.1:8790
 source scripts/cluster_env.sh && h3video web --host 127.0.0.1 --port 8790
 # 로컬: ssh -N -L 8790:127.0.0.1:8790 user@cluster-node
 ```
+
+## 터미널 UI (웹이 안 되는 환경)
+
+```bash
+source scripts/cluster_env.sh && h3video tui     # 클러스터 노드 tmux 안에서. 로컬이면 포트 포워딩 후 실행
+```
+
+| 키 | 동작 |
+|---|---|
+| n | 새 작업. 프롬프트는 `$EDITOR`(nano/vi)가 열려 한글도 안전하게 입력, 저장 후 길이·화면비·시드·첫/끝 프레임 경로 순서로 묻는다 |
+| p | 한 줄 프롬프트(영문·짧은 것) |
+| f | 파일에서 프롬프트 읽기 |
+| ↑↓ / Enter | 작업 선택 / 장면별 상세·오류·출력 경로 |
+| r / q | 서버 상태 새로고침 / 종료(진행 중이면 확인) |
+
+한 화면에 서버 연결 상태, 대기 수, 작업별 진행률 바(장면 단위)와 경과 시간이 보인다. 결과 mp4 는 작업 폴더에 남는다.
 
 ## CLI
 
