@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>H3 Video Studio</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c1e21;--mut:#6b7280;--line:#e5e7eb;--acc:#2563eb;--ok:#16a34a;--bad:#dc2626;--warn:#d97706}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--ink:#e6e8ec;--mut:#9aa3b2;--line:#2a2f3a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Noto Sans KR",sans-serif}
+header{padding:14px 22px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;background:var(--card)}
+header h1{font-size:17px;margin:0}.pill{padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.bad{color:var(--bad);border-color:var(--bad)}
+main{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:18px;padding:18px 22px;max-width:1500px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+label{display:block;font-size:12px;color:var(--mut);margin:10px 0 4px}
+textarea,input,select{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{min-height:140px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{padding:9px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font:inherit;cursor:pointer}button:disabled{opacity:.5}
+.mut{color:var(--mut);font-size:12px}pre.spec{white-space:pre-wrap;font-size:12px;color:var(--mut);margin:0}
+.job{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--card)}
+.job h3{margin:0 0 4px;font-size:14px}.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:6px 0}
+.bar i{display:block;height:100%;background:var(--acc);transition:width .4s}.st{font-size:12px}
+.st.completed{color:var(--ok)}.st.failed{color:var(--bad)}.st.running,.st.in_progress{color:var(--warn)}
+video{width:100%;max-height:420px;border-radius:6px;background:#000;margin-top:8px}
+.scene{font-size:12px;color:var(--mut);margin:2px 0}.err{color:var(--bad);font-size:12px;white-space:pre-wrap}
+details summary{cursor:pointer;color:var(--mut);font-size:12px}
+</style></head><body>
+<header><h1>H3 Video Studio</h1><span id="h-fl" class="pill">fl2va 서버 확인 중</span><span id="h-ref" class="pill">ref2va 서버 확인 중</span><span id="h-q" class="mut"></span></header>
+<main>
+<section class="card">
+  <form id="f">
+    <label>프롬프트 (한국어/영어. 장면·소리·음악을 구체적으로 쓸수록 좋음)</label>
+    <textarea name="prompt" required placeholder="예: 새벽 안개 낀 부산 해운대, 드론이 바다 위를 낮게 날며 해변으로 접근. 파도 소리와 갈매기, 잔잔한 피아노."></textarea>
+    <div class="row">
+      <div><label>길이(초) <span id="dur-note" class="mut"></span></label><input type="number" name="seconds" value="8" min="4" max="120"></div>
+      <div><label>화면비</label><select name="aspect_ratio" id="ar"></select></div>
+    </div>
+    <div class="row">
+      <div><label>시드</label><input type="number" name="seed" value="0"></div>
+      <div><label>장면 길이(초, 15초 초과 시 분할)</label><input type="number" name="scene_seconds" value="10" min="4" max="15"></div>
+    </div>
+    <details><summary>첫/끝 프레임 이미지 (fl2va)</summary>
+      <label>첫 프레임</label><input type="file" name="first_image" accept="image/*">
+      <label>끝 프레임</label><input type="file" name="last_image" accept="image/*">
+    </details>
+    <details><summary>레퍼런스 (ref2va: 이미지≤9, 영상≤3, 오디오≤3) — ref2va 서버 필요</summary>
+      <label>이미지</label><input type="file" name="ref_images" accept="image/*" multiple>
+      <label>영상 (2~15초)</label><input type="file" name="ref_videos" accept="video/*" multiple>
+      <label>오디오 (2~15초)</label><input type="file" name="ref_audios" accept="audio/*" multiple>
+    </details>
+    <label>제목(파일명, 선택)</label><input name="title" placeholder="비우면 프롬프트 앞부분">
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><button id="go">생성 시작</button><span id="msg" class="mut"></span></div>
+  </form>
+  <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+  <details open><summary>모델 사양</summary><pre class="spec" id="spec"></pre></details>
+</section>
+<section id="jobs"></section>
+</main>
+<script>
+const $=s=>document.querySelector(s);let spec=null;
+async function j(u,o){const r=await fetch(u,o);const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d}
+async function loadSpec(){spec=await j('/api/spec');$('#spec').textContent=spec.summary;
+  $('#ar').innerHTML=spec.aspect_ratios.map(a=>`<option ${a==='16:9'?'selected':''}>${a}</option>`).join('');
+  $('#dur-note').textContent=`한 장면 ${spec.duration_min}~${spec.duration_max}초, 초과분은 자동 분할·연결`}
+async function health(){try{const h=await j('/api/health');
+  $('#h-fl').textContent='fl2va '+(h.fl2va?'연결됨':'응답 없음');$('#h-fl').className='pill '+(h.fl2va?'ok':'bad');
+  $('#h-ref').textContent='ref2va '+(h.ref2va?'연결됨':'응답 없음');$('#h-ref').className='pill '+(h.ref2va?'ok':'bad');
+  $('#h-q').textContent=`대기 ${h.queue}건`+(h.current?` · 진행 중 ${h.current}`:'')}catch(e){}}
+function fmt(s){return s>=60?`${Math.floor(s/60)}분 ${Math.round(s%60)}초`:`${Math.round(s)}초`}
+function render(jobs){$('#jobs').innerHTML=jobs.length?'':'<div class="mut">아직 작업이 없습니다.</div>';
+  for(const jb of jobs){const done=jb.scenes.filter(s=>s.status==='completed').length;
+    const cur=jb.scenes.find(s=>s.status==='in_progress'||s.status==='queued');
+    const prog=jb.scenes.length?((done+(cur?cur.progress:0))/jb.scenes.length):0;
+    const el=document.createElement('div');el.className='job';
+    el.innerHTML=`<h3>${jb.title||jb.prompt.slice(0,60)}</h3>
+      <div class="mut">${jb.id} · ${jb.task} · ${jb.total_seconds}초 · ${jb.aspect_ratio} · 장면 ${jb.scenes.length||'-'} · 경과 ${fmt(jb.elapsed)}</div>
+      <div class="bar"><i style="width:${Math.round(prog*100)}%"></i></div>
+      <div class="st ${jb.status}">${jb.status}${cur?` — 장면 ${cur.index+1} ${cur.status} ${Math.round(cur.progress*100)}%`:''}</div>
+      ${jb.scenes.map(s=>`<div class="scene">장면 ${s.index+1}: ${s.duration}초 · ${s.task} · ${s.status}${s.video_id?' · '+s.video_id:''}</div>`).join('')}
+      ${jb.error?`<div class="err">${jb.error}</div>`:''}
+      ${jb.output?`<video controls src="/files/${jb.id}/${encodeURIComponent(jb.output.split('/').pop())}"></video><div class="mut">${jb.output}</div>`:''}
+      <details><summary>프롬프트</summary><div class="mut" style="white-space:pre-wrap">${jb.prompt}</div></details>`;
+    $('#jobs').appendChild(el)}}
+async function poll(){try{render(await j('/api/jobs'))}catch(e){}}
+$('#f').addEventListener('submit',async e=>{e.preventDefault();$('#go').disabled=true;$('#msg').textContent='제출 중…';
+  try{const fd=new FormData(e.target);const r=await j('/api/jobs',{method:'POST',body:fd});$('#msg').textContent='큐에 추가: '+r.id;poll()}
+  catch(err){$('#msg').textContent='오류: '+err.message}finally{$('#go').disabled=false}});
+loadSpec();health();poll();setInterval(poll,2500);setInterval(health,10000);
+</script></body></html>

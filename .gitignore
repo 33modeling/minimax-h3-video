@@ -1,0 +1,11 @@
+.venv/
+.cluster_env.local.sh
+__pycache__/
+*.pyc
+/runs
+/outputs
+/inbox
+*.mp4
+*.safetensors
+.pytest_cache/
+*.egg-info/

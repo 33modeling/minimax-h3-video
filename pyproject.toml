@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "h3video"
+version = "0.1.0"
+description = "MiniMax-H3 (Hailuo 3.0) 서빙 클라이언트 — 텍스트/이미지/레퍼런스로 오디오 포함 동영상 생성"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+serve = ["sglang[diffusion]"]
+dev = ["pytest"]
+
+[project.scripts]
+h3video = "h3video.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
