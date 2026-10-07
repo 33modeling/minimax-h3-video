@@ -1,0 +1,11 @@
+node_modules/
+dist/
+test-results/
+__pycache__/
+*.pyc
+*.egg-info/
+.tmp/
+out/
+*.parts/
+*.state.json
+*.part.mp4

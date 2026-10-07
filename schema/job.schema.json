@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33modeling.pages.dev/shortform-studio/job.schema.json",
+  "title": "숏폼 작업 명세",
+  "description": "웹(숏폼 제작)과 CLI(shorts run)가 함께 쓰는 작업 명세. 파일 경로는 이 JSON 파일이 있는 폴더 기준, 웹에서는 파일 이름으로 맞춘다.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "title": "명세 버전", "type": "integer", "enum": [1] },
+    "prompt": { "title": "프롬프트", "type": "string", "minLength": 1, "maxLength": 4000 },
+    "scenes": {
+      "title": "장면 목록",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["prompt"],
+        "properties": {
+          "prompt": { "title": "장면 프롬프트", "type": "string", "minLength": 1, "maxLength": 4000 },
+          "sources": { "$ref": "#/$defs/mediaList" },
+          "image": { "title": "첫 프레임 이미지", "type": "string", "minLength": 1 },
+          "duration": { "title": "장면 길이(초)", "type": "number", "minimum": 4, "maximum": 15 },
+          "seed": { "title": "시드", "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "sources": { "$ref": "#/$defs/mediaList" },
+    "base": { "$ref": "#/$defs/media" },
+    "image": { "title": "첫 프레임 이미지", "type": "string", "minLength": 1 },
+    "duration": { "title": "AI 장면 길이(초)", "type": "number", "minimum": 4, "maximum": 15 },
+    "ratio": { "title": "AI 화면비", "type": "string", "enum": ["9:16", "16:9", "1:1", "4:3", "3:4", "21:9", "auto"] },
+    "seed": { "title": "시드", "type": "integer", "minimum": 0 },
+    "server": { "title": "AI 서버 주소", "type": "string", "pattern": "^https?://" },
+    "ref_server": { "title": "참조 모드 서버 주소", "type": "string", "pattern": "^https?://" },
+    "backend": { "title": "AI 서버 종류", "type": "string", "enum": ["auto", "sglang", "vllm", "h3video"] },
+    "poll": { "title": "상태 확인 간격(초)", "type": "number", "minimum": 0.2, "maximum": 60 },
+    "timeout": { "title": "생성 대기 한도(초)", "type": "number", "minimum": 10, "maximum": 86400 },
+    "model": { "title": "모델 이름", "type": "string", "minLength": 1 },
+    "template": { "title": "템플릿", "type": "string", "enum": ["cutaway", "split", "pip", "montage"] },
+    "fit": { "title": "가로 영상 맞춤", "type": "string", "enum": ["crop", "blur"] },
+    "resolution": { "title": "해상도", "type": "string", "enum": ["720x1280", "1080x1920"] },
+    "max_duration": { "title": "최대 길이(초)", "type": "number", "minimum": 3, "maximum": 180 },
+    "title": { "title": "제목(상단 훅 문구)", "type": "string", "maxLength": 80 },
+    "captions": {
+      "title": "자막",
+      "type": "array",
+      "maxItems": 60,
+      "items": {
+        "anyOf": [
+          { "type": "string", "minLength": 1, "maxLength": 120 },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text"],
+            "properties": {
+              "text": { "title": "자막 문장", "type": "string", "minLength": 1, "maxLength": 120 },
+              "start": { "title": "시작(초)", "type": "number", "minimum": 0 },
+              "end": { "title": "끝(초)", "type": "number", "minimum": 0 }
+            }
+          }
+        ],
+        "x-hint": "문자열 또는 {\"text\", \"start\", \"end\"}"
+      }
+    },
+    "bgm": { "title": "배경음", "type": "string", "minLength": 1 },
+    "bgm_volume": { "title": "배경음 볼륨", "type": "number", "minimum": 0, "maximum": 1 },
+    "original_volume": { "title": "원본 소리 볼륨", "type": "number", "minimum": 0, "maximum": 1 },
+    "output": { "title": "출력 파일", "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "media": {
+      "title": "영상",
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path"],
+          "properties": {
+            "path": { "title": "파일", "type": "string", "minLength": 1 },
+            "start": { "title": "시작(초)", "type": "number", "minimum": 0 },
+            "end": { "title": "끝(초)", "type": "number", "minimum": 0 }
+          }
+        }
+      ],
+      "x-hint": "파일 이름 문자열 또는 {\"path\", \"start\", \"end\"}"
+    },
+    "mediaList": {
+      "title": "소스 영상 목록",
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/media" }
+    }
+  }
+}
