@@ -87,7 +87,7 @@ def cmd_fetch(a):
 def cmd_web(a):
     from .web import serve
     serve(host=a.host, port=a.port, endpoint=a.endpoint, ref_endpoint=a.ref_endpoint,
-          output_dir=Path(a.output_dir), inbox_dir=a.inbox_dir, poll=a.poll)
+          output_dir=Path(a.output_dir), inbox_dir=a.inbox_dir, poll=a.poll, cors_origin=a.cors_origin)
 
 
 def cmd_tui(a):
@@ -126,7 +126,10 @@ def main(argv=None):
     p = sub.add_parser("status"); p.add_argument("video_id"); p.set_defaults(fn=cmd_status)
     p = sub.add_parser("fetch"); p.add_argument("video_id"); p.add_argument("--out"); p.set_defaults(fn=cmd_fetch)
     p = sub.add_parser("web", help="로컬호스트 웹 UI"); p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=int(os.environ.get("H3_WEB_PORT", 8790))); p.set_defaults(fn=cmd_web)
+    p.add_argument("--port", type=int, default=int(os.environ.get("H3_WEB_PORT", 8790)))
+    p.add_argument("--cors-origin", default=None,
+                   help="이 서버를 부를 수 있는 웹 출처(쉼표 구분, * 는 전부). 기본 끔. 환경변수 H3_CORS_ORIGIN")
+    p.set_defaults(fn=cmd_web)
     sub.add_parser("tui", help="터미널 UI (tmux 안에서)").set_defaults(fn=cmd_tui)
     a = ap.parse_args(argv)
     try:

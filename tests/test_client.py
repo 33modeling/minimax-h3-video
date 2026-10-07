@@ -134,6 +134,35 @@ class ClientTest(unittest.TestCase):
         httpd.shutdown()
 
 
+    def test_web_cors(self):
+        """--cors-origin: 허용한 출처에만 CORS 헤더, 기본은 꺼짐."""
+        from h3video.web import App, make_handler
+        from http.server import ThreadingHTTPServer
+        import threading
+        app = App(self.url, self.url, self.tmp / "webc", str(self.tmp / "inboxc"), poll=0.01)
+
+        def serve(origins):
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app, origins))
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            return httpd, f"http://127.0.0.1:{httpd.server_address[1]}"
+
+        site = "https://33modeling.pages.dev"
+        off, off_url = serve([])
+        r = urllib.request.urlopen(urllib.request.Request(off_url + "/api/spec", headers={"Origin": site}))
+        self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
+        on, on_url = serve([site])
+        r = urllib.request.urlopen(urllib.request.Request(on_url + "/api/spec", headers={"Origin": site}))
+        self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), site)
+        r = urllib.request.urlopen(urllib.request.Request(on_url + "/api/spec", headers={"Origin": "https://evil.example"}))
+        self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
+        pre = urllib.request.Request(on_url + "/api/jobs", method="OPTIONS", headers={
+            "Origin": site, "Access-Control-Request-Method": "POST", "Access-Control-Request-Private-Network": "true"})
+        r = urllib.request.urlopen(pre)
+        self.assertEqual(r.status, 204)
+        self.assertEqual(r.headers.get("Access-Control-Allow-Private-Network"), "true")
+        self.assertIn("POST", r.headers.get("Access-Control-Allow-Methods"))
+        off.shutdown(); on.shutdown()
+
 if __name__ == "__main__":
     unittest.main()
 

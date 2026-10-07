@@ -252,6 +252,14 @@ ssh -N -L 8790:127.0.0.1:8790 -L 30010:127.0.0.1:30010 user@host &
 
 텍스트만 쓸 거면 PC 에서 `h3video web` 을 바로 띄워도 된다(30010 포워딩만 있으면 됨).
 
+다른 웹 페이지(33modeling 허브의 "숏폼 제작", shortform-studio)에서 이 서버로 바로 작업을 보내려면 CORS 를 켠다(기본은 꺼짐).
+
+```bash
+h3video web --host 127.0.0.1 --port 8790 --cors-origin https://33modeling.pages.dev   # 여러 개는 쉼표, * 는 전부 허용
+```
+
+허브 페이지에서는 서버 주소를 `http://localhost:8790` 으로 넣는다(SSH 터널로 당겨온 주소). 브라우저가 "로컬 네트워크 접근"을 물으면 허용한다.
+
 ---
 
 ## 5. 결과물은 어디에
