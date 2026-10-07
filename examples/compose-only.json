@@ -1,0 +1,15 @@
+{
+  "$schema": "../schema/job.schema.json",
+  "base": "base.mp4",
+  "sources": ["clip1.mp4", {"path": "clip2.mp4", "start": 1, "end": 4}],
+  "template": "cutaway",
+  "fit": "blur",
+  "resolution": "720x1280",
+  "max_duration": 60,
+  "title": "3초 만에 보는 요약",
+  "captions": ["오늘 할 이야기", {"text": "핵심은 이것", "start": 3, "end": 5.5}, "끝까지 보세요"],
+  "bgm": "music.mp3",
+  "bgm_volume": 0.25,
+  "original_volume": 1,
+  "output": "summary.mp4"
+}
