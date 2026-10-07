@@ -13,44 +13,144 @@
     <a class="home" href="/">← Home</a>
     <span class="top-title">숏폼 제작</span>
     <span class="local-badge" title="파일은 업로드되지 않습니다">기기 안에서만 처리</span>
+    <button type="button" class="help-btn" id="helpBtn" aria-label="도움말" aria-haspopup="dialog">?</button>
   </header>
   <main id="app">
     <section class="intro">
       <span class="kicker">SHORT-FORM STUDIO</span>
       <h1>작업 JSON 하나로 9:16 숏폼 만들기</h1>
       <p>가로 영상은 가운데를 자르거나 흐린 배경으로 채우고, 제목 훅·자막·배경음을 얹어 MP4로 내려받습니다.</p>
-      <p class="privacy" id="privacy">고른 파일은 이 기기 밖으로 보내지 않습니다. 합성과 인코딩은 모두 이 브라우저 안에서 합니다.</p>
+      <p class="privacy" id="privacy">고른 파일은 이 기기 밖으로 보내지 않습니다. 합성과 인코딩은 모두 이 브라우저 안에서 합니다. (AI 생성·Claude 기획을 직접 켰을 때만 내가 지정한 서버로 보냅니다)</p>
     </section>
 
     <section class="panel" aria-labelledby="inputs-h">
       <h2 id="inputs-h" class="sr-only">파일 고르기</h2>
       <div class="slots">
-        <label class="slot" for="jsonFile">
+        <label class="slot" id="slotJson" for="jsonFile">
           <span class="slot-num">1</span>
-          <span class="slot-text"><strong>작업 JSON</strong><small>프롬프트·템플릿·자막을 적은 명세 파일</small></span>
+          <span class="slot-text"><strong>작업 JSON <button type="button" class="tip" data-tip="prompt(AI 생성) 또는 base·sources(내 영상 합성) 중 하나는 있어야 합니다. 파일 이름은 2번 칸에서 고른 파일과 이름으로 맞춥니다.">ⓘ</button></strong><small>프롬프트·템플릿·자막을 적은 명세 파일</small></span>
           <input id="jsonFile" type="file" accept=".json,application/json">
-          <span class="slot-file" id="jsonName">선택 안 함</span>
+          <span class="slot-file" id="jsonName"></span>
         </label>
-        <label class="slot" for="mediaFiles">
+        <label class="slot" id="slotMedia" for="mediaFiles">
           <span class="slot-num">2</span>
-          <span class="slot-text"><strong>소스 영상 <em class="optional">선택 · 없어도 됨</em></strong><small>JSON이 가리키는 영상·배경음을 함께 고르세요. 여러 개 가능</small></span>
+          <span class="slot-text"><strong>소스 영상 <em class="optional">선택 · 없어도 됨</em> <button type="button" class="tip" data-tip="소스 영상은 없어도 됩니다. JSON에 prompt가 있으면 AI가 장면을 만들고, 있으면 참조(ref2va)로 함께 보냅니다.">ⓘ</button></strong><small>JSON이 가리키는 영상·배경음을 함께 고르세요. 여러 개 가능</small></span>
           <input id="mediaFiles" type="file" accept="video/*,audio/*,image/*" multiple>
-          <span class="slot-file" id="mediaName">선택 안 함</span>
+          <span class="slot-file" id="mediaName"></span>
         </label>
       </div>
       <div class="row-links">
         <button type="button" class="link" id="exampleBtn">예시 JSON 받기</button>
-        <details class="json-edit" id="jsonDetails">
-          <summary>JSON 직접 보기·고치기</summary>
-          <textarea id="jsonText" spellcheck="false" rows="12" aria-label="작업 JSON 내용" placeholder='{ "base": "base.mp4", "sources": ["clip1.mp4"], "template": "cutaway", "title": "제목", "captions": ["첫 자막"] }'></textarea>
-        </details>
+        <button type="button" class="link" id="exportBtn">설정 내보내기(JSON)</button>
+        <label class="link" for="importFile">설정 불러오기<input id="importFile" type="file" accept=".json,application/json" hidden></label>
       </div>
+      <details class="json-edit" id="jsonDetails">
+        <summary>JSON 직접 보기·고치기</summary>
+        <textarea id="jsonText" spellcheck="false" rows="12" aria-label="작업 JSON 내용" placeholder='{ "base": "base.mp4", "sources": ["clip1.mp4"], "template": "cutaway", "title": "제목", "captions": ["첫 자막"] }'></textarea>
+      </details>
       <ul class="file-list" id="fileList" aria-live="polite"></ul>
       <div class="messages" id="messages" aria-live="polite"></div>
     </section>
 
+    <section class="panel" id="settingsPanel" aria-labelledby="settings-h">
+      <h2 id="settings-h" class="panel-title">출력 설정 <small>바꾸면 JSON에 바로 반영됩니다</small></h2>
+      <div class="settings">
+        <label><span class="lab">템플릿 <button type="button" class="tip" data-tip="컷어웨이: 기본 영상 사이사이에 소스. 분할: 위 기본·아래 소스. PIP: 기본 영상 위 작은 창. 몽타주: 소스를 이어 붙임(기본 영상 없을 때).">ⓘ</button></span>
+          <select id="setTemplate">
+            <option value="">자동 (기본 영상이 있으면 컷어웨이)</option>
+            <option value="cutaway">컷어웨이 — 기본 영상 사이사이 소스</option>
+            <option value="split">위아래 분할</option>
+            <option value="pip">PIP — 작은 창</option>
+            <option value="montage">몽타주 — 소스 이어 붙이기</option>
+          </select>
+        </label>
+        <label>가로 영상 맞춤
+          <select id="setFit">
+            <option value="blur">흐린 배경으로 채우기</option>
+            <option value="crop">가운데 잘라 채우기</option>
+          </select>
+        </label>
+        <label><span class="lab">출력 해상도 <button type="button" class="tip" data-tip="세로 숏폼은 720×1280(기본)이나 1080×1920. 정사각·4:5·가로도 됩니다. 직접 입력은 짝수, 짧은 변 240~2160.">ⓘ</button></span>
+          <select id="setResolution"></select>
+          <input id="setResolutionCustom" type="text" inputmode="numeric" placeholder="예: 720x1280" hidden aria-label="해상도 직접 입력(가로x세로)">
+        </label>
+        <label>프레임레이트
+          <select id="setFps">
+            <option value="24">24fps</option>
+            <option value="25">25fps</option>
+            <option value="30">30fps</option>
+            <option value="60">60fps</option>
+          </select>
+        </label>
+        <label>품질
+          <select id="setQuality">
+            <option value="low">낮음 (파일 작게)</option>
+            <option value="medium">보통</option>
+            <option value="high">높음</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">기본은 720×1280·30fps입니다. GPU가 약하면 해상도를 올리지 마세요(1080 이상은 시간이 오래 걸립니다).</p>
+    </section>
+
+    <details class="panel fold" id="aiPanel">
+      <summary><span class="panel-title">AI 생성 연결</span> <small>JSON에 prompt·scenes가 있을 때 씁니다</small></summary>
+      <div class="fold-body">
+        <div class="seg" role="radiogroup" aria-label="연결 방식">
+          <label><input type="radio" name="aiMode" value="h3video" checked> h3video 웹 서버 <small>(기본)</small></label>
+          <label><input type="radio" name="aiMode" value="sglang"> SGLang 직접 <small>(고급)</small></label>
+        </div>
+        <div class="settings" id="h3Fields">
+          <label class="wide">h3video 웹 서버 주소
+            <input id="aiServer" type="url" placeholder="http://localhost:8790" spellcheck="false">
+          </label>
+        </div>
+        <div class="settings" id="sgFields" hidden>
+          <label>fl2va 주소 <small>(소스 없을 때)</small>
+            <input id="aiFl2va" type="url" placeholder="http://localhost:30010" spellcheck="false">
+          </label>
+          <label>ref2va 주소 <small>(소스 영상을 참조로 쓸 때)</small>
+            <input id="aiRef2va" type="url" placeholder="http://localhost:30011" spellcheck="false">
+          </label>
+        </div>
+        <div class="settings">
+          <label><span class="lab">생성 크기(짧은 변) <button type="button" class="tip" data-tip="AI 서버가 만들 영상의 짧은 변입니다. 로컬 H3는 768이 상한입니다. 합성할 때 출력 해상도로 맞춥니다.">ⓘ</button></span>
+            <select id="aiGenSize">
+              <option value="480">480p</option>
+              <option value="576">576p</option>
+              <option value="720">720p</option>
+              <option value="768">768p (H3 상한)</option>
+            </select>
+          </label>
+          <div class="check-row"><button type="button" class="ghost small" id="aiCheck">연결 확인</button><span id="aiCheckOut" class="check-out" aria-live="polite"></span></div>
+        </div>
+        <ul class="notes">
+          <li><b>서버 켜기</b>: GPU 서버에서 <code>h3video web --cors-origin <span class="origin">https://33modeling.pages.dev</span></code> 처럼 이 페이지 주소를 CORS로 허용해 띄웁니다.</li>
+          <li><b>SSH 터널</b>: 내 PC에서 <code>ssh -L 8790:localhost:8790 사용자@GPU서버</code> 후 주소를 <code>http://localhost:8790</code>으로 둡니다.</li>
+          <li><b>혼합 콘텐츠</b>: https 페이지는 다른 PC의 http 주소를 부를 수 없습니다. localhost(터널)만 됩니다.</li>
+          <li>JSON에 소스 영상이 있으면 참조 입력(ref2va)으로 함께 보냅니다. SGLang 직접 연결은 서버가 CORS와 data: URI 참조를 받아야 합니다. 안 되면 h3video 웹 서버를 쓰세요.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="panel fold" id="claudePanel">
+      <summary><span class="panel-title">Claude로 기획하기</span> <small>선택 · 아이디어로 작업 JSON 쓰기</small></summary>
+      <div class="fold-body">
+        <label class="block">아이디어
+          <textarea id="idea" rows="3" placeholder="예: 비 오는 날 창가에서 커피 내리는 30초 브이로그, 잔잔한 분위기"></textarea>
+        </label>
+        <div class="settings">
+          <label class="wide"><span class="lab">Anthropic API 키 <small>(이 브라우저의 localStorage에만 저장)</small> <button type="button" class="tip" data-tip="키는 이 브라우저에만 저장되고 Anthropic API로만 보냅니다. 공용 PC라면 다 쓴 뒤 '키 지우기'를 누르세요.">ⓘ</button></span>
+            <span class="key-row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."><button type="button" class="ghost small" id="keyClear">키 지우기</button></span>
+          </label>
+        </div>
+        <div class="check-row"><button type="button" class="ghost" id="planBtn">Claude에게 기획 요청</button><span id="planOut" class="check-out" aria-live="polite"></span></div>
+        <p class="hint">claude-opus-5-5가 작업 JSON을 써서 파일 칸 1을 채웁니다. 파일 칸 2의 영상이 있으면 프레임 몇 장을 함께 보냅니다. 키와 프레임은 Anthropic API로만 갑니다.</p>
+      </div>
+    </details>
+
     <section class="panel stage" aria-labelledby="preview-h">
-      <div class="preview-wrap">
+      <div class="preview-wrap" id="previewWrap">
         <canvas id="preview" width="270" height="480" aria-label="저해상도 미리보기"></canvas>
         <div class="preview-empty" id="previewEmpty">JSON과 영상을 고르면<br>여기에 미리보기가 나옵니다</div>
       </div>
@@ -63,19 +163,48 @@
         </div>
         <button type="button" id="playBtn" class="ghost" disabled>미리보기 재생</button>
         <div class="engine" id="engineNote"></div>
-        <button type="button" id="makeBtn" class="primary" disabled>만들기</button>
+        <div id="makeArea" class="make-area">
+          <button type="button" id="makeBtn" class="primary" disabled>만들기</button>
+          <label class="notify"><input type="checkbox" id="notifyChk"> 끝나면 알림(소리·브라우저 알림)</label>
+          <div class="status" id="statusBox" hidden></div>
+          <p class="sr-only" id="liveStatus" aria-live="polite"></p>
         <div class="progress" id="progressBox" hidden>
           <div class="bar"><div id="progressBar"></div></div>
           <div class="progress-row"><span id="progressText">준비 중…</span><button type="button" id="cancelBtn" class="ghost small">취소</button></div>
         </div>
-        <div class="result" id="resultBox" hidden>
+        <div class="fail-box" id="failBox" hidden role="alert"><p id="failText"></p><button type="button" class="ghost small" id="retryBtn">다시 시도</button></div>
+        </div>
+        <div id="resultArea"><div class="result" id="resultBox" hidden>
           <video id="resultVideo" controls playsinline></video>
           <a id="downloadLink" class="primary as-button" download>내려받기</a>
           <p class="result-meta" id="resultMeta"></p>
-        </div>
+        </div><p class="result-empty" id="resultEmpty">완성된 영상은 여기에 나옵니다.</p></div>
       </div>
     </section>
   </main>
+
+  <dialog id="helpDialog" class="help" aria-labelledby="helpTitle">
+    <div class="help-head"><h2 id="helpTitle">도움말</h2><button type="button" class="ghost tiny" id="helpClose" aria-label="닫기">닫기</button></div>
+    <button type="button" class="primary small" id="tourBtn">화면 둘러보기 다시 보기</button>
+    <h3>화면 영역</h3>
+    <ul>
+      <li><b>1. 작업 JSON</b> — 무엇을 만들지 적은 명세. 직접 고치거나 Claude가 쓰게 할 수 있습니다.</li>
+      <li><b>2. 소스 영상</b> — JSON이 이름으로 가리키는 영상·배경음. 없어도 됩니다.</li>
+      <li><b>출력 설정</b> — 템플릿, 가로 영상 맞춤(흐린 배경/잘라 채우기), 해상도, fps, 품질.</li>
+      <li><b>AI 생성 연결</b> — prompt·scenes가 있을 때 내 H3 서버로 장면을 만듭니다.</li>
+      <li><b>미리보기·만들기</b> — 저해상도 미리보기, 단계별 진행 상태, 취소, 결과 내려받기.</li>
+    </ul>
+    <h3>JSON 예시 <small>(누르면 1번 칸에 불러옵니다)</small></h3>
+    <div class="examples" id="helpExamples"></div>
+    <h3>자주 겪는 문제</h3>
+    <ul>
+      <li><b>서버에 연결하지 못함(CORS)</b> — 서버를 <code>h3video web --cors-origin <span class="origin">https://33modeling.pages.dev</span></code>로 띄워 이 페이지 주소를 허용하세요.</li>
+      <li><b>원격 GPU 서버</b> — https 페이지는 다른 PC의 http 주소를 막습니다(혼합 콘텐츠). <code>ssh -L 8790:localhost:8790 사용자@서버</code>로 터널을 열고 <code>http://localhost:8790</code>을 쓰세요.</li>
+      <li><b>"WebCodecs가 없어 실시간 녹화"</b> — 오래된 브라우저입니다. 최신 크롬·엣지에서 열면 MP4(H.264+AAC)로 빠르게 만듭니다.</li>
+      <li><b>영상 코덱을 풀지 못함</b> — HEVC·ProRes 같은 영상은 브라우저가 못 풀 수 있습니다. H.264 MP4로 바꿔 넣으세요.</li>
+      <li><b>파일 이름이 안 맞음</b> — JSON의 <code>base</code>·<code>sources</code>·<code>bgm</code> 이름과 2번 칸의 파일 이름이 같아야 합니다(폴더는 무시).</li>
+    </ul>
+  </dialog>
   <footer class="foot">MP4 인코딩: mediabunny(MPL-2.0) · WebCodecs. 라이선스는 저장소의 THIRD_PARTY_NOTICES.md에 있습니다.</footer>
   <script type="module" src="./src/main.js"></script>
 </body>

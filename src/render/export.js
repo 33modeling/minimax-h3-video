@@ -9,6 +9,10 @@ import {
   Quality,
   canEncodeVideo,
   canEncodeAudio,
+  Conversion,
+  Input,
+  BlobSource,
+  ALL_FORMATS,
 } from 'mediabunny';
 import { drawFrame, frameCount, prepareSegments } from './draw.js';
 import { SequentialFrames, hasWebCodecs, sliceAudio } from './media.js';
@@ -66,10 +70,6 @@ export async function pickEngine(width, height, force) {
   return { kind: 'none', label: '지원 안 됨', note: '이 브라우저는 영상 인코딩(WebCodecs·MediaRecorder)을 지원하지 않습니다. 최신 크롬·엣지·파이어폭스에서 열어 주세요.' };
 }
 
-function bitrateFor(w, h) {
-  return w * h >= 1080 * 1920 ? 8_000_000 : 4_000_000;
-}
-
 // ctx: { plan, fileOf(seg), mixed: AudioBuffer, engine, signal, onProgress(frac, text), onFrame(canvas, k) }
 export async function exportVideo(job) {
   if (job.engine.kind === 'webcodecs') return exportWebCodecs(job);
@@ -93,7 +93,7 @@ async function exportWebCodecs({ plan, fileOf, mixed, engine, signal, onProgress
   const output = new Output({ format, target: new BufferTarget() });
   const vsrc = new CanvasSource(canvas, {
     codec: engine.video,
-    quality: new Quality({ bitrate: bitrateFor(W, H) }),
+    quality: new Quality({ bitrate: plan.quality.bitrate }),
     keyFrameInterval: 2,
     latencyMode: 'quality',
   });
@@ -191,7 +191,7 @@ async function exportRecorder({ plan, fileOf, mixed, engine, signal, onProgress,
   const asrc = new AudioBufferSourceNode(actx, { buffer: mixed });
   asrc.connect(dest);
   const stream = new MediaStream([...canvas.captureStream(fps).getVideoTracks(), ...dest.stream.getAudioTracks()]);
-  const rec = new MediaRecorder(stream, engine.mime ? { mimeType: engine.mime, videoBitsPerSecond: bitrateFor(W, H) } : {});
+  const rec = new MediaRecorder(stream, engine.mime ? { mimeType: engine.mime, videoBitsPerSecond: plan.quality.bitrate } : {});
   const chunks = [];
   rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
   const stopped = new Promise((res) => (rec.onstop = res));
@@ -241,5 +241,22 @@ async function exportRecorder({ plan, fileOf, mixed, engine, signal, onProgress,
     await actx.close();
     urls.forEach((u) => URL.revokeObjectURL(u));
   }
-  return new Blob(chunks, { type: engine.mime ? engine.mime.split(';')[0] : 'video/webm' });
+  const raw = new Blob(chunks, { type: engine.mime ? engine.mime.split(';')[0] : 'video/webm' });
+  return fixRecording(raw, engine.container);
+}
+
+// MediaRecorder WebM 에는 길이 정보가 없어 탐색이 안 된다. 다시 인코딩하지 않고 패킷만 옮겨 담아 길이를 채운다.
+async function fixRecording(blob, container) {
+  try {
+    const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+    const format = container === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat();
+    const output = new Output({ format, target: new BufferTarget() });
+    const conv = await Conversion.init({ input, output });
+    if (!conv.isValid) return blob;
+    await conv.execute();
+    return new Blob([output.target.buffer], { type: blob.type });
+  } catch (e) {
+    console.warn('녹화 파일 길이 보정 실패(원본 그대로 씀)', e);
+    return blob;
+  }
 }

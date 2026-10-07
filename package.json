@@ -10,7 +10,7 @@
     "test": "node --test tests/unit/ && python3 -m unittest discover -s tests -p 'test_*.py'",
     "test:js": "node --test tests/unit/",
     "test:py": "python3 -m unittest discover -s tests -p 'test_*.py'",
-    "e2e": "node tests/e2e/run-e2e.mjs"
+    "e2e": "vite build && node tests/e2e/run-e2e.mjs"
   },
   "dependencies": {
     "@mediabunny/aac-encoder": "^1.61.3",
