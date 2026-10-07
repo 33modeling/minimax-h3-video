@@ -11,10 +11,45 @@ SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 DEFAULTS = {
     "version": 1, "duration": 8, "ratio": "9:16", "seed": 0, "backend": "auto", "poll": 3, "timeout": 1800, "fit": "blur",
-    "resolution": "720x1280", "max_duration": 60, "title": "", "bgm_volume": 0.25, "original_volume": 1,
+    "resolution": "720x1280", "fps": 30, "quality": "medium", "max_duration": 60, "title": "", "bgm_volume": 0.25, "original_volume": 1,
     "output": "short.mp4",
 }
 REF_LIMITS = {"image": 9, "video": 3, "audio": 3, "total": 12}
+RESOLUTION_PRESETS = SCHEMA["properties"]["resolution"]["x-presets"]
+SIZE_MIN, SIZE_MAX = 240, 2160  # 짧은 변
+LONG_MAX = 2560  # 긴 변 (1440x2560 프리셋)
+H3_MAX_SHORT_EDGE = 768
+GEN_FPS = 24  # H3 생성은 24fps 고정, 출력 fps 는 합성 단계에서 맞춘다
+
+
+def parse_size(v):
+    """"WxH" → (w, h), 형식이 틀리면 None."""
+    m = re.fullmatch(r"([0-9]+)x([0-9]+)", str(v))
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def check_size(name: str, w: int, h: int | None) -> list[str]:
+    errs = []
+    shown = f"{w}" if h is None else f"{w}x{h}"
+    vals = [w] if h is None else [w, h]
+    pre = "" if h is None else "가로·세로는 "
+    if any(x % 2 != 0 for x in vals):
+        errs.append(f"{name}: {pre}짝수여야 합니다 (지금 {shown})")
+    if h is None:
+        if w < SIZE_MIN or w > SIZE_MAX:
+            errs.append(f"{name}: {SIZE_MIN}~{SIZE_MAX} 사이여야 합니다 (지금 {shown})")
+    elif min(w, h) < SIZE_MIN or min(w, h) > SIZE_MAX or max(w, h) > LONG_MAX:
+        errs.append(f"{name}: 짧은 변은 {SIZE_MIN}~{SIZE_MAX}, 긴 변은 {LONG_MAX} 이하여야 합니다 (지금 {shown})")
+    return errs
+
+
+def gen_short_edge(g):
+    if g is None:
+        return None
+    if isinstance(g, (int, float)) and not isinstance(g, bool):
+        return int(g)
+    s = parse_size(g)
+    return min(s) if s else None
 
 TYPE_KO = {
     "string": "문자열이어야", "number": "숫자여야", "integer": "정수여야", "boolean": "true 또는 false여야",
@@ -116,7 +151,7 @@ def validate_schema(value, sch: dict | None = None, path: str = "", root: dict |
         if sch.get("maxLength") and len(value) > sch["maxLength"]:
             errors.append(f"{at}: {sch['maxLength']}자 이하여야 합니다 (지금 {len(value)}자)")
         if sch.get("pattern") and not re.search(sch["pattern"], value):
-            errors.append(f"{at}: http:// 또는 https:// 로 시작하는 주소여야 합니다 (지금 {fmt_value(value)})")
+            errors.append(f"{at}: {sch.get('x-pattern') or '형식이 맞아야'} 합니다 (지금 {fmt_value(value)})")
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if "minimum" in sch and value < sch["minimum"]:
             errors.append(f"{at}: {_num(sch['minimum'])} 이상이어야 합니다 (지금 {fmt_value(value)})")
@@ -234,6 +269,13 @@ def check_spec(spec) -> tuple[list[str], list[str]]:
     if not uses_ai and not spec.get("base") and not spec.get("sources"):
         errors.append("만들 재료가 없습니다: prompt(AI 생성) 또는 base·sources(소스 영상) 중 하나는 있어야 합니다. "
                       "소스 영상은 두 번째 파일로 넘겨도 됩니다")
+    if spec.get("resolution"):
+        w, h = parse_size(spec["resolution"])
+        errors.extend(check_size("resolution", w, h))
+    if spec.get("gen_size") is not None:
+        g = spec["gen_size"]
+        gs = parse_size(g) if isinstance(g, str) else None
+        errors.extend(check_size("gen_size", gs[0], gs[1]) if gs else check_size("gen_size", int(g), None))
     _check_range(spec.get("base"), "base", errors)
     for i, m in enumerate(spec.get("sources") or []):
         _check_range(m, f"sources[{i}]", errors)
@@ -258,6 +300,16 @@ def check_spec(spec) -> tuple[list[str], list[str]]:
                 warnings.append(f"{where}: vLLM 서버는 참조를 1개만 받습니다. 첫 번째만 보냅니다")
         if spec.get("sources"):
             warnings.append("prompt 가 있어 sources 는 AI 참조 입력으로 씁니다")
+        se = gen_short_edge(spec.get("gen_size"))
+        if se is not None and se > H3_MAX_SHORT_EDGE:
+            warnings.append(f"gen_size: 짧은 변 {se}px 은 로컬 H3 상한 {H3_MAX_SHORT_EDGE}px 을 넘습니다. "
+                            "H3 서버(sglang·h3video)로는 보내기 전에 막습니다")
+        gs = parse_size(spec["gen_size"]) if isinstance(spec.get("gen_size"), str) else None
+        ratio = spec.get("ratio") or DEFAULTS["ratio"]
+        if gs and ratio != "auto":
+            a, b = (int(x) for x in ratio.split(":"))
+            if abs(gs[0] / gs[1] - a / b) > 0.02 * (a / b):
+                warnings.append(f"gen_size {spec['gen_size']} 의 비율이 ratio {ratio} 와 다릅니다. H3 는 ratio 와 짧은 변({se}px)만 씁니다")
     tpl = spec.get("template")
     if tpl and tpl != "montage" and not spec.get("base"):
         warnings.append(f"기본 영상(base)이 없어 '{tpl}' 대신 몽타주로 만듭니다")

@@ -77,10 +77,10 @@ def _esc_path(p: str) -> str:
     return str(p).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
 
 
-def _seg_chain(seg: dict, label_in: str, label_out: str, idx: int) -> list[str]:
+def _seg_chain(seg: dict, label_in: str, label_out: str, idx: int, fps: int = 30) -> list[str]:
     r, cov, con = seg["rect"], seg["cover"], seg["contain"]
     dur = seg["t1"] - seg["t0"]
-    head = f"[{label_in}]fps=30,trim=duration={dur:.3f},setpts=PTS-STARTPTS"
+    head = f"[{label_in}]fps={fps},trim=duration={dur:.3f},setpts=PTS-STARTPTS"
     crop = f"crop={cov['sw']}:{cov['sh']}:{cov['sx']}:{cov['sy']}"
     shift = f"setpts=PTS+{seg['t0']:.3f}/TB"
     out: list[str] = []
@@ -100,9 +100,11 @@ def _seg_chain(seg: dict, label_in: str, label_out: str, idx: int) -> list[str]:
 
 
 def build_command(plan: dict, paths: dict, out: str, workdir: str, font: str | None = None,
-                  crf: int = 20, preset: str = "veryfast") -> list[str]:
+                  crf: int | None = None, preset: str = "veryfast") -> list[str]:
     """paths = {"base": str|None, "clips": [str], "bgm": str|None}. workdir 에 자막 텍스트 파일을 쓴다."""
     W, H, T, fps = plan["width"], plan["height"], plan["duration"], plan["fps"]
+    if crf is None:
+        crf = (plan.get("quality") or {}).get("crf", 23)
     args = [ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1",
             "-f", "lavfi", "-i", f"color=c=black:s={W}x{H}:r={fps}:d={T:.3f}"]
     n_in = 1
@@ -129,7 +131,7 @@ def build_command(plan: dict, paths: dict, out: str, workdir: str, font: str | N
         seg = plan["segments"][si]
         dur = seg["t1"] - seg["t0"]
         ii = add_input(src_path(seg["kind"], seg["index"]), seg["src"], dur + 0.1)
-        fg.extend(_seg_chain(seg, f"{ii}:v", f"s{k}", k))
+        fg.extend(_seg_chain(seg, f"{ii}:v", f"s{k}", k, fps))
         b = seg.get("border") or 0
         x, y = seg["rect"]["x"] - b, seg["rect"]["y"] - b
         nxt = f"cv{k + 1}"

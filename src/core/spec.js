@@ -13,6 +13,8 @@ export const DEFAULTS = {
   timeout: 1800,
   fit: 'blur',
   resolution: '720x1280',
+  fps: 30,
+  quality: 'medium',
   max_duration: 60,
   title: '',
   bgm_volume: 0.25,
@@ -22,6 +24,40 @@ export const DEFAULTS = {
 
 // H3 ref2va 제한 (minimax-h3-video spec.REF_LIMITS 와 같음)
 export const REF_LIMITS = { image: 9, video: 3, audio: 3, total: 12 };
+export const RESOLUTION_PRESETS = schema.properties.resolution['x-presets'];
+export const SIZE_MIN = 240;
+export const SIZE_MAX = 2160; // 짧은 변 상한
+export const LONG_MAX = 2560; // 긴 변 상한 (1440x2560 프리셋)
+export const H3_MAX_SHORT_EDGE = 768;
+export const GEN_FPS = 24; // H3 생성은 24fps 고정, 출력 fps 는 합성 단계에서 맞춘다
+
+// "WxH" → {width, height} (형식이 틀리면 null)
+export function parseSize(v) {
+  const m = /^([0-9]+)x([0-9]+)$/.exec(String(v));
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : null;
+}
+
+// 짝수·범위 검사. 오류 문장 목록을 돌려준다.
+export function checkSize(name, w, h) {
+  const errs = [];
+  const shown = h == null ? `${w}` : `${w}x${h}`;
+  const vals = h == null ? [w] : [w, h];
+  if (vals.some((x) => x % 2 !== 0)) errs.push(`${name}: ${h == null ? '' : '가로·세로는 '}짝수여야 합니다 (지금 ${shown})`);
+  if (h == null) {
+    if (w < SIZE_MIN || w > SIZE_MAX) errs.push(`${name}: ${SIZE_MIN}~${SIZE_MAX} 사이여야 합니다 (지금 ${shown})`);
+  } else if (Math.min(w, h) < SIZE_MIN || Math.min(w, h) > SIZE_MAX || Math.max(w, h) > LONG_MAX) {
+    errs.push(`${name}: 짧은 변은 ${SIZE_MIN}~${SIZE_MAX}, 긴 변은 ${LONG_MAX} 이하여야 합니다 (지금 ${shown})`);
+  }
+  return errs;
+}
+
+// gen_size 의 짧은 변(px). 없으면 null.
+export function genShortEdge(g) {
+  if (g == null) return null;
+  if (typeof g === 'number') return g;
+  const s = parseSize(g);
+  return s ? Math.min(s.width, s.height) : null;
+}
 
 const TYPE_KO = {
   string: '문자열이어야',
@@ -99,7 +135,7 @@ export function validateSchema(value, sch = schema, path = '', root = schema, er
       errors.push(`${at}: ${sch.maxLength}자 이하여야 합니다 (지금 ${[...value].length}자)`);
     }
     if (sch.pattern && !new RegExp(sch.pattern).test(value)) {
-      errors.push(`${at}: http:// 또는 https:// 로 시작하는 주소여야 합니다 (지금 ${fmtValue(value)})`);
+      errors.push(`${at}: ${sch['x-pattern'] || '형식이 맞아야'} 합니다 (지금 ${fmtValue(value)})`);
     }
   }
   if (typeof value === 'number') {
@@ -203,6 +239,14 @@ export function checkSpec(spec) {
   if (!usesAi && !spec.base && !(spec.sources && spec.sources.length)) {
     errors.push('만들 재료가 없습니다: prompt(AI 생성) 또는 base·sources(소스 영상) 중 하나는 있어야 합니다. 소스 영상은 두 번째 파일로 넘겨도 됩니다');
   }
+  if (spec.resolution) {
+    const r = parseSize(spec.resolution);
+    errors.push(...checkSize('resolution', r.width, r.height));
+  }
+  if (spec.gen_size != null) {
+    const g = typeof spec.gen_size === 'number' ? null : parseSize(spec.gen_size);
+    errors.push(...(g ? checkSize('gen_size', g.width, g.height) : checkSize('gen_size', spec.gen_size, null)));
+  }
   checkRange(spec.base, 'base', errors);
   (spec.sources || []).forEach((m, i) => checkRange(m, `sources[${i}]`, errors));
   (spec.scenes || []).forEach((s, i) => (s.sources || []).forEach((m, j) => checkRange(m, `scenes[${i}].sources[${j}]`, errors)));
@@ -222,6 +266,18 @@ export function checkSpec(spec) {
       if ((spec.backend === 'vllm') && videos + images > 1) warnings.push(`${where}: vLLM 서버는 참조를 1개만 받습니다. 첫 번째만 보냅니다`);
     });
     if ((spec.sources || []).length) warnings.push('prompt 가 있어 sources 는 AI 참조 입력으로 씁니다');
+    const se = genShortEdge(spec.gen_size);
+    if (se != null && se > H3_MAX_SHORT_EDGE) {
+      warnings.push(`gen_size: 짧은 변 ${se}px 은 로컬 H3 상한 ${H3_MAX_SHORT_EDGE}px 을 넘습니다. H3 서버(sglang·h3video)로는 보내기 전에 막습니다`);
+    }
+    const gs = typeof spec.gen_size === 'string' ? parseSize(spec.gen_size) : null;
+    const ratio = spec.ratio || DEFAULTS.ratio;
+    if (gs && ratio !== 'auto') {
+      const [a, b] = ratio.split(':').map(Number);
+      if (Math.abs(gs.width / gs.height - a / b) > 0.02 * (a / b)) {
+        warnings.push(`gen_size ${spec.gen_size} 의 비율이 ratio ${ratio} 와 다릅니다. H3 는 ratio 와 짧은 변(${se}px)만 씁니다`);
+      }
+    }
   }
   const tpl = spec.template;
   const hasBase = !!spec.base;

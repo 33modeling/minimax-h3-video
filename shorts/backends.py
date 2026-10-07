@@ -54,6 +54,16 @@ def h3video_client():
     return _H3 or None
 
 
+def gen_size_of(req: dict, default_short: int) -> tuple[int, str]:
+    """요청의 gen_size → (짧은 변, "WxH"). 숫자면 ratio 로 WxH 를 계산, "WxH" 면 그대로."""
+    g = req.get("gen_size")
+    if isinstance(g, str) and "x" in g:
+        w, h = (int(x) for x in g.split("x"))
+        return min(w, h), f"{w}x{h}"
+    short = int(g) if g else default_short
+    return short, size_for_ratio(req.get("ratio") or "9:16", short)
+
+
 def size_for_ratio(ratio: str, short_edge: int) -> str:
     if ratio in ("auto", None):
         ratio = "9:16"
@@ -194,7 +204,7 @@ class SGLangBackend:
         h3 = h3video_client()
         if h3:
             vr = h3.VideoRequest(prompt=req["prompt"], task=req["task"], duration_seconds=int(round(req["duration"])),
-                                 aspect_ratio=req["ratio"], short_edge=H3_SHORT_EDGE, seed=int(req.get("seed") or 0),
+                                 aspect_ratio=req["ratio"], short_edge=gen_size_of(req, H3_SHORT_EDGE)[0], seed=int(req.get("seed") or 0),
                                  conditions=[h3.Condition(t, u, role, fi) for t, u, role, fi in conds])
             try:
                 vr.validate()
@@ -209,7 +219,8 @@ class SGLangBackend:
                     d["frame_index"] = fi
                 cj.append(d)
             body = {"task": req["task"], "prompt": req["prompt"], "conditions": cj,
-                    "target": {"short_edge": H3_SHORT_EDGE, "aspect_ratio": req["ratio"], "duration_seconds": int(round(req["duration"]))},
+                    "target": {"short_edge": gen_size_of(req, H3_SHORT_EDGE)[0], "aspect_ratio": req["ratio"],
+                               "duration_seconds": int(round(req["duration"]))},
                     "seed": int(req.get("seed") or 0)}
         if self.model:
             body["model"] = self.model
@@ -249,7 +260,7 @@ class VLLMBackend(SGLangBackend):
 
     def build_form(self, req: dict) -> tuple[list, list]:
         fields = [("prompt", req["prompt"]), ("seconds", str(int(round(req["duration"])))),
-                  ("size", size_for_ratio(req["ratio"], VLLM_SHORT_EDGE)), ("seed", str(int(req.get("seed") or 0)))]
+                  ("size", gen_size_of(req, VLLM_SHORT_EDGE)[1]), ("seed", str(int(req.get("seed") or 0)))]
         if self.model:
             fields.append(("model", self.model))
         ref = req.get("image") or (req.get("refs") or [{}])[0].get("path")
@@ -419,6 +430,10 @@ def check_h3_limits(scene: dict, ref_durations: dict[str, float] | None = None) 
         errs.append(f"장면 길이는 {lo}~{hi}초입니다 (지금 {scene['duration']}초)")
     if scene.get("ratio") not in ASPECTS:
         errs.append(f"화면비는 {', '.join(ASPECTS)} 중 하나입니다 (지금 {scene.get('ratio')})")
+    short = gen_size_of(scene, H3_SHORT_EDGE)[0]
+    if short > H3_LIMITS["short_edge"]:
+        errs.append(f"생성 해상도 짧은 변은 {H3_LIMITS['short_edge']}px 이하입니다(로컬 H3-Base 상한, 지금 {short}px). "
+                    "gen_size 를 768 이하로 낮추세요")
     vids = [r for r in scene.get("refs", []) if media_kind(r["path"]) == "video"]
     if len(vids) > H3_LIMITS["ref_video"]:
         errs.append(f"참조 영상은 최대 {H3_LIMITS['ref_video']}개입니다 (지금 {len(vids)}개)")

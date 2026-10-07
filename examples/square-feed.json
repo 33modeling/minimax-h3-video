@@ -1,0 +1,14 @@
+{
+  "$schema": "../schema/job.schema.json",
+  "base": "base.mp4",
+  "template": "split",
+  "resolution": "1080x1080",
+  "fps": 30,
+  "quality": "medium",
+  "title": "정사각 피드용",
+  "captions": [
+    "위는 원본",
+    "아래는 소스"
+  ],
+  "output": "square.mp4"
+}

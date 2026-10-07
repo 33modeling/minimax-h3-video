@@ -346,6 +346,88 @@ class H3RoutingTest(Base):
             self.assertEqual(with_h3, builtin)
 
 
+def ffprobe_video(path) -> dict:
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,avg_frame_rate",
+                        "-of", "json", str(path)], capture_output=True, text=True, check=True)
+    return json.loads(r.stdout)["streams"][0]
+
+
+class ResolutionTest(Base):
+    """출력 해상도·생성 해상도·fps·품질."""
+
+    BAD = [{"base": "b.mp4", "resolution": "238x1280"}, {"base": "b.mp4", "resolution": "2162x2162"}, {"base": "b.mp4", "resolution": "1080x2562"},
+           {"base": "b.mp4", "resolution": "721x1280"}, {"base": "b.mp4", "resolution": "720*1280"},
+           {"base": "b.mp4", "fps": 11}, {"base": "b.mp4", "fps": 61}, {"base": "b.mp4", "fps": 29.97},
+           {"base": "b.mp4", "quality": "ultra"}, {"prompt": "p", "gen_size": 769}, {"prompt": "p", "gen_size": 238},
+           {"prompt": "p", "gen_size": "433x768"}, {"prompt": "p", "gen_size": "big"}, {"prompt": "p", "gen_size": 1080},
+           {"prompt": "p", "gen_size": "768x768"}]
+
+    def test_boundaries_same_as_web(self):
+        for ok in ("240x240", "2160x2160", "1080x1350", "1920x1080", "1440x2560", "2160x2560"):
+            self.assertEqual(S.check_spec({"base": "b.mp4", "resolution": ok})[0], [], ok)
+        py = [list(S.check_spec(b)) for b in self.BAD]
+        self.assertTrue(all(e or w for e, w in py))
+        js = subprocess.run(["node", "-e", "import('./src/core/spec.js').then(m=>console.log(JSON.stringify("
+                             + json.dumps(self.BAD) + ".map(b=>{const r=m.checkSpec(b);return [r.errors,r.warnings]}))))"],
+                            cwd=ROOT, capture_output=True, text=True, check=True)
+        self.assertEqual(py, json.loads(js.stdout))
+        self.assertIn("짝수여야 합니다 (지금 721x1280)", py[3][0][0])
+        self.assertIn("H3 상한 768px", py[13][1][0])
+
+    def test_gen_size_requests(self):
+        sg, sg_st, sg_url = F.start_video("sglang", steps=1)
+        vl, vl_st, vl_url = F.start_video("vllm", steps=1)
+        try:
+            p = self.write_job("gen-size", {"prompt": "x", "duration": 4, "gen_size": 1080})
+            code, out = run_cli("run", p, env={**self.state_env, "SHORTS_SERVER": sg_url})
+            self.assertEqual(code, 2)
+            self.assertIn("768px 이하입니다", out)
+            self.assertEqual(sg_st.requests, [], "한도를 넘었는데 보냄")
+            code, out = run_cli("run", p, "--gen-size", "576", "--poll", "0.2", env={**self.state_env, "SHORTS_SERVER": sg_url})
+            self.assertEqual(code, 0, out)
+            self.assertEqual(sg_st.requests[-1]["body"]["target"]["short_edge"], 576)
+            code, out = run_cli("run", p, "--poll", "0.2", env={**self.state_env, "SHORTS_SERVER": vl_url})
+            self.assertEqual(code, 0, out)                       # vLLM 은 H3 한도를 적용하지 않음
+            self.assertEqual(vl_st.requests[-1]["body"]["size"], ["1080x1920"])
+            code, out = run_cli("run", p, "--gen-size", "480x854", "--poll", "0.2", env={**self.state_env, "SHORTS_SERVER": vl_url})
+            self.assertEqual(code, 0, out)
+            self.assertEqual(vl_st.requests[-1]["body"]["size"], ["480x854"])
+        finally:
+            sg.shutdown()
+            vl.shutdown()
+
+    def test_cli_options_override_json(self):
+        p = self.write_job("override", {"base": self.m("base.mp4"), "resolution": "720x1280", "fps": 30, "quality": "low",
+                                        "max_duration": 3})
+        code, out = run_cli("run", p, "--resolution", "540x960", "--fps", "24", "--quality", "high", "--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertIn("540×960 · 24fps · 품질 high", out)
+        self.assertIn("-crf 18", out)
+        code, out = run_cli("run", p, "--resolution", "541x960")
+        self.assertEqual(code, 2)
+        self.assertIn("짝수여야", out)
+        code, out = run_cli("run", p, "--fps", "24", "--resolution", "1440x2560")
+        self.assertEqual(code, 0, out)
+        v = ffprobe_video(self.tmp / "override" / "short.mp4")
+        self.assertEqual((v["width"], v["height"], v["avg_frame_rate"]), (1440, 2560, "24/1"))
+
+    def test_templates_by_ratio(self):
+        """템플릿 4종 × 비율 3종(9:16·1:1·16:9) 출력 확인. 비율별 PIP·분할 프레임은 frames/ 에 남긴다."""
+        frames = self.tmp / "frames"
+        frames.mkdir(exist_ok=True)
+        for res, fps in (("720x1280", 30), ("1080x1080", 24), ("1920x1080", 30)):
+            W, H = (int(x) for x in res.split("x"))
+            for tpl in ("cutaway", "split", "pip", "montage"):
+                out_mp4 = self.tmp / f"r-{res}-{tpl}.mp4"
+                code, out = run_cli("compose", "--base", self.m("base.mp4"), "--source", self.m("src1.mp4"), self.m("src2.mp4"),
+                                    self.m("src3.mp4"), "--template", tpl, "--resolution", res, "--fps", str(fps),
+                                    "--quality", "low", "--title", f"{tpl} {res}", "-o", out_mp4)
+                self.assertEqual(code, 0, out)
+                info = self.assertShort(out_mp4, 8.5 if tpl == "montage" else 8.0, (W, H))
+                self.assertEqual(ffprobe_video(out_mp4)["avg_frame_rate"], f"{fps}/1", (res, tpl))
+        print(f"\n  [frames] 템플릿×비율 12개 출력: {self.tmp}", file=sys.stderr)
+
+
 @unittest.skipUnless((H3_REPO / "src" / "h3video" / "web.py").is_file(), "minimax-h3-video 저장소 없음")
 class H3VideoWebTest(Base):
     """minimax-h3-video 의 h3video web 서버(/api/jobs)에 붙는 경우."""

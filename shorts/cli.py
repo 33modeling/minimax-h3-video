@@ -98,6 +98,12 @@ def resolve_spec_paths(spec: dict, root: Path, extra: list[str]) -> dict:
     return out
 
 
+def parse_gen_size(v):
+    """--gen-size 768 → 768(짧은 변), 432x768 → "432x768"."""
+    v = str(v).strip()
+    return int(v) if v.isdigit() else v
+
+
 def missing_files(spec: dict) -> list[str]:
     miss = []
     for p in S.referenced_paths(spec):
@@ -108,10 +114,14 @@ def missing_files(spec: dict) -> list[str]:
 
 def apply_overrides(spec: dict, a) -> dict:
     spec = dict(spec)
-    for key in ("server", "ref_server", "backend", "template", "resolution", "fit", "model"):
+    for key in ("server", "ref_server", "backend", "template", "resolution", "fit", "model", "quality"):
         v = getattr(a, key, None)
         if v:
             spec[key] = v
+    if getattr(a, "fps", None):
+        spec["fps"] = a.fps
+    if getattr(a, "gen_size", None):
+        spec["gen_size"] = parse_gen_size(a.gen_size)
     if getattr(a, "output", None):
         spec["output"] = a.output
     if getattr(a, "max_duration", None):
@@ -153,8 +163,11 @@ def media_kind_is_video(path: str) -> bool:
 
 
 def scene_request(sc: dict, norm: dict) -> dict:
-    return {"prompt": sc["prompt"], "task": sc["task"], "duration": sc["duration"], "ratio": norm["ratio"], "seed": sc["seed"],
-            "refs": sc["sources"], "image": sc["image"], "title": norm.get("title") or ""}
+    req = {"prompt": sc["prompt"], "task": sc["task"], "duration": sc["duration"], "ratio": norm["ratio"], "seed": sc["seed"],
+           "refs": sc["sources"], "image": sc["image"], "title": norm.get("title") or ""}
+    if norm.get("gen_size") is not None:
+        req["gen_size"] = norm["gen_size"]
+    return req
 
 
 def stager_from(a) -> B.Stager:
@@ -339,8 +352,13 @@ def cmd_run(a) -> int:
             for m in r["refs"]:
                 if B.media_kind(m["path"]) == "video" and m["path"] not in ref_durs:
                     ref_durs[m["path"]] = R.probe(m["path"])["duration"]
+        backend = None
+        if not a.dry_run:  # 서버 종류를 먼저 알아내야 H3 한도를 적용할지 정할 수 있다(vLLM 은 적용 안 함)
+            backend = B.make_backend(norm["backend"], norm["server"], os.environ.get("SHORTS_API_KEY"), stager_from(a),
+                                     norm["model"], norm["ref_server"])
+        bname = backend.name if backend else norm["backend"]
         lim_errors = [f"장면 {i + 1}: {e}" for i, r in enumerate(reqs) for e in B.check_h3_limits(r, ref_durs)]
-        if lim_errors and (norm["backend"] in ("auto", "sglang", "h3video")):
+        if lim_errors and bname in ("auto", "sglang", "h3video"):
             out.event("invalid", "H3 사양 한도를 넘습니다:\n  - " + "\n  - ".join(lim_errors), errors=lim_errors)
             return 2
         if a.dry_run:
@@ -355,9 +373,10 @@ def cmd_run(a) -> int:
             fake = [str(Path(output + ".parts") / f"scene{i + 1:02d}.mp4") for i in range(len(reqs))]
             out.event("dry_run", "생성 영상이 생기면 이 영상들로 합성합니다: " + ", ".join(fake))
             return 0
-        api_key = os.environ.get("SHORTS_API_KEY")
-        backend = B.make_backend(norm["backend"], norm["server"], api_key, stager_from(a), norm["model"], norm["ref_server"])
         out.event("backend", f"AI 서버: {norm['server']} ({backend.name})", backend=backend.name)
+        gse = S.gen_short_edge(norm.get("gen_size"))
+        if backend.name == "h3video" and gse not in (None, B.H3_SHORT_EDGE):
+            out.event("warning", f"주의: h3video 웹 서버는 생성 해상도를 짧은 변 {B.H3_SHORT_EDGE}px 로 고정합니다(gen_size {gse} 무시)")
         state = {"kind": "run", "state_path": str(work / "state.json"), "server": norm["server"], "ref_server": norm["ref_server"],
                  "backend": backend.name, "model": norm["model"], "spec": spec, "output": output,
                  "scenes": reuse_scenes(work, reqs, norm["server"], fresh=a.fresh, out=out)}
@@ -400,6 +419,8 @@ def cmd_gen(a) -> int:
     if not server:
         raise SystemExit("오류: --server, SHORTS_SERVER 또는 H3_ENDPOINT 가 필요합니다")
     spec = {"prompt": a.prompt, "duration": a.duration, "ratio": a.ratio, "seed": a.seed}
+    if a.gen_size:
+        spec["gen_size"] = parse_gen_size(a.gen_size)
     if a.source:
         spec["sources"] = [str(Path(s).resolve()) for s in a.source]
     if a.image:
@@ -411,11 +432,11 @@ def cmd_gen(a) -> int:
     sc = S.ai_scenes(spec)[0]
     req = scene_request(sc, S.normalize_spec(spec))
     ref_durs = {m["path"]: R.probe(m["path"])["duration"] for m in req["refs"] if B.media_kind(m["path"]) == "video"}
+    backend = B.make_backend(a.backend, server, os.environ.get("SHORTS_API_KEY"), stager_from(a), a.model, a.ref_server)
     lim = B.check_h3_limits(req, ref_durs)
-    if lim and a.backend != "vllm":
+    if lim and backend.name != "vllm":
         out.event("invalid", "H3 사양 한도를 넘습니다:\n  - " + "\n  - ".join(lim), errors=lim)
         return 2
-    backend = B.make_backend(a.backend, server, os.environ.get("SHORTS_API_KEY"), stager_from(a), a.model, a.ref_server)
     if a.dry_run:
         out.event("request", f"POST ({backend.name}) " + json.dumps(backend.build_body(req, stage=False), ensure_ascii=False))
         return 0
@@ -433,7 +454,7 @@ def cmd_gen(a) -> int:
 def cmd_compose(a) -> int:
     out = Out(a.json)
     spec: dict = {"base": a.base, "sources": a.source or [], "template": a.template, "resolution": a.resolution, "fit": a.fit,
-                  "max_duration": a.max_duration or 60}
+                  "max_duration": a.max_duration or 60, "fps": a.fps, "quality": a.quality}
     if not a.base:
         spec.pop("base")
     if a.title:
@@ -546,7 +567,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--plan-output", dest="plan_output", help="--idea 로 만든 명세를 저장할 경로")
     r.add_argument("-o", "--output", help="출력 MP4 (기본: JSON 의 output 또는 short.mp4)")
     r.add_argument("--template", choices=P.TEMPLATES)
-    r.add_argument("--resolution", choices=["720x1280", "1080x1920"])
+    r.add_argument("--resolution", help="출력 해상도 WxH (프리셋: " + ", ".join(S.RESOLUTION_PRESETS) + ", 짝수·240~2160)")
+    r.add_argument("--gen-size", dest="gen_size", help="AI 생성 크기: 짧은 변(예: 768) 또는 WxH. H3 상한 768")
+    r.add_argument("--fps", type=int, help="출력 fps (기본 30, 생성은 24 고정)")
+    r.add_argument("--quality", choices=["low", "medium", "high"], help="출력 품질 (기본 medium)")
     r.add_argument("--fit", choices=["crop", "blur"])
     r.add_argument("--max-duration", dest="max_duration", type=float)
     r.add_argument("--fresh", action="store_true", help="지난 실행에서 받은 장면을 쓰지 않고 새로 생성")
@@ -562,6 +586,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--ratio", default="9:16")
     g.add_argument("--duration", type=float, default=8)
     g.add_argument("--seed", type=int, default=0)
+    g.add_argument("--gen-size", dest="gen_size", help="생성 크기: 짧은 변(예: 768) 또는 WxH. H3 상한 768")
     g.add_argument("-o", "--output", default="clip.mp4")
     g.add_argument("--dry-run", action="store_true")
     g.add_argument("--json", action="store_true")
@@ -576,7 +601,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--title")
     c.add_argument("--bgm")
     c.add_argument("--bgm-volume", dest="bgm_volume", type=float, default=0.25)
-    c.add_argument("--resolution", choices=["720x1280", "1080x1920"], default="720x1280")
+    c.add_argument("--resolution", default="720x1280", help="출력 해상도 WxH (프리셋: " + ", ".join(S.RESOLUTION_PRESETS) + ")")
+    c.add_argument("--fps", type=int, default=30, help="출력 fps (기본 30)")
+    c.add_argument("--quality", choices=["low", "medium", "high"], default="medium")
     c.add_argument("--fit", choices=["crop", "blur"], default="blur")
     c.add_argument("--max-duration", dest="max_duration", type=float)
     c.add_argument("-o", "--output", default="short.mp4")

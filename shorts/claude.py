@@ -22,6 +22,7 @@ API_VERSION = "2023-06-01"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 RUNTIME_FIELDS = ("$schema", "server", "ref_server", "backend", "poll", "timeout", "output", "model")
 UNSUPPORTED = ("minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems", "pattern", "title", "$id", "$schema",
+               "x-pattern", "x-presets",
                "x-hint", "description")
 
 SYSTEM_PROMPT = """너는 세로형 숏폼(9:16, 60초 이하) 기획자다. 사용자의 아이디어(와 소스 영상 프레임)를 보고 작업 명세 JSON 하나를 만든다.

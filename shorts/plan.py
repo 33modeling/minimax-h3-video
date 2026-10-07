@@ -4,7 +4,9 @@ from __future__ import annotations
 import math
 import re
 
-FPS = 30
+FPS = 30  # 기본 출력 fps (spec fps 로 바꿈)
+# 출력 품질: CLI 는 x264 crf, 웹은 픽셀·프레임당 비트(bpp)로 비트레이트를 정한다.
+QUALITY = {"low": {"crf": 28, "bpp": 0.05}, "medium": {"crf": 23, "bpp": 0.08}, "high": {"crf": 18, "bpp": 0.13}}
 TEMPLATES = ["cutaway", "split", "pip", "montage"]
 TEMPLATE_KO = {"cutaway": "컷어웨이", "split": "위아래 분할", "pip": "PIP", "montage": "몽타주", "base": "기본 영상만"}
 CUTAWAY_MAX_SHARE = 0.6
@@ -22,6 +24,11 @@ def r3(x: float) -> float:
 
 def even(x: float) -> int:
     return 2 * js_round(x / 2)
+
+
+def quality_for(name, W: int, H: int, fps: int) -> dict:
+    q = QUALITY.get(name) or QUALITY["medium"]
+    return {"name": name if name in QUALITY else "medium", "crf": q["crf"], "bitrate": js_round(W * H * fps * q["bpp"] / 1000) * 1000}
 
 
 def parse_resolution(r: str) -> tuple[int, int]:
@@ -147,13 +154,19 @@ def time_captions(captions: list, T: float) -> list[dict]:
     return out
 
 
+def text_base(W: int, H: int) -> int:
+    """글자 크기 기준 폭: 세로 화면은 가로 폭, 정사각·가로 화면은 높이의 3/4."""
+    return min(W, js_round(H * 0.75))
+
+
 def text_style(W: int, H: int, template: str) -> dict:
-    cap_fs = even(W * 0.056)
-    title_fs = even(W * 0.07)
+    U = text_base(W, H)
+    cap_fs = even(U * 0.056)
+    title_fs = even(U * 0.07)
     return {
         "caption": {"fontSize": cap_fs, "lineHeight": js_round(cap_fs * 1.28), "maxWidth": js_round(W * 0.86),
-                    "centerY": js_round(H * 0.5) if template == "split" else js_round(H * 0.74), "maxLines": 3,
-                    "border": max(2, js_round(W * 0.0075)), "color": "#ffffff", "borderColor": "#000000"},
+                    "centerY": js_round(H * 0.5) if template == "split" and W <= H else js_round(H * (0.82 if W > H else 0.74)),
+                    "maxLines": 3, "border": max(2, js_round(U * 0.0075)), "color": "#ffffff", "borderColor": "#000000"},
         "title": {"fontSize": title_fs, "lineHeight": js_round(title_fs * 1.25), "maxWidth": js_round(W * 0.88),
                   "top": js_round(H * 0.065), "pad": js_round(title_fs * 0.3), "gap": js_round(title_fs * 0.12),
                   "maxLines": 2, "color": "#ffe14d", "box": "rgba(0,0,0,0.6)"},
@@ -249,16 +262,21 @@ def plan_timeline(spec: dict, inputs: dict) -> dict:
             if t1 - t0 >= 0.05:
                 segments.append(_segment("clip", c["index"], t0, t1, c["start"], full, spec["fit"], c["info"], 1))
     elif template == "split":
-        half = even(H / 2)
-        segments.append(_segment("base", 0, 0, T, base["start"], {"x": 0, "y": 0, "w": W, "h": half}, spec["fit"], base["info"], 0))
-        sequential({"x": 0, "y": half, "w": W, "h": H - half}, 1, True, 0)
+        if W > H:  # 가로 화면: 왼쪽 기본 영상, 오른쪽 소스
+            half = even(W / 2)
+            segments.append(_segment("base", 0, 0, T, base["start"], {"x": 0, "y": 0, "w": half, "h": H}, spec["fit"], base["info"], 0))
+            sequential({"x": half, "y": 0, "w": W - half, "h": H}, 1, True, 0)
+        else:  # 세로·정사각: 위 기본 영상, 아래 소스
+            half = even(H / 2)
+            segments.append(_segment("base", 0, 0, T, base["start"], {"x": 0, "y": 0, "w": W, "h": half}, spec["fit"], base["info"], 0))
+            sequential({"x": 0, "y": half, "w": W, "h": H - half}, 1, True, 0)
         base_audio()
     elif template == "pip":
         segments.append(_segment("base", 0, 0, T, base["start"], full, spec["fit"], base["info"], 0))
-        pw = even(W * 0.42)
+        pw = even(min(W * 0.42, H * 0.6))
         ph = even(pw * 9 / 16)
         rect = {"x": W - pw - js_round(W * 0.045), "y": js_round(H * 0.24), "w": pw, "h": ph}
-        sequential(rect, 1, True, max(2, js_round(W * 0.006)))
+        sequential(rect, 1, True, max(2, js_round(text_base(W, H) * 0.006)))
         base_audio()
     else:
         sequential(full, 0, False, 0)
@@ -274,11 +292,13 @@ def plan_timeline(spec: dict, inputs: dict) -> dict:
     style = text_style(W, H, template)
     captions = [dict(c, lines=layout_caption(c["text"], W, style["caption"])) for c in time_captions(spec.get("captions") or [], T)]
     title = layout_title(spec.get("title"), W, style["title"])
-    return {"width": W, "height": H, "fps": FPS, "duration": T, "template": template, "segments": segments, "audio": audio,
-            "captions": captions, "title": title, "style": style, "warnings": warnings}
+    fps = spec.get("fps") or FPS
+    quality = quality_for(spec.get("quality"), W, H, fps)
+    return {"width": W, "height": H, "fps": fps, "duration": T, "template": template, "segments": segments, "audio": audio,
+            "captions": captions, "title": title, "style": style, "quality": quality, "warnings": warnings}
 
 
 def describe_plan(plan: dict) -> str:
     segs = sum(1 for s in plan["segments"] if s["kind"] == "clip")
-    return (f"{TEMPLATE_KO[plan['template']]} · {plan['width']}×{plan['height']} · {plan['duration']:.1f}초 · "
+    return (f"{TEMPLATE_KO[plan['template']]} · {plan['width']}×{plan['height']} · {plan['fps']}fps · 품질 {plan['quality']['name']} · {plan['duration']:.1f}초 · "
             f"소스 구간 {segs}개 · 자막 {len(plan['captions'])}줄")

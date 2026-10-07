@@ -1,7 +1,14 @@
 // 타임라인·배치 계획. 순수 함수만 둔다. shorts/plan.py 가 같은 계산을 한 줄씩 따라 한다
 // (tests/unit/parity.test.mjs 가 두 결과를 비교). 숫자 연산 순서를 바꾸면 둘 다 바꿀 것.
 
-export const FPS = 30;
+export const FPS = 30; // 기본 출력 fps (spec.fps 로 바꿈)
+// 출력 품질: CLI 는 x264 crf, 웹은 픽셀·프레임당 비트(bpp)로 비트레이트를 정한다.
+export const QUALITY = { low: { crf: 28, bpp: 0.05 }, medium: { crf: 23, bpp: 0.08 }, high: { crf: 18, bpp: 0.13 } };
+
+export function qualityFor(name, W, H, fps) {
+  const q = QUALITY[name] || QUALITY.medium;
+  return { name: QUALITY[name] ? name : 'medium', crf: q.crf, bitrate: Math.round((W * H * fps * q.bpp) / 1000) * 1000 };
+}
 export const TEMPLATES = ['cutaway', 'split', 'pip', 'montage'];
 export const TEMPLATE_KO = { cutaway: '컷어웨이', split: '위아래 분할', pip: 'PIP', montage: '몽타주', base: '기본 영상만' };
 const CUTAWAY_MAX_SHARE = 0.6;
@@ -143,17 +150,23 @@ export function timeCaptions(captions, T) {
   return out;
 }
 
+// 글자 크기 기준 폭: 세로 화면은 가로 폭, 정사각·가로 화면은 높이의 3/4 (16:9 에서 글자가 너무 커지지 않게)
+export function textBase(W, H) {
+  return Math.min(W, Math.round(H * 0.75));
+}
+
 export function textStyle(W, H, template) {
-  const capFs = even(W * 0.056);
-  const titleFs = even(W * 0.07);
+  const U = textBase(W, H);
+  const capFs = even(U * 0.056);
+  const titleFs = even(U * 0.07);
   return {
     caption: {
       fontSize: capFs,
       lineHeight: Math.round(capFs * 1.28),
       maxWidth: Math.round(W * 0.86),
-      centerY: template === 'split' ? Math.round(H * 0.5) : Math.round(H * 0.74),
+      centerY: template === 'split' && W <= H ? Math.round(H * 0.5) : Math.round(H * (W > H ? 0.82 : 0.74)),
       maxLines: 3,
-      border: Math.max(2, Math.round(W * 0.0075)),
+      border: Math.max(2, Math.round(U * 0.0075)),
       color: '#ffffff',
       borderColor: '#000000',
     },
@@ -249,16 +262,24 @@ export function planTimeline(spec, inputs) {
       if (t1 - t0 >= 0.05) segments.push(segment('clip', c.index, t0, t1, c.start, full, spec.fit, c.info, 1));
     });
   } else if (template === 'split') {
-    const half = even(H / 2);
-    segments.push(segment('base', 0, 0, T, base.start, { x: 0, y: 0, w: W, h: half }, spec.fit, base.info, 0));
-    sequential({ x: 0, y: half, w: W, h: H - half }, 1, true, 0);
+    if (W > H) {
+      // 가로 화면: 왼쪽 기본 영상, 오른쪽 소스
+      const half = even(W / 2);
+      segments.push(segment('base', 0, 0, T, base.start, { x: 0, y: 0, w: half, h: H }, spec.fit, base.info, 0));
+      sequential({ x: half, y: 0, w: W - half, h: H }, 1, true, 0);
+    } else {
+      // 세로·정사각: 위 기본 영상, 아래 소스
+      const half = even(H / 2);
+      segments.push(segment('base', 0, 0, T, base.start, { x: 0, y: 0, w: W, h: half }, spec.fit, base.info, 0));
+      sequential({ x: 0, y: half, w: W, h: H - half }, 1, true, 0);
+    }
     baseAudio();
   } else if (template === 'pip') {
     segments.push(segment('base', 0, 0, T, base.start, full, spec.fit, base.info, 0));
-    const pw = even(W * 0.42);
+    const pw = even(Math.min(W * 0.42, H * 0.6));
     const ph = even((pw * 9) / 16);
     const rect = { x: W - pw - Math.round(W * 0.045), y: Math.round(H * 0.24), w: pw, h: ph };
-    sequential(rect, 1, true, Math.max(2, Math.round(W * 0.006)));
+    sequential(rect, 1, true, Math.max(2, Math.round(textBase(W, H) * 0.006)));
     baseAudio();
   } else {
     sequential(full, 0, false, 0);
@@ -276,11 +297,13 @@ export function planTimeline(spec, inputs) {
   const style = textStyle(W, H, template);
   const captions = timeCaptions(spec.captions || [], T).map((c) => ({ ...c, lines: layoutCaption(c.text, W, style.caption) }));
   const title = layoutTitle(spec.title, W, style.title);
-  return { width: W, height: H, fps: FPS, duration: T, template, segments, audio, captions, title, style, warnings };
+  const fps = spec.fps || FPS;
+  const quality = qualityFor(spec.quality, W, H, fps);
+  return { width: W, height: H, fps, duration: T, template, segments, audio, captions, title, style, quality, warnings };
 }
 
 // 사람이 읽는 한 줄 요약(웹 화면과 CLI --dry-run 이 같은 문장을 쓴다)
 export function describePlan(plan) {
   const segs = plan.segments.filter((s) => s.kind === 'clip').length;
-  return `${TEMPLATE_KO[plan.template]} · ${plan.width}×${plan.height} · ${plan.duration.toFixed(1)}초 · 소스 구간 ${segs}개 · 자막 ${plan.captions.length}줄`;
+  return `${TEMPLATE_KO[plan.template]} · ${plan.width}×${plan.height} · ${plan.fps}fps · 품질 ${plan.quality.name} · ${plan.duration.toFixed(1)}초 · 소스 구간 ${segs}개 · 자막 ${plan.captions.length}줄`;
 }

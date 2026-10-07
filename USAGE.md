@@ -131,7 +131,10 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
 | `server` `ref_server` `backend` `model` `poll` `timeout` | 실행 설정(옵션·환경변수로도 줌) | auto, 3초, 장면당 1800초 |
 | `template` | `cutaway` `split` `pip` `montage` (base 없으면 montage) | base 있으면 cutaway |
 | `fit` | 가로 영상: `crop`(가운데 자르기) / `blur`(흐린 배경 채우기) | blur |
-| `resolution` | `720x1280` / `1080x1920` | 720x1280 |
+| `resolution` | 출력 해상도 `WxH`. 프리셋 `540x960` `720x1280` `1080x1920` `1440x2560`(9:16) · `1080x1080`(1:1) · `1080x1350`(4:5) · `1920x1080`(16:9), 또는 임의 값(짝수, 짧은 변 240~2160, 긴 변 2560 이하). 9:16 이 아니어도 템플릿이 맞춰 배치(16:9 분할은 좌우) | 720x1280 |
+| `gen_size` | AI 생성 크기. 짧은 변 숫자(480·576·720·768) 또는 `WxH`. SGLang H3 는 `target.short_edge`, vLLM 은 `size`(ratio 로 계산)로 보냄. **H3 상한 768**: 넘으면 H3 서버로는 보내기 전에 막음(vLLM 은 그대로). h3video 웹 서버는 768 고정 | H3 768, vLLM 720 |
+| `fps` | 출력 프레임레이트 12~60 (생성은 H3 24fps 고정, 합성 때 맞춤) | 30 |
+| `quality` | 출력 품질 `low` `medium` `high` (CLI x264 crf 28/23/18, 웹은 픽셀당 비트레이트) | medium |
 | `max_duration` | 길이 상한(초) | 60 |
 | `title` | 상단 훅 문구 | — |
 | `captions` | 자막, 한 줄에 한 장면. 시간 자동 배분(글자 수 비례), `{"text","start","end"}` 로 직접 지정 | — |
@@ -156,11 +159,12 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
 
 ```json
 {"base": "base.mp4", "sources": ["clip1.mp4", {"path": "clip2.mp4", "start": 1, "end": 4}], "template": "cutaway",
- "title": "3초 만에 보는 요약", "captions": ["오늘 할 이야기", {"text": "핵심은 이것", "start": 3, "end": 5.5}],
+ "resolution": "1080x1920", "fps": 30, "quality": "high", "title": "3초 만에 보는 요약", "captions": ["오늘 할 이야기", {"text": "핵심은 이것", "start": 3, "end": 5.5}],
  "bgm": "music.mp3", "output": "summary.mp4"}
 ```
 
-여러 장면은 `examples/scenes.json`. 틀리면 한국어로 알려 준다: `duration [AI 장면 길이(초)]: 15 이하여야 합니다 (지금 30)`, `templat: 알 수 없는 항목입니다. 혹시 'template' 인가요?`
+여러 장면은 `examples/scenes.json`, 정사각·가로 출력은 `examples/square-feed.json`(`"resolution": "1080x1080"`).
+틀린 해상도 예: `resolution: 가로·세로는 짝수여야 합니다 (지금 721x1280)`, `resolution: 짧은 변은 240~2160, 긴 변은 2560 이하여야 합니다 (지금 238x1280)`. 틀리면 한국어로 알려 준다: `duration [AI 장면 길이(초)]: 15 이하여야 합니다 (지금 30)`, `templat: 알 수 없는 항목입니다. 혹시 'template' 인가요?`
 
 **템플릿**: 컷어웨이(기본 영상과 소리가 계속 흐르고 소스가 사이사이 전체 화면, 소스 합은 길이의 60%까지) ·
 위아래 분할(위 기본, 아래 소스 반복) · PIP(기본 전체, 소스는 오른쪽 위 작은 창) · 몽타주(소스를 이어 붙이고 기본 영상 소리를 깖, 기본 영상이 없으면 소스 자기 소리).
@@ -175,6 +179,7 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
 ./bin/shorts run prompt.json base.mp4 a.mp4 b.mp4 # 이름이 JSON 의 base 와 같으면 그 자리, 나머지는 sources
 ./bin/shorts run prompt.json --dry-run            # 보낼 요청 본문과 ffmpeg 명령만 보기
 ./bin/shorts run prompt.json --json               # 진행 상황을 줄마다 JSON 이벤트로
+./bin/shorts run prompt.json --resolution 1080x1080 --fps 24 --quality high --gen-size 576   # JSON 값보다 우선
 ```
 
 진행 표시: `장면 1/1: t2va 요청 보내는 중… → 작업 ID: video_0001 → [####] 66.7% → 받음 → 합성 계획 → 완성: … (720×1280, 8.0초, 오디오 있음)`.
@@ -210,7 +215,8 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
 ## 6. 결과물
 
 - 위치: JSON 의 `output`(JSON 폴더 기준) 또는 `-o`. AI 장면은 `<출력>.parts/scene01.mp4…` 에 남고 `state.json` 이 이어 받기 정보다.
-- 규격: 9:16, 720×1280(기본) 또는 1080×1920, 30fps, H.264 + AAC 48kHz 스테레오, `+faststart`.
+- 규격: `resolution`(기본 720×1280, 9:16·1:1·4:5·16:9·임의 WxH), `fps`(기본 30), `quality`(기본 medium), H.264 + AAC 48kHz 스테레오, `+faststart`.
+- 생성 영상(H3)은 짧은 변 `gen_size`(기본·상한 768), 24fps 이고 합성 단계에서 출력 해상도·fps 로 맞춘다.
 - 길이: 템플릿이 몽타주면 소스 길이 합, 그 밖에는 기본 영상 길이. 둘 다 `max_duration`(기본 60초)에서 자른다.
 
 ---
