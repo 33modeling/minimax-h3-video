@@ -61,6 +61,8 @@ class VideoState:
         self.lock = threading.Lock()
         self.api_key: str | None = None
         self.max_seconds = 15.0
+        self.no_progress = False   # True 면 상태 응답에 progress 를 넣지 않음
+        self.fail_error = "fake failure"
 
 
 def make_video_handler(state: VideoState):
@@ -117,14 +119,17 @@ def make_video_handler(state: VideoState):
                 with state.lock:
                     v["polls"] += 1
                     if v.get("fail"):
-                        v["status"], v["error"] = "failed", "fake failure"
+                        v["status"], v["error"] = "failed", state.fail_error
                     elif v["polls"] >= state.steps:
                         v["status"], v["progress"] = "completed", 1.0
                     else:
                         v["status"] = "in_progress"
                         v["progress"] = v["polls"] / state.steps
                 prog = v["progress"] * (100 if state.mode == "vllm" else 1)
-                return self._json({"id": parts[2], "object": "video", "status": v["status"], "progress": prog, "error": v.get("error")})
+                body = {"id": parts[2], "object": "video", "status": v["status"], "progress": prog, "error": v.get("error")}
+                if state.no_progress:
+                    body.pop("progress")
+                return self._json(body)
             self._json({"error": "not found"}, 404)
 
         def do_POST(self):

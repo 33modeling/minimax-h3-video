@@ -266,7 +266,7 @@ class GenTest(Base):
         p = self.write_job("vllm", {"prompt": "x", "duration": 4})
         code, out = run_cli("run", p, self.m("first.png"), "--poll", "0.2", env=self.env(SHORTS_SERVER=self.vurl))
         self.assertEqual(code, 0, out)
-        self.assertIn("(vllm)", out)
+        self.assertIn("서버 종류: vllm", out)
         r = self.vst.requests[n0]
         self.assertEqual(r["kind"], "multipart")
         self.assertEqual(r["body"]["size"], ["720x1280"])
@@ -303,7 +303,7 @@ class GenTest(Base):
 
     def test_ctrl_c_prints_job_id(self):
         p = self.write_job("ai-ctrlc", {"prompt": "interrupt", "duration": 4})
-        with mock.patch.object(B, "wait_and_download", side_effect=KeyboardInterrupt):
+        with mock.patch.object(B.SGLangBackend, "status", side_effect=KeyboardInterrupt):
             code, out = run_cli("run", p, "--poll", "0.2", env=self.env())
         self.assertEqual(code, 130)
         self.assertIn("작업 ID: video_", out)
@@ -344,6 +344,108 @@ class H3RoutingTest(Base):
             B._H3 = None
             self.assertIsNotNone(B.h3video_client())
             self.assertEqual(with_h3, builtin)
+
+
+class ProgressTest(Base):
+    """진행 표시: 진행률 있음 / 없음 / 실패, --json 이벤트, TTY 제자리 갱신."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.httpd, cls.st, cls.url = F.start_video("sglang", steps=3)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        super().tearDownClass()
+
+    def env(self):
+        return {**self.state_env, "SHORTS_SERVER": self.url, "SHORTS_LOG_INTERVAL": "0"}
+
+    def test_with_progress(self):
+        p = self.write_job("pg-yes", {"prompt": "x", "duration": 4})
+        code, out = run_cli("run", p, "--poll", "0.2", env=self.env())
+        self.assertEqual(code, 0, out)
+        for want in ("[1/5 검증]", "[2/5 서버 연결]", "[3/5 생성]", "[4/5 다운로드]", "[5/5 합성]", "서버 종류: sglang",
+                     "작업 ID: video_", "생성 중  [", "%  경과", "남은 약", "완료", "── 요약 ──", "총 소요", "720×1280 · 4.0초 · 30fps"):
+            self.assertIn(want, out)
+
+    def test_without_progress(self):
+        self.st.no_progress = True
+        try:
+            p = self.write_job("pg-no", {"prompt": "x", "duration": 4})
+            code, out = run_cli("run", p, "--poll", "0.2", env=self.env())
+        finally:
+            self.st.no_progress = False
+        self.assertEqual(code, 0, out)
+        running = [ln for ln in out.splitlines() if "생성 중" in ln]
+        self.assertTrue(running)
+        self.assertTrue(all("%" not in ln and "남은 약" not in ln and "경과" in ln for ln in running), running)
+
+    def test_failure_explained_then_resume_resubmits(self):
+        self.st.fail_prompt, self.st.fail_error = "will-fail", "CUDA out of memory. Tried to allocate 20.00 GiB"
+        p = self.write_job("pg-fail", {"prompt": "will-fail now", "duration": 4})
+        try:
+            code, out = run_cli("run", p, "--poll", "0.2", env=self.env())
+            self.assertEqual(code, 1)
+            self.assertIn("장면 1 생성 실패: CUDA out of memory", out)
+            self.assertIn("GPU 메모리가 부족합니다", out)
+            rid = out.split("다시 시도: shorts resume ")[1].split()[0]
+            self.st.fail_prompt = None                       # 서버가 고쳐졌다고 치고 이어 받기
+            n0 = len(self.st.requests)
+            code, out = run_cli("resume", rid, "--poll", "0.2", env=self.env())
+        finally:
+            self.st.fail_prompt, self.st.fail_error = None, "fake failure"
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(self.st.requests), n0 + 1, "실패한 장면을 다시 요청해야 함")
+        self.assertShort(self.tmp / "pg-fail" / "short.mp4", 4.0)
+
+    def test_json_events(self):
+        p = self.write_job("pg-json", {"prompt": "x", "duration": 4})
+        code, out = run_cli("run", p, "--poll", "0.2", "--json", env=self.env())
+        self.assertEqual(code, 0, out)
+        evs = events(out)
+        self.assertEqual([e["name"] for e in evs if e["event"] == "stage"], ["검증", "서버 연결", "생성", "다운로드", "합성"])
+        states = [e["state"] for e in evs if e["event"] == "scene"]
+        self.assertEqual(states[0], "queued")
+        self.assertIn("running", states)
+        self.assertEqual(states[-1], "done")
+        run = [e for e in evs if e["event"] == "scene" and e["state"] == "running"][0]
+        self.assertIsNotNone(run["progress"])
+        summ = [e for e in evs if e["event"] == "summary"][0]
+        self.assertEqual((summ["width"], summ["height"]), (720, 1280))
+        self.assertEqual(summ["scenes"][0]["task"], "t2va")
+
+    def test_tty_redraws_in_place_and_retry_note(self):
+        from shorts.progress import Out, SceneBoard
+        buf = io.StringIO()
+        o = Out(stream=buf, tty=True)
+        b = SceneBoard(o, 2)
+        b.set(0, "running", 0.4, True, job_id="v1")
+        b.set(1, "queued", job_id="v2")
+        b.render()
+        b.set(1, note="재시도 중(3/5): 연결 끊김")
+        b.render()
+        text = buf.getvalue()
+        self.assertIn("\x1b[2F", text)                  # 두 줄 위로 올라가 다시 그림
+        self.assertIn("재시도 중(3/5)", text)
+        self.assertTrue(any(ch in text for ch in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"))
+
+    def test_retry_on_connection_drop(self):
+        calls = {"n": 0}
+        real = B.SGLangBackend.status
+
+        def flaky(self_, rid, task="t2va"):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise B.BackendError("서버에 연결하지 못했습니다 (x): Connection refused", retryable=True)
+            return real(self_, rid, task)
+        p = self.write_job("pg-retry", {"prompt": "x", "duration": 4})
+        with mock.patch.object(B.SGLangBackend, "status", flaky), mock.patch("shorts.cli.time.sleep"):
+            code, out = run_cli("run", p, "--poll", "0.2", env=self.env())
+        self.assertEqual(code, 0, out)
+        self.assertIn("재시도 중(1/5)", out)
+        self.assertIn("재시도 중(2/5)", out)
 
 
 def ffprobe_video(path) -> dict:
@@ -460,7 +562,7 @@ class H3VideoWebTest(Base):
         p = self.write_job("h3web", {"prompt": "ref test", "duration": 4, "captions": ["h3video 경유"]})
         code, out = run_cli("run", p, self.m("src1.mp4"), "--poll", "0.2", env={**self.state_env, "SHORTS_SERVER": self.url})
         self.assertEqual(code, 0, out)
-        self.assertIn("(h3video)", out)
+        self.assertIn("서버 종류: h3video", out)
         sent = self.sg_state.requests[-1]
         self.assertEqual(sent["task"], "ref2va")
         self.assertEqual(sent["conditions"][0]["type"], "video")

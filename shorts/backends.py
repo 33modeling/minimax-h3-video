@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
 import json
 import mimetypes
 import os
@@ -33,7 +34,30 @@ ASPECTS = ["9:16", "16:9", "1:1", "4:3", "3:4", "21:9", "auto"]
 
 
 class BackendError(RuntimeError):
-    pass
+    def __init__(self, msg: str, retryable: bool = False, code: int | None = None):
+        super().__init__(msg)
+        self.retryable = retryable   # 연결 끊김·시간 초과·5xx 게이트웨이: 잠시 뒤 다시 하면 될 수 있음
+        self.code = code
+
+
+ERROR_HINTS = [
+    (("out of memory", "cuda oom", "oom"), "GPU 메모리가 부족합니다. 장면 길이(duration)나 gen_size 를 줄이거나 다른 작업이 GPU 를 쓰는지 확인하세요"),
+    (("no such file", "not found: file", "file://", "filenotfound"), "서버가 참조 파일을 읽지 못했습니다. --inbox-dir 로 서버와 공유된 폴더에 복사하거나 h3video 웹 서버를 쓰세요"),
+    (("no such video", "not found", "404"), "서버가 이 작업을 모릅니다. 서버가 재시작돼 작업 목록이 지워졌을 수 있습니다"),
+    (("timed out", "timeout", "시간 초과"), "서버 응답이 너무 늦습니다. 서버 부하나 네트워크(SSH 터널)를 확인하세요"),
+    (("connection refused", "연결하지 못했습니다", "connection reset", "remote end closed"), "서버가 꺼졌거나 SSH 터널이 끊겼습니다. `shorts server check` 로 확인하세요"),
+    (("401", "403", "unauthorized", "인증"), "인증에 실패했습니다. 서버에 --api-key 를 걸었다면 SHORTS_API_KEY 를 설정하세요"),
+    (("aspect", "duration", "short_edge", "invalid", "validation", "400"), "서버가 요청 값을 거절했습니다. 길이·화면비·gen_size 가 서버(모델) 사양 안인지 확인하세요"),
+]
+
+
+def explain_error(msg: str | None) -> str:
+    """서버 오류 문장에 한국어 설명을 붙인다."""
+    low = (msg or "").lower()
+    for keys, hint in ERROR_HINTS:
+        if any(k in low for k in keys):
+            return hint
+    return "서버가 생성에 실패했습니다. 서버 로그(serve.sh 가 남기는 로그)를 확인하세요"
 
 
 _H3 = None
@@ -112,12 +136,14 @@ class Http:
             msg = e.read()[:400].decode(errors="replace")
             e.close()
             if e.code in (401, 403):
-                raise BackendError(f"{method} {path}: 인증 실패(HTTP {e.code}). 서버에 --api-key 를 걸었다면 SHORTS_API_KEY 를 설정하세요") from e
-            raise BackendError(f"{method} {path}: HTTP {e.code} {msg}") from e
+                raise BackendError(f"{method} {path}: 인증 실패(HTTP {e.code}). 서버에 --api-key 를 걸었다면 SHORTS_API_KEY 를 설정하세요",
+                                   code=e.code) from e
+            raise BackendError(f"{method} {path}: HTTP {e.code} {msg}", retryable=e.code in (502, 503, 504), code=e.code) from e
         except urllib.error.URLError as e:
-            raise BackendError(f"서버에 연결하지 못했습니다 ({self.base}): {e.reason}. 주소·포트·SSH 터널을 확인하세요") from e
-        except TimeoutError as e:
-            raise BackendError(f"{method} {path}: 응답 시간 초과 ({self.base})") from e
+            raise BackendError(f"서버에 연결하지 못했습니다 ({self.base}): {e.reason}. 주소·포트·SSH 터널을 확인하세요",
+                               retryable=True) from e
+        except (TimeoutError, ConnectionError, http.client.HTTPException) as e:
+            raise BackendError(f"{method} {path}: 응답 시간 초과·연결 끊김 ({self.base}): {e}", retryable=True) from e
         if raw:
             return payload
         try:
@@ -244,7 +270,8 @@ class SGLangBackend:
         err = st.get("error")
         if isinstance(err, dict):
             err = err.get("message") or json.dumps(err, ensure_ascii=False)
-        return {"state": state, "progress": norm_progress(st.get("progress")), "error": err, "raw": st}
+        return {"state": state, "progress": norm_progress(st.get("progress")), "has_progress": st.get("progress") is not None,
+                "error": err, "raw": st}
 
     def download(self, rid: str, out: str, task: str = "t2va") -> str:
         data = self._http_for(task).request("GET", f"/v1/videos/{urllib.parse.quote(rid)}/content", raw=True)
@@ -328,7 +355,7 @@ class H3VideoBackend:
         scenes = j.get("scenes") or []
         prog = sum(norm_progress(x.get("progress")) for x in scenes) / len(scenes) if scenes else 0.0
         state = "done" if s == "completed" else "failed" if s == "failed" else "queued" if s == "pending" else "running"
-        return {"state": state, "progress": prog, "error": j.get("error"), "raw": j}
+        return {"state": state, "progress": prog, "has_progress": bool(scenes), "error": j.get("error"), "raw": j}
 
     def download(self, rid: str, out: str, task: str = "t2va") -> str:
         j = self.http.get_json(f"/api/jobs/{urllib.parse.quote(rid)}")

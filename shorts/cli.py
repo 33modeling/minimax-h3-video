@@ -17,35 +17,7 @@ from . import backends as B
 from . import plan as P
 from . import render as R
 from . import spec as S
-
-
-class Out:
-    """사람이 읽는 출력과 --json(줄마다 JSON 이벤트) 출력."""
-
-    def __init__(self, as_json: bool = False):
-        self.as_json = as_json
-        self._last = 0.0
-
-    def event(self, kind: str, msg: str = "", **data):
-        if self.as_json:
-            print(json.dumps({"event": kind, "message": msg, **data}, ensure_ascii=False), flush=True)
-        elif msg:
-            print(msg, flush=True)
-
-    def progress(self, stage: str, frac: float, extra: str = ""):
-        now = time.monotonic()
-        if self.as_json:
-            if frac >= 1 or now - self._last > 0.5:
-                self._last = now
-                print(json.dumps({"event": "progress", "stage": stage, "progress": round(frac, 3), "message": extra},
-                                 ensure_ascii=False), flush=True)
-            return
-        if frac >= 1 or now - self._last > 0.2:
-            self._last = now
-            bar = "#" * int(frac * 24)
-            end = "\n" if frac >= 1 else ""
-            sys.stdout.write(f"\r  {stage} [{bar:<24}] {frac * 100:5.1f}% {extra}{end}")
-            sys.stdout.flush()
+from .progress import Out, SceneBoard, fmt_time
 
 
 def load_spec(path: str) -> tuple[dict, Path]:
@@ -237,45 +209,138 @@ def reuse_scenes(work: Path, reqs: list[dict], server: str, fresh: bool, out: Ou
     return scenes
 
 
-def generate_all(state: dict, backend, out: Out, poll: float, timeout: float) -> list[str]:
-    files = []
-    n = len(state["scenes"])
-    for i, sc in enumerate(state["scenes"]):
-        target = sc["file"]
-        if Path(target).is_file() and Path(target).stat().st_size > 1000:
-            out.event("scene_skip", f"장면 {i + 1}/{n}: 이미 받음 ({target})", scene=i + 1)
-            files.append(target)
-            continue
-        req = sc["request"]
-        if not sc.get("remote_id"):
-            out.event("submit", f"장면 {i + 1}/{n}: {req['task']} 요청 보내는 중… ({backend.name})", scene=i + 1, task=req["task"])
-            sc["remote_id"] = backend.submit(req)
-            save_state(state)
-            out.event("submitted", f"  작업 ID: {sc['remote_id']}", scene=i + 1, job_id=sc["remote_id"])
+RETRIES = 5
 
-        t_start = time.monotonic()
 
-        def on_prog(st, i=i, t_start=t_start):
-            label = {"queued": "대기", "running": "생성", "done": "완료"}.get(st["state"], st["state"])
-            el = int(time.monotonic() - t_start)
-            out.progress(f"장면 {i + 1}/{n} {label}", st["progress"] if st["state"] != "done" else 1.0, f"경과 {el // 60}:{el % 60:02d}")
+class GenFailed(Exception):
+    def __init__(self, scene: int, job_id: str | None, msg: str, hint: str):
+        super().__init__(msg)
+        self.scene, self.job_id, self.hint = scene, job_id, hint
+
+
+def with_retry(fn, out: Out, board: SceneBoard | None, i: int | None, wait: float, sleep=time.sleep):
+    """연결 끊김·시간 초과·5xx 는 RETRIES 번까지 다시 한다("재시도 중(3/5)")."""
+    for k in range(1, RETRIES + 1):
         try:
-            B.wait_and_download(backend, sc["remote_id"], req["task"], target, poll=poll, timeout=timeout, on_progress=on_prog)
-        except KeyboardInterrupt:
-            print("", flush=True)
-            out.event("interrupted", f"중단했습니다. 서버 작업은 계속 돌고 있습니다. 작업 ID: {sc['remote_id']}\n"
-                      f"이어 받기: shorts resume {sc['remote_id']}", job_id=sc["remote_id"], state=state["state_path"])
-            raise SystemExit(130)
+            return fn()
+        except B.BackendError as e:
+            if not e.retryable or k == RETRIES:
+                raise
+            note = f"재시도 중({k}/{RETRIES}): {str(e)[:60]}"
+            if board is not None and i is not None:
+                board.set(i, note=note)
+                board.render(force=True)
+            else:
+                out.event("retry", f"  {note}", attempt=k, total=RETRIES)
+            sleep(min(30.0, max(1.0, wait) * k))
+    raise AssertionError("unreachable")
+
+
+def interrupted(out: Out, state: dict, job_id: str | None):
+    out._print("")
+    out.event("interrupted", f"중단했습니다. 서버 작업은 계속 돌고 있습니다. 작업 ID: {job_id}\n"
+              f"이어 받기: shorts resume {job_id}", job_id=job_id, state=state["state_path"])
+    raise SystemExit(130)
+
+
+def generate_all(state: dict, backend, out: Out, poll: float, timeout: float) -> list[str]:
+    """3단계(생성): 모든 장면을 요청하고 장면마다 한 줄로 상태를 보여 준다. 4단계(다운로드): 받은 길이도 확인."""
+    scenes = state["scenes"]
+    n = len(scenes)
+    need = [i for i, sc in enumerate(scenes) if not (Path(sc["file"]).is_file() and Path(sc["file"]).stat().st_size > 1000)]
+    out.stage("생성", f"장면 {n}개 · 장면당 최대 {fmt_time(timeout)} 대기")
+    board = SceneBoard(out, n)
+    for i, sc in enumerate(scenes):
+        if i not in need:
+            board.set(i, "done", 1.0, True, note="이미 받음", job_id=sc.get("remote_id"))
+    for i in need:
+        sc, req = scenes[i], scenes[i]["request"]
+        if sc.get("remote_id"):
+            out.event("submitted", f"  장면 {i + 1}/{n}: {req['task']} 이어서 확인 · 작업 ID: {sc['remote_id']}", scene=i + 1,
+                      job_id=sc["remote_id"], task=req["task"])
+        else:
+            sc["remote_id"] = backend.submit(req)   # 요청은 다시 보내지 않는다(서버에 같은 작업이 두 번 생길 수 있음)
+            sc["t_submit"] = time.time()
+            save_state(state)
+            out.event("submitted", f"  장면 {i + 1}/{n}: {req['task']} 요청함 · 작업 ID: {sc['remote_id']}", scene=i + 1,
+                      job_id=sc["remote_id"], task=req["task"])
+        board.set(i, "queued", job_id=sc["remote_id"], task=req["task"])
+    active = list(need)
+    t0 = time.monotonic()
+    deadline = timeout * max(1, len(need))
+    try:
+        while active:
+            for i in list(active):
+                sc = scenes[i]
+                st = with_retry(lambda sc=sc: backend.status(sc["remote_id"], sc["request"]["task"]), out, board, i, poll)
+                board.set(i, st["state"], st["progress"] if st["state"] != "done" else 1.0,
+                          st.get("has_progress", False) or st["state"] == "done", note="")
+                if st["state"] == "failed":
+                    err = st.get("error") or "이유 없음"
+                    sc["remote_id_failed"] = sc["remote_id"]
+                    sc["remote_id"] = None          # resume 하면 이 장면을 다시 요청한다
+                    save_state(state)
+                    board.finish()
+                    raise GenFailed(i + 1, sc["remote_id_failed"], f"장면 {i + 1} 생성 실패: {err}", B.explain_error(str(err)))
+                if st["state"] == "done":
+                    active.remove(i)
+                    sc["gen_seconds"] = round(board.elapsed(i), 1)
+            if not active:
+                break
+            if time.monotonic() - t0 > deadline:
+                board.finish()
+                rid = scenes[active[0]]["remote_id"]
+                raise B.BackendError(f"대기 시간 {fmt_time(deadline)} 를 넘었습니다 (장면 {active[0] + 1}, 작업 ID: {rid}). "
+                                     f"나중에 `shorts resume {rid}` 로 이어 받으세요")
+            # TTY 면 기다리는 동안 스피너·경과를 계속 갱신
+            t_next = time.monotonic() + poll
+            board.render()
+            while out.tty and not out.as_json and time.monotonic() < t_next - 0.2:
+                time.sleep(0.2)
+                board.render()
+            if not (out.tty and not out.as_json):
+                time.sleep(poll)
+        board.finish()
+    except KeyboardInterrupt:
+        board.finish()
+        rid = next((scenes[i]["remote_id"] for i in active if scenes[i].get("remote_id")), None)
+        interrupted(out, state, rid)
+    out.stage("다운로드", f"장면 {len(need)}개")
+    files = []
+    for i, sc in enumerate(scenes):
+        target, req = sc["file"], sc["request"]
+        if i in need:
+            try:
+                with_retry(lambda: backend.download(sc["remote_id"], target, req["task"]), out, None, None, poll)
+            except KeyboardInterrupt:
+                interrupted(out, state, sc["remote_id"])
+            sc["done"] = True
+            save_state(state)
         got = R.probe(target)
-        out.event("downloaded", f"  받음: {target} ({got['width']}×{got['height']}, {got['duration']:.1f}초)", scene=i + 1, file=target,
-                  duration=got["duration"], requested=req["duration"])
+        out.event("downloaded", f"  장면 {i + 1}/{n} 받음: {target} ({got['width']}×{got['height']}, {got['duration']:.1f}초)",
+                  scene=i + 1, file=target, duration=got["duration"], requested=req["duration"])
         if abs(got["duration"] - float(req["duration"])) > 0.5:
             out.event("warning", f"주의: 서버가 돌려준 영상 길이({got['duration']:.1f}초)가 요청({req['duration']}초)과 다릅니다. "
                       "합성은 받은 길이로 합니다", scene=i + 1)
-        sc["done"] = True
-        save_state(state)
         files.append(target)
     return files
+
+
+def print_summary(out: Out, state: dict | None, info: dict, output: str, fps: int):
+    out.end_stages()
+    total = time.monotonic() - out.t0
+    parts = " · ".join(f"{k} {fmt_time(v)}" for k, v in out.stage_times.items() if v >= 0.05)
+    lines = ["── 요약 ──", f"총 소요 {fmt_time(total)}" + (f" ({parts})" if parts else "")]
+    scenes = []
+    for i, sc in enumerate((state or {}).get("scenes", [])):
+        rid = sc.get("remote_id") or sc.get("remote_id_failed") or "-"
+        g = sc.get("gen_seconds")
+        scenes.append({"scene": i + 1, "task": sc["request"]["task"], "seconds": g, "job_id": rid})
+        lines.append(f"  장면 {i + 1}  {sc['request']['task']:<6} 생성 {fmt_time(g) if g is not None else '이전 실행'}  ({rid})")
+    lines.append(f"출력: {output}  {info['width']}×{info['height']} · {info['duration']:.1f}초 · {fps}fps · "
+                 f"오디오 {'있음' if info['hasAudio'] else '없음'}")
+    out.event("summary", "\n".join(lines), total_seconds=round(total, 1), stages={k: round(v, 1) for k, v in out.stage_times.items()},
+              scenes=scenes, output=output, **info)
 
 
 def compose_from_spec(spec: dict, generated: list[str], output: str, out: Out, dry_run=False):
@@ -284,19 +349,20 @@ def compose_from_spec(spec: dict, generated: list[str], output: str, out: Out, d
     plan = P.plan_timeline(norm, inputs)
     for w in plan["warnings"]:
         out.event("warning", f"주의: {w}", warning=w)
-    out.event("plan", "합성 계획: " + P.describe_plan(plan), plan=P.describe_plan(plan), duration=plan["duration"],
-              width=plan["width"], height=plan["height"], template=plan["template"])
+    out.stage("합성", P.describe_plan(plan))
+    out.event("plan", "", plan=P.describe_plan(plan), duration=plan["duration"], width=plan["width"], height=plan["height"],
+              template=plan["template"], fps=plan["fps"])
     if dry_run:
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             args = R.build_command(plan, paths, output, tmp)
         out.event("ffmpeg", "ffmpeg 명령:\n  " + " ".join(_q(x) for x in args), argv=args)
-        return plan
+        return plan, None
     R.render(plan, paths, output, on_progress=lambda f: out.progress("합성", f))
     info = R.probe(output)
     out.event("done", f"완성: {output} ({info['width']}×{info['height']}, {info['duration']:.1f}초, 오디오 {'있음' if info['hasAudio'] else '없음'})",
               output=output, **info)
-    return plan
+    return plan, info
 
 
 def _q(s: str) -> str:
@@ -317,6 +383,9 @@ def cmd_run(a) -> int:
             raise SystemExit("오류: 프롬프트 JSON 파일을 주세요: shorts run prompt.json [source.mp4]")
         spec, root = load_spec(a.files[0])
         extra = a.files[1:]
+    uses_ai = bool(spec.get("prompt") or spec.get("scenes"))
+    out.plan_stages(["검증", "서버 연결", "생성", "다운로드", "합성"] if uses_ai else ["검증", "합성"])
+    out.stage("검증", f"{a.files[0] if a.files and not a.idea else '기획 결과'}" + (f" + 소스 {len(extra)}개" if extra else ""))
     spec = apply_overrides(spec, a)
     # 두 번째 파일(소스 영상): 명세가 같은 이름으로 가리키면 그 자리, 아니면 sources 로 — 검증 전에 붙인다
     spec = S.attach_files(spec, [str(Path(f).resolve()) for f in extra])
@@ -354,6 +423,7 @@ def cmd_run(a) -> int:
                     ref_durs[m["path"]] = R.probe(m["path"])["duration"]
         backend = None
         if not a.dry_run:  # 서버 종류를 먼저 알아내야 H3 한도를 적용할지 정할 수 있다(vLLM 은 적용 안 함)
+            out.stage("서버 연결", norm["server"] + (f" (참조 모드: {norm['ref_server']})" if norm["ref_server"] else ""))
             backend = B.make_backend(norm["backend"], norm["server"], os.environ.get("SHORTS_API_KEY"), stager_from(a),
                                      norm["model"], norm["ref_server"])
         bname = backend.name if backend else norm["backend"]
@@ -373,7 +443,9 @@ def cmd_run(a) -> int:
             fake = [str(Path(output + ".parts") / f"scene{i + 1:02d}.mp4") for i in range(len(reqs))]
             out.event("dry_run", "생성 영상이 생기면 이 영상들로 합성합니다: " + ", ".join(fake))
             return 0
-        out.event("backend", f"AI 서버: {norm['server']} ({backend.name})", backend=backend.name)
+        out.event("backend", f"  서버 종류: {backend.name} · 주소: {norm['server']}"
+                  + (f" · 참조 모드(ref2va): {norm['ref_server']}" if norm["ref_server"] and backend.name != "h3video" else ""),
+                  backend=backend.name, server=norm["server"], ref_server=norm["ref_server"])
         gse = S.gen_short_edge(norm.get("gen_size"))
         if backend.name == "h3video" and gse not in (None, B.H3_SHORT_EDGE):
             out.event("warning", f"주의: h3video 웹 서버는 생성 해상도를 짧은 변 {B.H3_SHORT_EDGE}px 로 고정합니다(gen_size {gse} 무시)")
@@ -382,7 +454,9 @@ def cmd_run(a) -> int:
                  "scenes": reuse_scenes(work, reqs, norm["server"], fresh=a.fresh, out=out)}
         save_state(state)
         generated = generate_all(state, backend, out, norm["poll"], norm["timeout"])
-    compose_from_spec(spec, generated, output, out, dry_run=a.dry_run)
+    plan, info = compose_from_spec(spec, generated, output, out, dry_run=a.dry_run)
+    if info:
+        print_summary(out, state if norm["usesAi"] else None, info, output, plan["fps"])
     return 0
 
 
@@ -400,11 +474,14 @@ def cmd_resume(a) -> int:
     server = a.server or state["server"]
     backend = B.make_backend(state["backend"], server, os.environ.get("SHORTS_API_KEY"), stager_from(a), state.get("model"),
                              state.get("ref_server"))
-    out.event("resume", f"이어 받기: {p} ({backend.name}, {server})")
+    out.plan_stages(["서버 연결", "생성", "다운로드"] + (["합성"] if state["kind"] == "run" else []))
+    out.stage("서버 연결", f"{server} · 이어 받기 {p}")
+    out.event("backend", f"  서버 종류: {backend.name} · 주소: {server}", backend=backend.name, server=server)
     norm = S.normalize_spec(state["spec"])
     files = generate_all(state, backend, out, a.poll or norm["poll"], a.timeout or norm["timeout"])
     if state["kind"] == "run":
-        compose_from_spec(state["spec"], files, state["output"], out)
+        plan, info = compose_from_spec(state["spec"], files, state["output"], out)
+        print_summary(out, state, info, state["output"], plan["fps"])
     elif state["kind"] == "gen":
         import shutil
         shutil.copy2(files[0], state["output"])
@@ -432,7 +509,11 @@ def cmd_gen(a) -> int:
     sc = S.ai_scenes(spec)[0]
     req = scene_request(sc, S.normalize_spec(spec))
     ref_durs = {m["path"]: R.probe(m["path"])["duration"] for m in req["refs"] if B.media_kind(m["path"]) == "video"}
+    out.plan_stages(["검증", "서버 연결", "생성", "다운로드"])
+    out.stage("검증", "")
+    out.stage("서버 연결", server)
     backend = B.make_backend(a.backend, server, os.environ.get("SHORTS_API_KEY"), stager_from(a), a.model, a.ref_server)
+    out.event("backend", f"  서버 종류: {backend.name} · 주소: {server}", backend=backend.name, server=server)
     lim = B.check_h3_limits(req, ref_durs)
     if lim and backend.name != "vllm":
         out.event("invalid", "H3 사양 한도를 넘습니다:\n  - " + "\n  - ".join(lim), errors=lim)
@@ -447,12 +528,16 @@ def cmd_gen(a) -> int:
     save_state(state)
     files = generate_all(state, backend, out, a.poll, a.timeout)
     os.replace(files[0], output)
-    out.event("done", f"완성: {output}", output=output, **R.probe(output))
+    info = R.probe(output)
+    out.event("done", f"완성: {output}", output=output, **info)
+    print_summary(out, state, info, output, info.get("fps") or 24)
     return 0
 
 
 def cmd_compose(a) -> int:
     out = Out(a.json)
+    out.plan_stages(["검증", "합성"])
+    out.stage("검증", "")
     spec: dict = {"base": a.base, "sources": a.source or [], "template": a.template, "resolution": a.resolution, "fit": a.fit,
                   "max_duration": a.max_duration or 60, "fps": a.fps, "quality": a.quality}
     if not a.base:
@@ -476,7 +561,9 @@ def cmd_compose(a) -> int:
     if miss:
         out.event("invalid", "파일이 없습니다:\n  - " + "\n  - ".join(miss), errors=miss)
         return 2
-    compose_from_spec(spec, [], str(Path(a.output).resolve()), out, dry_run=a.dry_run)
+    plan, info = compose_from_spec(spec, [], str(Path(a.output).resolve()), out, dry_run=a.dry_run)
+    if info:
+        print_summary(out, None, info, str(Path(a.output).resolve()), plan["fps"])
     return 0
 
 
@@ -643,11 +730,20 @@ def main(argv=None) -> int:
         a.backend = None
     try:
         return a.fn(a) or 0
-    except (B.BackendError, R.RenderError, ValueError) as e:
+    except GenFailed as e:
+        tip = f"shorts resume {e.job_id}"
         if getattr(a, "json", False):
-            print(json.dumps({"event": "error", "message": str(e)}, ensure_ascii=False), flush=True)
+            print(json.dumps({"event": "error", "message": str(e), "hint": e.hint, "scene": e.scene, "job_id": e.job_id,
+                              "resume": tip}, ensure_ascii=False), flush=True)
         else:
-            print(f"오류: {e}", file=sys.stderr)
+            print(f"오류: {e}\n  설명: {e.hint}\n  다시 시도: {tip}  (실패한 장면을 다시 요청하고 이어서 합성)", file=sys.stderr)
+        return 1
+    except (B.BackendError, R.RenderError, ValueError) as e:
+        hint = B.explain_error(str(e)) if isinstance(e, B.BackendError) else None
+        if getattr(a, "json", False):
+            print(json.dumps({"event": "error", "message": str(e), "hint": hint}, ensure_ascii=False), flush=True)
+        else:
+            print(f"오류: {e}" + (f"\n  설명: {hint}" if hint else ""), file=sys.stderr)
         return 1
 
 

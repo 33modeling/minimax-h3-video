@@ -53,7 +53,7 @@ def probe(path: str) -> dict:
     """ffprobe 로 길이·크기·오디오 유무를 읽는다."""
     import json
     r = subprocess.run([ffprobe_bin(), "-v", "error", "-show_entries",
-                        "format=duration:stream=codec_type,width,height,duration:stream_side_data=rotation",
+                        "format=duration:stream=codec_type,width,height,duration,avg_frame_rate:stream_side_data=rotation",
                         "-of", "json", str(path)], capture_output=True, text=True)
     if r.returncode != 0:
         raise RenderError(f"영상 정보를 읽지 못했습니다: {path} ({r.stderr.strip()[:200]})")
@@ -69,7 +69,14 @@ def probe(path: str) -> dict:
             rot = int(sd["rotation"])
     if abs(rot) in (90, 270):
         w, h = h, w
-    return {"duration": round(dur, 3), "width": w, "height": h, "hasAudio": a is not None, "hasVideo": v is not None}
+    fps = None
+    try:
+        num, den = str((v or {}).get("avg_frame_rate") or "0/1").split("/")
+        fps = round(int(num) / int(den), 3) if int(den) else None
+    except ValueError:
+        pass
+    return {"duration": round(dur, 3), "width": w, "height": h, "hasAudio": a is not None, "hasVideo": v is not None,
+            "fps": fps or None}
 
 
 def _esc_path(p: str) -> str:
