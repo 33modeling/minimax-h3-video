@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a0b0d">
+  <meta name="robots" content="noindex">
+  <title>숏폼 제작</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='8' y='2' width='16' height='28' rx='4' fill='%2356e0b8'/%3E%3Cpath d='M14 11l6 5-6 5z' fill='%2304241b'/%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="top">
+    <a class="home" href="/">← Home</a>
+    <span class="top-title">숏폼 제작</span>
+    <span class="local-badge" title="파일은 업로드되지 않습니다">기기 안에서만 처리</span>
+  </header>
+  <main id="app">
+    <section class="intro">
+      <span class="kicker">SHORT-FORM STUDIO</span>
+      <h1>작업 JSON 하나로 9:16 숏폼 만들기</h1>
+      <p>가로 영상은 가운데를 자르거나 흐린 배경으로 채우고, 제목 훅·자막·배경음을 얹어 MP4로 내려받습니다.</p>
+      <p class="privacy" id="privacy">고른 파일은 이 기기 밖으로 보내지 않습니다. 합성과 인코딩은 모두 이 브라우저 안에서 합니다.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="inputs-h">
+      <h2 id="inputs-h" class="sr-only">파일 고르기</h2>
+      <div class="slots">
+        <label class="slot" for="jsonFile">
+          <span class="slot-num">1</span>
+          <span class="slot-text"><strong>작업 JSON</strong><small>프롬프트·템플릿·자막을 적은 명세 파일</small></span>
+          <input id="jsonFile" type="file" accept=".json,application/json">
+          <span class="slot-file" id="jsonName">선택 안 함</span>
+        </label>
+        <label class="slot" for="mediaFiles">
+          <span class="slot-num">2</span>
+          <span class="slot-text"><strong>소스 영상 <em class="optional">선택 · 없어도 됨</em></strong><small>JSON이 가리키는 영상·배경음을 함께 고르세요. 여러 개 가능</small></span>
+          <input id="mediaFiles" type="file" accept="video/*,audio/*,image/*" multiple>
+          <span class="slot-file" id="mediaName">선택 안 함</span>
+        </label>
+      </div>
+      <div class="row-links">
+        <button type="button" class="link" id="exampleBtn">예시 JSON 받기</button>
+        <details class="json-edit" id="jsonDetails">
+          <summary>JSON 직접 보기·고치기</summary>
+          <textarea id="jsonText" spellcheck="false" rows="12" aria-label="작업 JSON 내용" placeholder='{ "base": "base.mp4", "sources": ["clip1.mp4"], "template": "cutaway", "title": "제목", "captions": ["첫 자막"] }'></textarea>
+        </details>
+      </div>
+      <ul class="file-list" id="fileList" aria-live="polite"></ul>
+      <div class="messages" id="messages" aria-live="polite"></div>
+    </section>
+
+    <section class="panel stage" aria-labelledby="preview-h">
+      <div class="preview-wrap">
+        <canvas id="preview" width="270" height="480" aria-label="저해상도 미리보기"></canvas>
+        <div class="preview-empty" id="previewEmpty">JSON과 영상을 고르면<br>여기에 미리보기가 나옵니다</div>
+      </div>
+      <div class="stage-side">
+        <h2 id="preview-h">미리보기 <small>저해상도</small></h2>
+        <p class="plan-line" id="planLine">아직 계획이 없습니다.</p>
+        <div class="scrub">
+          <input id="scrub" type="range" min="0" max="1000" value="0" disabled aria-label="미리보기 시각">
+          <span id="scrubTime">0.0초</span>
+        </div>
+        <button type="button" id="playBtn" class="ghost" disabled>미리보기 재생</button>
+        <div class="engine" id="engineNote"></div>
+        <button type="button" id="makeBtn" class="primary" disabled>만들기</button>
+        <div class="progress" id="progressBox" hidden>
+          <div class="bar"><div id="progressBar"></div></div>
+          <div class="progress-row"><span id="progressText">준비 중…</span><button type="button" id="cancelBtn" class="ghost small">취소</button></div>
+        </div>
+        <div class="result" id="resultBox" hidden>
+          <video id="resultVideo" controls playsinline></video>
+          <a id="downloadLink" class="primary as-button" download>내려받기</a>
+          <p class="result-meta" id="resultMeta"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="foot">MP4 인코딩: mediabunny(MPL-2.0) · WebCodecs. 라이선스는 저장소의 THIRD_PARTY_NOTICES.md에 있습니다.</footer>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
