@@ -1,5 +1,5 @@
 // 작업 명세(JSON) 검증·정규화. shorts/spec.py 와 같은 규칙을 쓴다(테스트가 둘을 맞대어 본다).
-import schema from '../../schema/job.schema.json';
+import schema from '../../schema/job.schema.json' with { type: 'json' };
 
 export { schema };
 
