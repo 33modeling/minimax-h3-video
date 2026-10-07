@@ -80,6 +80,7 @@ class Http:
                 payload = r.read()
         except urllib.error.HTTPError as e:
             msg = e.read()[:400].decode(errors="replace")
+            e.close()
             if e.code in (401, 403):
                 raise BackendError(f"{method} {path}: 인증 실패(HTTP {e.code}). 서버에 --api-key 를 걸었다면 SHORTS_API_KEY 를 설정하세요") from e
             raise BackendError(f"{method} {path}: HTTP {e.code} {msg}") from e

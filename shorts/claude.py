@@ -120,6 +120,7 @@ def _post(url: str, body: dict, api_key: str, timeout: float) -> dict:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         detail = e.read()[:300].decode(errors="replace")
+        e.close()
         if e.code == 401:
             raise PlanError("Anthropic API 키가 맞지 않습니다(401). ANTHROPIC_API_KEY 를 확인하세요") from e
         if e.code == 429:

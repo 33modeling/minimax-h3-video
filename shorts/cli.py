@@ -175,6 +175,30 @@ def safe_id(rid: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in rid)
 
 
+def reuse_scenes(work: Path, reqs: list[dict], server: str, fresh: bool, out: Out) -> list[dict]:
+    """같은 출력으로 다시 돌리면 요청이 같은 장면은 이어 쓰고(받은 파일·작업 ID), 달라진 장면은 새로 만든다."""
+    old = {}
+    sp = work / "state.json"
+    if sp.is_file() and not fresh:
+        try:
+            old = json.loads(sp.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            old = {}
+    scenes = []
+    for i, r in enumerate(reqs):
+        f = work / f"scene{i + 1:02d}.mp4"
+        prev = (old.get("scenes") or [])[i] if i < len(old.get("scenes") or []) else None
+        if prev and prev.get("request") == r and old.get("server") == server:
+            if prev.get("remote_id") or f.is_file():
+                out.event("reuse", f"장면 {i + 1}: 지난 실행과 요청이 같아 이어 씁니다 (--fresh 로 새로 만들기)", scene=i + 1)
+            scenes.append(prev)
+            continue
+        if f.exists():
+            f.unlink()
+        scenes.append({"request": r, "file": str(f), "remote_id": None})
+    return scenes
+
+
 def generate_all(state: dict, backend, out: Out, poll: float, timeout: float) -> list[str]:
     files = []
     n = len(state["scenes"])
@@ -201,7 +225,12 @@ def generate_all(state: dict, backend, out: Out, poll: float, timeout: float) ->
             out.event("interrupted", f"중단했습니다. 서버 작업은 계속 돌고 있습니다. 작업 ID: {sc['remote_id']}\n"
                       f"이어 받기: shorts resume {sc['remote_id']}", job_id=sc["remote_id"], state=state["state_path"])
             raise SystemExit(130)
-        out.event("downloaded", f"  받음: {target}", scene=i + 1, file=target)
+        got = R.probe(target)
+        out.event("downloaded", f"  받음: {target} ({got['width']}×{got['height']}, {got['duration']:.1f}초)", scene=i + 1, file=target,
+                  duration=got["duration"], requested=req["duration"])
+        if abs(got["duration"] - float(req["duration"])) > 0.5:
+            out.event("warning", f"주의: 서버가 돌려준 영상 길이({got['duration']:.1f}초)가 요청({req['duration']}초)과 다릅니다. "
+                      "합성은 받은 길이로 합니다", scene=i + 1)
         sc["done"] = True
         save_state(state)
         files.append(target)
@@ -248,6 +277,8 @@ def cmd_run(a) -> int:
         spec, root = load_spec(a.files[0])
         extra = a.files[1:]
     spec = apply_overrides(spec, a)
+    # 두 번째 파일(소스 영상): 명세가 같은 이름으로 가리키면 그 자리, 아니면 sources 로 — 검증 전에 붙인다
+    spec = S.attach_files(spec, [str(Path(f).resolve()) for f in extra])
     errors, warnings = S.check_spec(spec)
     if errors:
         out.event("invalid", "명세 오류:\n  - " + "\n  - ".join(errors), errors=errors)
@@ -298,7 +329,7 @@ def cmd_run(a) -> int:
         out.event("backend", f"AI 서버: {norm['server']} ({backend.name})", backend=backend.name)
         state = {"kind": "run", "state_path": str(work / "state.json"), "server": norm["server"], "ref_server": norm["ref_server"],
                  "backend": backend.name, "model": norm["model"], "spec": spec, "output": output,
-                 "scenes": [{"request": r, "file": str(work / f"scene{i + 1:02d}.mp4"), "remote_id": None} for i, r in enumerate(reqs)]}
+                 "scenes": reuse_scenes(work, reqs, norm["server"], fresh=a.fresh, out=out)}
         save_state(state)
         generated = generate_all(state, backend, out, norm["poll"], norm["timeout"])
     compose_from_spec(spec, generated, output, out, dry_run=a.dry_run)
@@ -485,6 +516,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--resolution", choices=["720x1280", "1080x1920"])
     r.add_argument("--fit", choices=["crop", "blur"])
     r.add_argument("--max-duration", dest="max_duration", type=float)
+    r.add_argument("--fresh", action="store_true", help="지난 실행에서 받은 장면을 쓰지 않고 새로 생성")
     r.add_argument("--dry-run", action="store_true", help="계획만 보여 줌(요청 본문, ffmpeg 명령)")
     r.add_argument("--json", action="store_true", help="진행 상황을 줄마다 JSON 으로")
     add_server_opts(r)

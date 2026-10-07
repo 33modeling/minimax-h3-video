@@ -60,6 +60,7 @@ class VideoState:
         self.n = 0
         self.lock = threading.Lock()
         self.api_key: str | None = None
+        self.max_seconds = 15.0
 
 
 def make_video_handler(state: VideoState):
@@ -150,7 +151,7 @@ def make_video_handler(state: VideoState):
                 state.n += 1
                 vid = f"video_{state.n:04d}"
                 colors = ["orange", "magenta", "cyan", "white"]
-                state.videos[vid] = {"status": "queued", "progress": 0.0, "polls": 0, "seconds": min(seconds, 6.0),
+                state.videos[vid] = {"status": "queued", "progress": 0.0, "polls": 0, "seconds": min(seconds, state.max_seconds),
                                      "color": colors[(state.n - 1) % len(colors)],
                                      "fail": bool(state.fail_prompt and state.fail_prompt in prompt)}
                 state.requests.append({"kind": kind, "body": body, "auth": self.headers.get("Authorization")})
