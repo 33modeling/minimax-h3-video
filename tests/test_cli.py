@@ -51,7 +51,8 @@ class Base(unittest.TestCase):
         cls.tmp = Path(tempfile.mkdtemp(prefix="shorts-test-"))
         cls.media = cls.tmp / "media"
         subprocess.run([str(ROOT / "tests" / "fixtures" / "make_media.sh"), str(cls.media)], check=True, capture_output=True)
-        cls.state_env = {"XDG_STATE_HOME": str(cls.tmp / "state"), "SHORTS_SERVER": "", "SHORTS_API_KEY": ""}
+        cls.state_env = {"XDG_STATE_HOME": str(cls.tmp / "state"), "SHORTS_SERVER": "", "SHORTS_API_KEY": "",
+                         "SHORTS_REF_SERVER": "", "H3_ENDPOINT": "", "H3_REF_ENDPOINT": ""}
 
     @classmethod
     def tearDownClass(cls):
@@ -288,7 +289,8 @@ class GenTest(Base):
         self.st.steps = 10_000
         p = self.write_job("ai-resume", {"prompt": "slow", "duration": 4, "timeout": 10})
         try:
-            with mock.patch.object(B.time, "monotonic", side_effect=[0.0] + [100.0] * 50):
+            import itertools
+            with mock.patch.object(B.time, "monotonic", side_effect=(float(x) for x in itertools.count(0, 100))):
                 code, out = run_cli("run", p, "--poll", "0.2", env=self.env())
         finally:
             self.st.steps = 2
@@ -306,6 +308,42 @@ class GenTest(Base):
         self.assertEqual(code, 130)
         self.assertIn("작업 ID: video_", out)
         self.assertIn("shorts resume video_", out)
+
+
+class H3RoutingTest(Base):
+    """cluster_env.sh 처럼 H3_ENDPOINT(30010 역할)·H3_REF_ENDPOINT(30011 역할)만 잡혀 있을 때: 소스 없으면 fl2va 쪽, 있으면 ref2va 쪽."""
+
+    def test_routing_and_h3video_body(self):
+        fl, fl_st, fl_url = F.start_video("sglang", steps=1)
+        ref, ref_st, ref_url = F.start_video("sglang", steps=1)
+        env = {**self.state_env, "H3_ENDPOINT": fl_url, "H3_REF_ENDPOINT": ref_url}
+        try:
+            p1 = self.write_job("route-t2v", {"prompt": "no source", "duration": 4})
+            self.assertEqual(run_cli("run", p1, "--poll", "0.2", env=env)[0], 0)
+            p2 = self.write_job("route-ref", {"prompt": "with source", "duration": 4,
+                                              "sources": [{"path": self.m("base.mp4"), "start": 1, "end": 4}]})
+            code, out = run_cli("run", p2, "--poll", "0.2", env=env)
+            self.assertEqual(code, 0, out)
+        finally:
+            fl.shutdown()
+            ref.shutdown()
+        self.assertEqual([r["body"]["task"] for r in fl_st.requests], ["t2va"])
+        self.assertEqual([r["body"]["task"] for r in ref_st.requests], ["ref2va"])
+        cond = ref_st.requests[0]["body"]["conditions"][0]
+        self.assertEqual(set(cond), {"type", "uri", "role"})          # h3video Condition 과 같은 필드
+        self.assertIn("ref01-1.mp4", cond["uri"])                      # start/end 구간은 잘라서 보냄
+        # 같은 venv 에 h3video 가 있으면 그 VideoRequest 로 만든 본문과 내장 구현이 같아야 한다
+        if (H3_REPO / "src").is_dir():
+            sys.path.insert(0, str(H3_REPO / "src"))
+            req = {"prompt": "p", "task": "fl2va", "duration": 6, "ratio": "9:16", "seed": 2, "refs": [], "image": "/x/f.png"}
+            bk = B.SGLangBackend("http://x", stager=B.Stager())
+            B._H3 = None
+            with_h3 = bk.build_body(req, stage=False)
+            B._H3 = False
+            builtin = bk.build_body(req, stage=False)
+            B._H3 = None
+            self.assertIsNotNone(B.h3video_client())
+            self.assertEqual(with_h3, builtin)
 
 
 @unittest.skipUnless((H3_REPO / "src" / "h3video" / "web.py").is_file(), "minimax-h3-video 저장소 없음")

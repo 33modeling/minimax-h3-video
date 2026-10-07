@@ -10,7 +10,7 @@ export const DEFAULTS = {
   seed: 0,
   backend: 'auto',
   poll: 3,
-  timeout: 3600,
+  timeout: 1800,
   fit: 'blur',
   resolution: '720x1280',
   max_duration: 60,

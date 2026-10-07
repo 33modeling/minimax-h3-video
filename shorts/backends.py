@@ -25,13 +25,33 @@ H3_SHORT_EDGE = 768
 VLLM_SHORT_EDGE = 720
 H3_TASKS = {"t2va": "텍스트 → 영상+오디오", "fl2va": "첫 프레임 이미지 + 텍스트 → 영상+오디오",
             "ref2va": "참조(이미지≤9·영상≤3·오디오≤3, 합계≤12) + 텍스트 → 영상+오디오"}
-H3_LIMITS = {"duration": (4, 15), "ref_video": 3, "ref_image": 9, "ref_total": 12, "ref_clip_seconds": (2, 15),
-             "ref_clip_total_seconds": 15}
+# MiniMax-H3 공식 사양(minimax-h3-video/src/h3video/spec.py): 장면 4~15초, 24fps, 짧은 변 768px.
+# 생성 영상은 짧은 변 768 기반(9:16 이면 약 768×1366)이고, 합성 단계에서 720×1280 / 1080×1920 으로 맞춘다.
+H3_LIMITS = {"duration": (4, 15), "fps": 24, "short_edge": 768, "ref_video": 3, "ref_image": 9, "ref_audio": 3, "ref_total": 12,
+             "ref_clip_seconds": (2, 15), "ref_clip_total_seconds": 15}
 ASPECTS = ["9:16", "16:9", "1:1", "4:3", "3:4", "21:9", "auto"]
 
 
 class BackendError(RuntimeError):
     pass
+
+
+_H3 = None
+
+
+def h3video_client():
+    """같은 venv 에 minimax-h3-video 가 설치돼 있으면(pip install -e) 그 client 모듈을 쓴다. 없으면 None(내장 구현)."""
+    global _H3
+    if _H3 is None:
+        if os.environ.get("SHORTS_NO_H3VIDEO"):
+            _H3 = False
+        else:
+            try:
+                from h3video import client as h3  # type: ignore
+                _H3 = h3
+            except Exception:  # noqa: BLE001
+                _H3 = False
+    return _H3 or None
 
 
 def size_for_ratio(ratio: str, short_edge: int) -> str:
@@ -161,21 +181,36 @@ class SGLangBackend:
         self.model = model
 
     def build_body(self, req: dict, stage=True) -> dict:
-        conds = []
+        """h3video(minimax-h3-video) 의 client.VideoRequest 와 같은 JSON. 그 패키지가 import 되면 그것으로 만든다."""
         uri = self.stager.uri if stage else (lambda p: f"<{Path(str(p)).name} 경로>")
+        conds = []
         if req["task"] == "fl2va" and req.get("image"):
-            conds.append({"type": "image", "uri": uri(req["image"]), "role": "keyframe", "frame_index": 0})
+            conds.append(("image", uri(req["image"]), "keyframe", 0))
         if req["task"] == "ref2va":
             for r in req.get("refs", []):
-                c = {"type": media_kind(r["path"]), "uri": uri(r["path"]), "role": "reference"}
-                if r.get("start"):
-                    c["start_time_seconds"] = float(r["start"])
-                conds.append(c)
+                conds.append((media_kind(r["path"]), uri(r["path"]), "reference", None))
             if req.get("image"):
-                conds.append({"type": "image", "uri": uri(req["image"]), "role": "reference"})
-        body = {"task": req["task"], "prompt": req["prompt"], "conditions": conds,
-                "target": {"short_edge": H3_SHORT_EDGE, "aspect_ratio": req["ratio"], "duration_seconds": int(round(req["duration"]))},
-                "seed": int(req.get("seed") or 0)}
+                conds.append(("image", uri(req["image"]), "reference", None))
+        h3 = h3video_client()
+        if h3:
+            vr = h3.VideoRequest(prompt=req["prompt"], task=req["task"], duration_seconds=int(round(req["duration"])),
+                                 aspect_ratio=req["ratio"], short_edge=H3_SHORT_EDGE, seed=int(req.get("seed") or 0),
+                                 conditions=[h3.Condition(t, u, role, fi) for t, u, role, fi in conds])
+            try:
+                vr.validate()
+            except h3.H3Error as e:
+                raise BackendError(f"H3 요청 검사 실패: {e}") from e
+            body = vr.to_json()
+        else:
+            cj = []
+            for t, u, role, fi in conds:
+                d = {"type": t, "uri": u, "role": role}
+                if fi is not None:
+                    d["frame_index"] = fi
+                cj.append(d)
+            body = {"task": req["task"], "prompt": req["prompt"], "conditions": cj,
+                    "target": {"short_edge": H3_SHORT_EDGE, "aspect_ratio": req["ratio"], "duration_seconds": int(round(req["duration"]))},
+                    "seed": int(req.get("seed") or 0)}
         if self.model:
             body["model"] = self.model
         return body
@@ -368,8 +403,8 @@ def server_check(server: str, backend: str = "auto", api_key: str | None = None)
             out["health"] = str(e)
         if name == "sglang":
             out["modes"] = H3_TASKS
-            out["limits"] = {"duration": list(H3_LIMITS["duration"]), "aspect_ratios": ASPECTS,
-                             "ref_limits": {"video": 3, "image": 9, "audio": 3, "total": 12}}
+            out["limits"] = {"duration": list(H3_LIMITS["duration"]), "fps": H3_LIMITS["fps"], "short_edge": H3_LIMITS["short_edge"],
+                             "aspect_ratios": ASPECTS, "ref_limits": {"video": 3, "image": 9, "audio": 3, "total": 12}}
         else:
             out["modes"] = {"t2v": "텍스트 → 영상", "i2v": "input_reference 1개(이미지/영상) + 텍스트 → 영상"}
             out["limits"] = {"duration": "모델마다 다름", "ref_limits": {"total": 1}}
@@ -387,6 +422,12 @@ def check_h3_limits(scene: dict, ref_durations: dict[str, float] | None = None) 
     vids = [r for r in scene.get("refs", []) if media_kind(r["path"]) == "video"]
     if len(vids) > H3_LIMITS["ref_video"]:
         errs.append(f"참조 영상은 최대 {H3_LIMITS['ref_video']}개입니다 (지금 {len(vids)}개)")
+    imgs = [r for r in scene.get("refs", []) if media_kind(r["path"]) == "image"]
+    total = len(scene.get("refs", [])) + (1 if scene.get("task") == "ref2va" and scene.get("image") else 0)
+    if len(imgs) > H3_LIMITS["ref_image"]:
+        errs.append(f"참조 이미지는 최대 {H3_LIMITS['ref_image']}개입니다 (지금 {len(imgs)}개)")
+    if total > H3_LIMITS["ref_total"]:
+        errs.append(f"ref2va 참조는 합계 {H3_LIMITS['ref_total']}개 이하입니다 (지금 {total}개)")
     if ref_durations:
         total = 0.0
         a, b = H3_LIMITS["ref_clip_seconds"]

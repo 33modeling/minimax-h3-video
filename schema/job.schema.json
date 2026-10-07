@@ -37,7 +37,7 @@
     "ref_server": { "title": "참조 모드 서버 주소", "type": "string", "pattern": "^https?://" },
     "backend": { "title": "AI 서버 종류", "type": "string", "enum": ["auto", "sglang", "vllm", "h3video"] },
     "poll": { "title": "상태 확인 간격(초)", "type": "number", "minimum": 0.2, "maximum": 60 },
-    "timeout": { "title": "생성 대기 한도(초)", "type": "number", "minimum": 10, "maximum": 86400 },
+    "timeout": { "title": "장면당 생성 대기 한도(초)", "type": "number", "minimum": 10, "maximum": 86400 },
     "model": { "title": "모델 이름", "type": "string", "minLength": 1 },
     "template": { "title": "템플릿", "type": "string", "enum": ["cutaway", "split", "pip", "montage"] },
     "fit": { "title": "가로 영상 맞춤", "type": "string", "enum": ["crop", "blur"] },

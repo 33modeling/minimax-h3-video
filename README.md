@@ -6,4 +6,9 @@
 - **웹** — 33modeling 허브의 "숏폼 제작". 브라우저 안에서 합성(WebCodecs)한다.
 - 작업 명세 스키마: `schema/job.schema.json` (웹과 CLI 공용)
 
+```bash
+source minimax-h3-video/scripts/cluster_env.sh     # H3_ENDPOINT(30010)·H3_REF_ENDPOINT(30011)
+./bin/shorts run prompt.json [source.mp4]           # 검증 → H3 생성 → 9:16 합성 → short.mp4
+```
+
 자세한 사용법은 [USAGE.md](USAGE.md).

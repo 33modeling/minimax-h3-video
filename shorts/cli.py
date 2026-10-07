@@ -120,11 +120,36 @@ def apply_overrides(spec: dict, a) -> dict:
         spec["poll"] = a.poll
     if getattr(a, "timeout", None):
         spec["timeout"] = a.timeout
-    if not spec.get("server") and os.environ.get("SHORTS_SERVER"):
-        spec["server"] = os.environ["SHORTS_SERVER"]
-    if not spec.get("ref_server") and os.environ.get("SHORTS_REF_SERVER"):
-        spec["ref_server"] = os.environ["SHORTS_REF_SERVER"]
+    if not spec.get("server") and env_server():
+        spec["server"] = env_server()
+    if not spec.get("ref_server") and env_ref_server():
+        spec["ref_server"] = env_ref_server()
     return spec
+
+
+def env_server() -> str | None:
+    """SHORTS_SERVER, 없으면 minimax-h3-video 의 cluster_env.sh 가 내보내는 H3_ENDPOINT(fl2va, 30010)."""
+    return os.environ.get("SHORTS_SERVER") or os.environ.get("H3_ENDPOINT") or None
+
+
+def env_ref_server() -> str | None:
+    """SHORTS_REF_SERVER, 없으면 H3_REF_ENDPOINT(ref2va, 30011). 소스·참조가 있는 장면은 이쪽으로 보낸다."""
+    return os.environ.get("SHORTS_REF_SERVER") or os.environ.get("H3_REF_ENDPOINT") or None
+
+
+def cut_refs(reqs: list[dict], work: Path) -> None:
+    """참조 영상에 start/end 가 있으면 그 구간만 잘라 보낸다(h3video 요청 형식에는 구간 필드가 없다)."""
+    for i, r in enumerate(reqs):
+        for j, m in enumerate(r["refs"]):
+            if (m.get("start") or m.get("end") is not None) and media_kind_is_video(m["path"]):
+                work.mkdir(parents=True, exist_ok=True)
+                dst = work / f"ref{i + 1:02d}-{j + 1}.mp4"
+                R.cut_clip(m["path"], m.get("start") or 0, m.get("end"), str(dst))
+                r["refs"][j] = {"path": str(dst), "start": 0, "end": None}
+
+
+def media_kind_is_video(path: str) -> bool:
+    return B.media_kind(path) == "video"
 
 
 def scene_request(sc: dict, norm: dict) -> dict:
@@ -215,9 +240,12 @@ def generate_all(state: dict, backend, out: Out, poll: float, timeout: float) ->
             save_state(state)
             out.event("submitted", f"  작업 ID: {sc['remote_id']}", scene=i + 1, job_id=sc["remote_id"])
 
-        def on_prog(st, i=i):
+        t_start = time.monotonic()
+
+        def on_prog(st, i=i, t_start=t_start):
             label = {"queued": "대기", "running": "생성", "done": "완료"}.get(st["state"], st["state"])
-            out.progress(f"장면 {i + 1}/{n} {label}", st["progress"] if st["state"] != "done" else 1.0)
+            el = int(time.monotonic() - t_start)
+            out.progress(f"장면 {i + 1}/{n} {label}", st["progress"] if st["state"] != "done" else 1.0, f"경과 {el // 60}:{el % 60:02d}")
         try:
             B.wait_and_download(backend, sc["remote_id"], req["task"], target, poll=poll, timeout=timeout, on_progress=on_prog)
         except KeyboardInterrupt:
@@ -299,10 +327,13 @@ def cmd_run(a) -> int:
     if norm["usesAi"]:
         scenes = S.ai_scenes(spec)
         if not norm["server"]:
-            out.event("invalid", "AI 생성에는 서버 주소가 필요합니다: JSON 의 server, --server 옵션, SHORTS_SERVER 환경변수 중 하나")
+            out.event("invalid", "AI 생성에는 서버 주소가 필요합니다: JSON 의 server, --server, SHORTS_SERVER 또는 H3_ENDPOINT"
+                      "(minimax-h3-video 의 scripts/cluster_env.sh 를 source 하면 잡힘)")
             return 2
         work = Path(output + ".parts")
         reqs = [scene_request(sc, norm) for sc in scenes]
+        if not a.dry_run:
+            cut_refs(reqs, work)
         ref_durs = {}
         for r in reqs:
             for m in r["refs"]:
@@ -364,9 +395,10 @@ def cmd_resume(a) -> int:
 
 def cmd_gen(a) -> int:
     out = Out(a.json)
-    server = a.server or os.environ.get("SHORTS_SERVER")
+    server = a.server or env_server()
+    a.ref_server = a.ref_server or env_ref_server()
     if not server:
-        raise SystemExit("오류: --server 또는 SHORTS_SERVER 가 필요합니다")
+        raise SystemExit("오류: --server, SHORTS_SERVER 또는 H3_ENDPOINT 가 필요합니다")
     spec = {"prompt": a.prompt, "duration": a.duration, "ratio": a.ratio, "seed": a.seed}
     if a.source:
         spec["sources"] = [str(Path(s).resolve()) for s in a.source]
@@ -471,9 +503,9 @@ def cmd_plan(a) -> int:
 
 def cmd_server_check(a) -> int:
     out = Out(a.json)
-    server = a.server or os.environ.get("SHORTS_SERVER")
+    server = a.server or env_server()
     if not server:
-        raise SystemExit("오류: --server 또는 SHORTS_SERVER 가 필요합니다")
+        raise SystemExit("오류: --server, SHORTS_SERVER 또는 H3_ENDPOINT 가 필요합니다")
     try:
         info = B.server_check(server, a.backend, os.environ.get("SHORTS_API_KEY"))
     except B.BackendError as e:
@@ -491,12 +523,13 @@ def cmd_server_check(a) -> int:
 
 
 def add_server_opts(p):
-    p.add_argument("--server", help="AI 서버 주소 (또는 SHORTS_SERVER)")
-    p.add_argument("--ref-server", dest="ref_server", help="참조 모드(ref2va) 전용 서버 주소 (SGLang H3 는 보통 30011)")
+    p.add_argument("--server", help="AI 서버 주소 (기본: SHORTS_SERVER, 없으면 H3_ENDPOINT — fl2va 30010)")
+    p.add_argument("--ref-server", dest="ref_server",
+                   help="참조 모드(ref2va) 서버 (기본: SHORTS_REF_SERVER, 없으면 H3_REF_ENDPOINT — 30011). 없으면 --server 로 보냄")
     p.add_argument("--backend", default=None, choices=["auto", "sglang", "vllm", "h3video"], help="서버 종류 (기본: 자동 판별)")
     p.add_argument("--model", help="서버에 보낼 model 이름 (선택)")
     p.add_argument("--poll", type=float, help="상태 확인 간격(초), 기본 3")
-    p.add_argument("--timeout", type=float, help="생성 대기 한도(초), 기본 3600")
+    p.add_argument("--timeout", type=float, help="장면당 생성 대기 한도(초), 기본 1800(H3 는 장면당 수 분)")
     p.add_argument("--inbox-dir", dest="inbox_dir", help="SGLang 서버와 공유된 폴더(참조 파일을 여기에 복사해 file:// 로 넘김)")
     p.add_argument("--inbox-uri", dest="inbox_uri", help="서버에서 본 inbox 경로 접두사 (예: file:///data/inbox)")
     p.add_argument("--inline", action="store_true", help="참조 파일을 data: URI 로 넣어 보냄(서버 지원 필요)")
@@ -533,7 +566,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--dry-run", action="store_true")
     g.add_argument("--json", action="store_true")
     add_server_opts(g)
-    g.set_defaults(fn=cmd_gen, backend="auto", poll=3.0, timeout=3600.0)
+    g.set_defaults(fn=cmd_gen, backend="auto", poll=3.0, timeout=1800.0)
 
     c = sub.add_parser("compose", help="AI 없이 템플릿 합성")
     c.add_argument("--base", help="기본 영상")

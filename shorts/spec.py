@@ -10,7 +10,7 @@ SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema" / "job.schema.js
 SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 DEFAULTS = {
-    "version": 1, "duration": 8, "ratio": "9:16", "seed": 0, "backend": "auto", "poll": 3, "timeout": 3600, "fit": "blur",
+    "version": 1, "duration": 8, "ratio": "9:16", "seed": 0, "backend": "auto", "poll": 3, "timeout": 1800, "fit": "blur",
     "resolution": "720x1280", "max_duration": 60, "title": "", "bgm_volume": 0.25, "original_volume": 1,
     "output": "short.mp4",
 }
