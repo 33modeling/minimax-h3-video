@@ -9,3 +9,6 @@ out/
 *.parts/
 *.state.json
 *.part.mp4
+.venv/
+.tools/
+.env

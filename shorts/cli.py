@@ -102,6 +102,9 @@ def apply_overrides(spec: dict, a) -> dict:
         spec["poll"] = a.poll
     if getattr(a, "timeout", None):
         spec["timeout"] = a.timeout
+    for key, env in (("resolution", "SHORTS_RESOLUTION"), ("quality", "SHORTS_QUALITY"), ("fps", "SHORTS_FPS")):
+        if not spec.get(key) and os.environ.get(env):  # .env 의 기본값: 옵션·JSON 에 없을 때만
+            spec[key] = int(os.environ[env]) if key == "fps" else os.environ[env]
     if not spec.get("server") and env_server():
         spec["server"] = env_server()
     if not spec.get("ref_server") and env_ref_server():
@@ -630,6 +633,13 @@ def cmd_server_check(a) -> int:
     return 0
 
 
+def cmd_doctor(a) -> int:
+    from . import doctor as D
+    server = a.server or env_server()
+    checks = D.run_checks(server, env_ref_server() if not a.server else None, timeout=a.timeout)
+    return D.report(checks, a.json)
+
+
 def add_server_opts(p):
     p.add_argument("--server", help="AI 서버 주소 (기본: SHORTS_SERVER, 없으면 H3_ENDPOINT — fl2va 30010)")
     p.add_argument("--ref-server", dest="ref_server",
@@ -688,9 +698,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--title")
     c.add_argument("--bgm")
     c.add_argument("--bgm-volume", dest="bgm_volume", type=float, default=0.25)
-    c.add_argument("--resolution", default="720x1280", help="출력 해상도 WxH (프리셋: " + ", ".join(S.RESOLUTION_PRESETS) + ")")
-    c.add_argument("--fps", type=int, default=30, help="출력 fps (기본 30)")
-    c.add_argument("--quality", choices=["low", "medium", "high"], default="medium")
+    c.add_argument("--resolution", default=os.environ.get("SHORTS_RESOLUTION") or "720x1280", help="출력 해상도 WxH (프리셋: " + ", ".join(S.RESOLUTION_PRESETS) + ")")
+    c.add_argument("--fps", type=int, default=os.environ.get("SHORTS_FPS") or 30, help="출력 fps (기본 30, SHORTS_FPS)")
+    c.add_argument("--quality", choices=["low", "medium", "high"], default=os.environ.get("SHORTS_QUALITY") or "medium")
     c.add_argument("--fit", choices=["crop", "blur"], default="blur")
     c.add_argument("--max-duration", dest="max_duration", type=float)
     c.add_argument("-o", "--output", default="short.mp4")
@@ -720,6 +730,12 @@ def build_parser() -> argparse.ArgumentParser:
     ck.add_argument("--backend", default="auto", choices=["auto", "sglang", "vllm", "h3video"])
     ck.add_argument("--json", action="store_true")
     ck.set_defaults(fn=cmd_server_check)
+
+    dr = sub.add_parser("doctor", help="실행 환경 점검(파이썬·venv·ffmpeg·글꼴·서버·키·node)")
+    dr.add_argument("--server", help="연결을 확인할 서버 (기본: SHORTS_SERVER, 없으면 H3_ENDPOINT)")
+    dr.add_argument("--timeout", type=float, default=3.0, help="서버 연결 확인 대기(초), 기본 3")
+    dr.add_argument("--json", action="store_true")
+    dr.set_defaults(fn=cmd_doctor)
     return ap
 
 

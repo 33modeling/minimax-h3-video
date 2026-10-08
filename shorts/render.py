@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Callable
 
 BLUR_DIV = 16
+# scripts/setup.sh 가 레포 안에만 받아 두는 도구(.tools/bin·.tools/fonts). env.sh 를 안 켜도 여기를 먼저 본다.
+ROOT = Path(__file__).resolve().parent.parent
+TOOLS = ROOT / ".tools"
 DARKEN = 0.7
 
 
@@ -17,17 +20,24 @@ class RenderError(RuntimeError):
     pass
 
 
+def _tool(name: str, env: str) -> str | None:
+    """SHORTS_FFMPEG 같은 환경변수 → 레포의 .tools/bin → PATH 순서."""
+    local = TOOLS / "bin" / name
+    return os.environ.get(env) or (str(local) if os.access(local, os.X_OK) else None) or shutil.which(name)
+
+
 def ffmpeg_bin() -> str:
-    ff = os.environ.get("SHORTS_FFMPEG") or shutil.which("ffmpeg")
+    ff = _tool("ffmpeg", "SHORTS_FFMPEG")
     if not ff:
-        raise RenderError("ffmpeg 가 없습니다. 설치하세요: sudo apt install ffmpeg (macOS: brew install ffmpeg, Windows: winget install ffmpeg)")
+        raise RenderError("ffmpeg 가 없습니다. scripts/setup.sh 를 실행하면 레포 안(.tools/bin)에 받습니다 "
+                          "(또는 sudo apt install ffmpeg, macOS: brew install ffmpeg, Windows: winget install ffmpeg)")
     return ff
 
 
 def ffprobe_bin() -> str:
-    fp = os.environ.get("SHORTS_FFPROBE") or shutil.which("ffprobe")
+    fp = _tool("ffprobe", "SHORTS_FFPROBE")
     if not fp:
-        raise RenderError("ffprobe 가 없습니다. ffmpeg 패키지를 설치하면 함께 들어옵니다")
+        raise RenderError("ffprobe 가 없습니다. scripts/setup.sh 를 실행하거나 ffmpeg 패키지를 설치하면 함께 들어옵니다")
     return fp
 
 
@@ -35,6 +45,9 @@ def find_font() -> str:
     env = os.environ.get("SHORTS_FONT")
     if env:
         return env
+    local = TOOLS / "fonts" / "NotoSansKR-Bold.otf"
+    if local.is_file():
+        return str(local)
     fc = shutil.which("fc-match")
     if fc:
         for q in ("Noto Sans CJK KR:bold", "Noto Sans KR:bold", "NanumGothic:bold", "Malgun Gothic:bold"):
@@ -42,11 +55,19 @@ def find_font() -> str:
             f = r.stdout.strip()
             if r.returncode == 0 and f and Path(f).is_file() and ("CJK" in f or "KR" in f or "Nanum" in f or "malgun" in f.lower()):
                 return f
+    fl = shutil.which("fc-list")
+    if fl:  # 이름을 몰라도 한국어를 지원하는 글꼴(굵은 것 먼저)
+        r = subprocess.run([fl, ":lang=ko", "file"], capture_output=True, text=True)
+        files = sorted({ln.split(":")[0].strip() for ln in r.stdout.splitlines() if ln.strip()},
+                       key=lambda f: ("bold" not in f.lower(), f))
+        for f in files:
+            if Path(f).is_file():
+                return f
     for f in ("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc", "C:/Windows/Fonts/malgunbd.ttf",
               "/System/Library/Fonts/AppleSDGothicNeo.ttc"):
         if Path(f).is_file():
             return f
-    raise RenderError("한글 글꼴을 찾지 못했습니다. SHORTS_FONT=/경로/글꼴.ttf 로 지정하세요 (예: Noto Sans CJK)")
+    raise RenderError("한글 글꼴을 찾지 못했습니다. scripts/setup.sh 가 .tools/fonts 에 Noto Sans KR 을 받습니다. 또는 SHORTS_FONT=/경로/글꼴.ttf")
 
 
 def probe(path: str) -> dict:

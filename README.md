@@ -7,8 +7,9 @@
 - 작업 명세 스키마: `schema/job.schema.json` (웹과 CLI 공용)
 
 ```bash
-source minimax-h3-video/scripts/cluster_env.sh     # H3_ENDPOINT(30010)·H3_REF_ENDPOINT(30011)
-./bin/shorts run prompt.json [source.mp4]           # 검증 → H3 생성 → 9:16 합성 → short.mp4
+scripts/setup.sh                  # 레포 안 .venv/·.tools/ 에만 설치 (기존 환경은 그대로)
+source scripts/env.sh             # 이 셸에서만 켜기 (끄기: shorts-env-off)
+shorts doctor && shorts run prompt.json [source.mp4]
 ```
 
 자세한 사용법은 [USAGE.md](USAGE.md).

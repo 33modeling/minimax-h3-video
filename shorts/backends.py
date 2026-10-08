@@ -373,9 +373,9 @@ class H3VideoBackend:
 BACKENDS = {"sglang": SGLangBackend, "vllm": VLLMBackend, "h3video": H3VideoBackend}
 
 
-def detect_backend(server: str, api_key: str | None = None) -> tuple[str, dict]:
+def detect_backend(server: str, api_key: str | None = None, timeout: float = 10) -> tuple[str, dict]:
     """서버 종류 자동 판별: /api/spec 이 있으면 h3video, /v1/models 의 owned_by 로 vllm/sglang."""
-    http = Http(server, api_key, timeout=10)
+    http = Http(server, api_key, timeout=timeout)
     info: dict = {}
     try:
         spec = http.get_json("/api/spec")
@@ -410,10 +410,10 @@ def make_backend(name: str, server: str, api_key: str | None = None, stager: Sta
     return cls(server, api_key, stager=stager, model=model, ref_server=ref_server)
 
 
-def server_check(server: str, backend: str = "auto", api_key: str | None = None) -> dict:
-    """shorts server check — 서버 상태·모델·모드·사양."""
-    name, info = (detect_backend(server, api_key) if backend == "auto" else (backend, {}))
-    http = Http(server, api_key, timeout=10)
+def server_check(server: str, backend: str = "auto", api_key: str | None = None, timeout: float = 10) -> dict:
+    """shorts server check — 서버 상태·모델·모드·사양. doctor 는 짧은 timeout 으로 부른다."""
+    name, info = (detect_backend(server, api_key, timeout) if backend == "auto" else (backend, {}))
+    http = Http(server, api_key, timeout=timeout)
     out: dict = {"server": server, "backend": name, "ok": True}
     if name == "h3video":
         spec = info.get("spec") or http.get_json("/api/spec")

@@ -11,18 +11,63 @@
 
 ## 1. 설치
 
-| 필요한 것 | 확인 |
-|---|---|
-| Python 3.10 이상 (표준 라이브러리만 씀) | `python3 --version` |
-| ffmpeg·ffprobe (drawtext 포함 빌드) | `ffmpeg -version` |
-| 한글 글꼴 (Noto Sans CJK 등) | 자동으로 찾음. 못 찾으면 `export SHORTS_FONT=/경로/글꼴.ttf` |
+`scripts/setup.sh` 하나로 준비한다. 멱등이라 몇 번 실행해도 되고, 끝에 무엇이 준비됐고 무엇이 빠졌는지 요약표와 다음 명령을 보여 준다.
+
+> **격리 원칙: 설치 위치는 레포 안의 `.venv/`·`.tools/` 뿐이고, 기존 환경을 건드리지 않는다.**
+> 시스템 파이썬·전역 pip/npm·`~/.local`·apt/brew·sudo·셸 rc 파일·다른 venv(minimax-h3-video 의 venv 포함)는 손대지 않는다.
+> pip·uv·npm 캐시도 `.tools/cache`·`.tools/npm-cache` 로 가둔다. PATH 는 `source scripts/env.sh` 를 한 그 셸에서만 바뀌고 `shorts-env-off`(또는 `deactivate`)로 되돌린다.
+> 이미 조건을 만족하는 도구는 그대로 쓰고, 없을 때만 `.tools/` 에 받는다(받기 전에 무엇을·어디서·어디로 받을지 보여 주고 묻는다. `--yes` 면 묻지 않음).
+> 지우기: `scripts/setup.sh --uninstall` (`.venv/`·`.tools/` 만, 경로를 보여 주고 확인).
+
+| 필요한 것 | 있으면 | 없으면 `.tools/` 에 받는 것 (검증) |
+|---|---|---|
+| Python ≥3.10 | 그 파이썬으로 `.venv` 생성 | uv 단일 바이너리(`.tools/bin`, sha256) → 독립 파이썬 3.12(`.tools/python`) |
+| ffmpeg·ffprobe (drawtext 필터 포함) | 그대로 씀 | ffmpeg.org 다운로드 페이지가 안내하는 정적 빌드 — Linux x86_64·arm64: BtbN GitHub 릴리스(최신 릴리스 분기 gpl, sha256, 약 150MB), macOS: evermeet.cx(크기 확인, arm64 는 Rosetta) → 안 돌면 martin-riedl arm64(sha256). johnvansickle 빌드는 drawtext 가 빠져 있어 쓰지 않음 |
+| 한글 글꼴 | `fc-match`·`fc-list :lang=ko` 로 찾음 | Noto Sans KR Bold(SIL OFL, sha256 고정) → `.tools/fonts`, env.sh 가 `SHORTS_FONT` 로 잡음 |
+| Node(웹 개발만, `package.json` engines `^20.19.0 \|\| >=22.12.0`) | 그대로 씀 | nodejs.org 공식 22.x tarball(SHASUMS256) → `.tools/node` |
+
+`--isolated` 를 주면 시스템에 있어도 위 로컬 사본을 강제로 쓴다(파이썬·ffmpeg·글꼴·node). `--offline` 은 아무것도 받지 않고 확인만 한다.
+CLI 는 env.sh 를 켜지 않아도 `.tools/bin` 의 ffmpeg 와 `.tools/fonts` 의 글꼴을 먼저 찾는다.
+
+### 1-1. 로컬 PC (CLI)
 
 ```bash
-git clone https://github.com/33modeling/shortform-studio.git
-cd shortform-studio
-./bin/shorts --help              # 설치 없이 바로 실행
-pip install -e .                 # (선택) 어디서나 `shorts` 로 실행
+git clone https://github.com/33modeling/shortform-studio.git && cd shortform-studio
+scripts/setup.sh                 # = --mode cli: .venv + pip install -e . + ffmpeg/drawtext + 한글 글꼴
+source scripts/env.sh            # 이 셸에서만 .venv·.tools 켜기 (+ .env 로드)
+shorts doctor                    # ✓/✗/△ 점검, 필수 항목 실패면 종료 코드 1 (--json 도 됨)
 ```
+
+- 키·서버 주소는 `.env` 에 둔다(`.env.example` 을 복사, setup 이 없을 때 자동 복사). `.env` 는 `.gitignore` 에 있다.
+- 설치 없이도 `./bin/shorts --help` 로 바로 실행할 수 있다(표준 라이브러리만 씀).
+- 옵션: `--python /경로/python3.12`, `--venv 경로`(env.sh 에는 `export SHORTS_VENV=경로`), `--index-url URL`(사내 PyPI 미러, `PIP_INDEX_URL` 도 존중), `--yes`.
+- `make setup` · `make doctor` · `make test` · `make build` 로도 된다(`make setup ARGS=--yes`).
+
+### 1-2. 클러스터 (minimax-h3-video 옆에서)
+
+shorts 는 **자기 `.venv` 를 쓰고 H3 의 venv 는 건드리지 않는다.** 요청 본문은 기본으로 내장 호환 클라이언트(h3video `client.VideoRequest` 와 같은 형식)가 만든다.
+
+```bash
+# minimax-h3-video 옆에 두면 기본값(../minimax-h3-video)으로 찾는다. 아니면 --h3-repo 경로 또는 H3_REPO
+scripts/setup.sh --mode cluster --yes                   # cli 준비 + h3 레포 확인, .env 에 H3_REPO 기록(새 .env 일 때)
+scripts/setup.sh --mode cluster --with-h3video --yes    # (선택) h3video 소스를 .venv 에 pip install -e --no-deps (sglang 은 안 받음)
+source scripts/env.sh            # H3_REPO 가 있으면 cluster_env.sh 를 서브셸에서 읽어 H3_ENDPOINT·H3_REF_ENDPOINT·H3_INBOX_DIR 만 가져옴
+shorts doctor && shorts server check
+```
+
+- 서버(SGLang, H100 4장)는 그 레포에서 따로 띄운다: `source scripts/cluster_env.sh && bash scripts/provision.sh && bash scripts/serve.sh fl2va` (2-1절).
+- env.sh 는 cluster_env.sh 를 **읽기만** 한다. HOME·PATH·HF 설정은 가져오지 않으므로 지금 셸이 바뀌지 않는다. 우선순위: 셸에 이미 있는 값 > `.env` > cluster_env.sh 기본값.
+- `H3_INBOX_DIR` 이 있으면 `SHORTS_INBOX` 기본값이 된다(`--inbox-dir` 생략 가능).
+
+### 1-3. 웹 개발
+
+```bash
+scripts/setup.sh --mode web              # node 확인(낮거나 없으면 .tools/node) + npm ci (캐시 .tools/npm-cache)
+scripts/setup.sh --mode web --build      # + vite build 확인
+source scripts/env.sh && npm run dev
+```
+
+`--mode all` 은 cli + web + cluster 를 한 번에 한다.
 
 ---
 
@@ -104,6 +149,9 @@ ssh -N -L 8790:127.0.0.1:8790 user@cluster &          # PC 로 당겨오기
 | `SHORTS_API_KEY` | 서버에 `--api-key` 를 걸었으면 `Authorization: Bearer` 로 붙임 |
 | `SHORTS_INBOX` / `SHORTS_INBOX_URI` | 2-1 의 공유 폴더 |
 | `ANTHROPIC_API_KEY` | Claude 기획(7절)을 쓸 때만 |
+| `SHORTS_RESOLUTION`·`SHORTS_FPS`·`SHORTS_QUALITY` | 출력 기본값(옵션·JSON 에 없을 때만) |
+
+위 값은 `.env` 에 적어 두면 `source scripts/env.sh` 가 읽는다(값은 출력하지 않는다. `shorts doctor` 도 키는 "설정됨"만 표시).
 
 SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@cluster &` 후 `--server http://127.0.0.1:30010`.
 
@@ -180,6 +228,7 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
 ./bin/shorts run prompt.json --dry-run            # 보낼 요청 본문과 ffmpeg 명령만 보기
 ./bin/shorts run prompt.json --json               # 진행 상황을 줄마다 JSON 이벤트로
 ./bin/shorts run prompt.json --resolution 1080x1080 --fps 24 --quality high --gen-size 576   # JSON 값보다 우선
+./bin/shorts doctor [--json] [--server URL]       # 실행 환경 점검(도구 출처: 시스템/.tools/.venv), 필수 실패면 종료 코드 1
 ```
 
 진행 표시 형식(가짜 서버 출력과 같은 모양, 시간·ID 는 예시):
@@ -296,15 +345,18 @@ export ANTHROPIC_API_KEY=...
 | 웹에서 CORS 오류 | 서버가 허브 출처를 허용해야 한다. h3video: `h3video web --cors-origin https://33modeling.pages.dev` |
 | 웹에서 혼합 콘텐츠 차단 | https 페이지는 `http://localhost`·`127.0.0.1` 만 허용된다. SSH 터널로 localhost 에 붙이거나 cloudflared·Tailscale https 터널 주소를 쓴다. 브라우저가 "로컬 네트워크 접근"을 물으면 허용 |
 | 웹에서 WebCodecs 없음 | 최신 Chrome·Edge 권장. 없으면 실시간 녹화(WebM)로 대신 내보낸다 |
-| `ffmpeg 가 없습니다` | `sudo apt install ffmpeg` (macOS `brew install ffmpeg`, Windows `winget install ffmpeg`) |
-| 한글 자막이 네모로 나옴 | `export SHORTS_FONT=/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc` |
+| `ffmpeg 가 없습니다` | `scripts/setup.sh` (레포 안 `.tools/bin` 에 정적 빌드). 시스템에 깔려면 `sudo apt install ffmpeg` / `brew install ffmpeg` |
+| ffmpeg 에 drawtext 가 없음(자막·제목 오류, doctor `✗ drawtext`) | 배포판 ffmpeg 가 freetype 없이 빌드된 경우. `scripts/setup.sh --isolated` 로 drawtext 포함 정적 빌드를 `.tools/bin` 에 받고 `source scripts/env.sh` |
+| 다른 파이썬이 잡힘(3.10 미만, 엉뚱한 venv) | `shorts doctor` 의 python 줄로 확인 → `source scripts/env.sh`. 그래도면 `scripts/setup.sh --python /경로/python3.12` 또는 `--isolated`(레포 안 독립 파이썬). `.venv` 를 새로: `scripts/setup.sh --uninstall` 후 다시 |
+| pip 설치 실패(사내망·미러) | `scripts/setup.sh --index-url https://미러/simple` 또는 `export PIP_INDEX_URL=...`. 다운로드가 막혔으면 `--offline` 으로 무엇이 빠졌는지만 확인 |
+| 한글 자막이 네모로 나옴 | `scripts/setup.sh` 가 Noto Sans KR 을 `.tools/fonts` 에 받음. 또는 `export SHORTS_FONT=/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc` |
 | 결과가 요청보다 짧음 | 서버가 돌려준 길이를 따른다(`주의:` 줄 확인). 템플릿이 몽타주가 아니면 기본 영상 길이가 상한 |
 
 ## 9. 테스트
 
 ```bash
 tests/fixtures/make_media.sh .tmp/media                    # 시험용 영상(ffmpeg)
-python3 -m unittest discover -s tests -p 'test_*.py'       # CLI: 가짜 서버로 gen·compose·run·resume·plan
+python3 -m unittest discover -s tests -p 'test_*.py'       # CLI: 가짜 서버로 gen·compose·run·resume·plan·doctor  (= make test)
 node --test tests/unit/                                    # 공용 계획 모듈 + 파이썬과 같은 배치인지
 python3 tests/fake_servers.py video 30010 sglang           # 손으로 시험할 가짜 SGLang 서버
 ```
