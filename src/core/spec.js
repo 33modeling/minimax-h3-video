@@ -81,8 +81,9 @@ function typeMatches(t, v) {
 }
 
 export function fmtValue(v) {
-  const s = JSON.stringify(v);
-  return s.length > 40 ? s.slice(0, 37) + '...' : s;
+  // 글자 수는 코드 포인트로 센다(파이썬 len 과 같게 — 이모지가 UTF-16 두 칸이라 자르는 자리가 달랐다)
+  const cs = [...JSON.stringify(v)];
+  return cs.length > 40 ? cs.slice(0, 37).join('') + '...' : cs.join('');
 }
 
 function resolveRef(root, ref) {
