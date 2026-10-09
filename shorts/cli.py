@@ -20,14 +20,29 @@ from . import spec as S
 from .progress import Out, SceneBoard, fmt_time
 
 
+def input_error(msg: str):
+    """입력(파일·옵션) 오류: 명세 오류와 같은 종료 코드 2 로 끝낸다."""
+    print(f"오류: {msg}", file=sys.stderr)
+    raise SystemExit(2)
+
+
 def load_spec(path: str) -> tuple[dict, Path]:
     p = Path(path)
     try:
-        spec = json.loads(p.read_text(encoding="utf-8"))
+        # utf-8-sig: 메모장 등이 붙이는 BOM 도 받는다(웹의 File.text() 와 같음)
+        spec = json.loads(p.read_bytes().decode("utf-8-sig"))
     except FileNotFoundError:
-        raise SystemExit(f"오류: 프롬프트 JSON 파일이 없습니다: {path}")
+        input_error(f"프롬프트 JSON 파일이 없습니다: {path}")
+    except IsADirectoryError:
+        input_error(f"프롬프트 JSON 자리에 폴더를 줬습니다: {path}")
+    except OSError as e:
+        input_error(f"프롬프트 JSON 파일을 읽지 못했습니다: {path} ({e.strerror or e})")
+    except UnicodeDecodeError:
+        input_error(f"프롬프트 JSON 이 UTF-8 글자 파일이 아닙니다: {path} (영상 파일을 첫 번째로 주지 않았는지 확인하세요)")
     except json.JSONDecodeError as e:
-        raise SystemExit(f"오류: JSON 문법 오류 {path} {e.lineno}번째 줄 {e.colno}번째 글자: {e.msg}")
+        input_error(f"JSON 문법 오류 {path} {e.lineno}번째 줄 {e.colno}번째 글자: {e.msg}")
+    if not isinstance(spec, dict):
+        input_error(f"JSON 최상위는 객체({{ ... }})여야 합니다: {path}")  # 웹과 같은 문장
     return spec, p.resolve().parent
 
 
@@ -164,6 +179,11 @@ def probe_inputs(spec: dict, generated: list[str]) -> tuple[dict, dict]:
     if ci["bgm"]:
         inputs["bgm"] = {"path": ci["bgm"], "info": R.probe(ci["bgm"])}
         paths["bgm"] = ci["bgm"]
+    # 웹(main.js prepareCompose)과 같은 검사·문장. 그대로 두면 계획 단계에서 0 으로 나누거나 ffmpeg 가 알 수 없는 오류를 낸다.
+    if inputs["base"] and not inputs["base"]["info"]["width"]:
+        raise S.SpecError([f"{Path(paths['base']).name}: 영상 트랙이 없습니다"])
+    if inputs["bgm"] and not inputs["bgm"]["info"]["hasAudio"]:
+        raise S.SpecError([f"{Path(paths['bgm']).name}: 소리 트랙이 없습니다"])
     return inputs, paths
 
 
@@ -383,7 +403,7 @@ def cmd_run(a) -> int:
         extra = a.files
     else:
         if not a.files:
-            raise SystemExit("오류: 프롬프트 JSON 파일을 주세요: shorts run prompt.json [source.mp4]")
+            input_error("프롬프트 JSON 파일을 주세요: shorts run prompt.json [source.mp4]")
         spec, root = load_spec(a.files[0])
         extra = a.files[1:]
     uses_ai = bool(spec.get("prompt") or spec.get("scenes"))
@@ -473,7 +493,11 @@ def cmd_resume(a) -> int:
             out.event("error", f"작업 {key} 기록을 찾지 못했습니다 ({reg}). state.json 경로를 직접 주세요")
             return 2
         p = Path(json.loads(reg.read_text())["state"])
-    state = json.loads(p.read_text(encoding="utf-8"))
+    try:
+        state = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        out.event("error", f"작업 {key} 의 상태 파일을 읽지 못했습니다 ({p}): {e}")
+        return 2
     server = a.server or state["server"]
     backend = B.make_backend(state["backend"], server, os.environ.get("SHORTS_API_KEY"), stager_from(a), state.get("model"),
                              state.get("ref_server"))
@@ -497,7 +521,7 @@ def cmd_gen(a) -> int:
     server = a.server or env_server()
     a.ref_server = a.ref_server or env_ref_server()
     if not server:
-        raise SystemExit("오류: --server, SHORTS_SERVER 또는 H3_ENDPOINT 가 필요합니다")
+        input_error("--server, SHORTS_SERVER 또는 H3_ENDPOINT 가 필요합니다")
     spec = {"prompt": a.prompt, "duration": a.duration, "ratio": a.ratio, "seed": a.seed}
     if a.gen_size:
         spec["gen_size"] = parse_gen_size(a.gen_size)
@@ -508,6 +532,10 @@ def cmd_gen(a) -> int:
     errors, _ = S.check_spec(spec)
     if errors:
         out.event("invalid", "입력 오류:\n  - " + "\n  - ".join(errors), errors=errors)
+        return 2
+    miss = missing_files(spec)
+    if miss:
+        out.event("invalid", "파일이 없습니다:\n  - " + "\n  - ".join(miss), errors=miss)
         return 2
     sc = S.ai_scenes(spec)[0]
     req = scene_request(sc, S.normalize_spec(spec))
@@ -548,7 +576,13 @@ def cmd_compose(a) -> int:
     if a.title:
         spec["title"] = a.title
     if a.captions:
-        lines = [ln.strip() for ln in Path(a.captions).read_text(encoding="utf-8").splitlines() if ln.strip()]
+        try:
+            text = Path(a.captions).read_bytes().decode("utf-8-sig")
+        except FileNotFoundError:
+            input_error(f"자막 파일이 없습니다: {a.captions}")
+        except (OSError, UnicodeDecodeError) as e:
+            input_error(f"자막 파일을 읽지 못했습니다(UTF-8 글자 파일이어야 함): {a.captions} ({e})")
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         spec["captions"] = lines
     if a.bgm:
         spec["bgm"] = a.bgm
@@ -616,7 +650,7 @@ def cmd_server_check(a) -> int:
     out = Out(a.json)
     server = a.server or env_server()
     if not server:
-        raise SystemExit("오류: --server, SHORTS_SERVER 또는 H3_ENDPOINT 가 필요합니다")
+        input_error("--server, SHORTS_SERVER 또는 H3_ENDPOINT 가 필요합니다")
     try:
         info = B.server_check(server, a.backend, os.environ.get("SHORTS_API_KEY"))
     except B.BackendError as e:
@@ -754,6 +788,12 @@ def main(argv=None) -> int:
         else:
             print(f"오류: {e}\n  설명: {e.hint}\n  다시 시도: {tip}  (실패한 장면을 다시 요청하고 이어서 합성)", file=sys.stderr)
         return 1
+    except S.SpecError as e:
+        if getattr(a, "json", False):
+            print(json.dumps({"event": "invalid", "message": str(e), "errors": e.errors}, ensure_ascii=False), flush=True)
+        else:
+            print("오류: " + "\n  - ".join(e.errors), file=sys.stderr)
+        return 2
     except (B.BackendError, R.RenderError, ValueError) as e:
         hint = B.explain_error(str(e)) if isinstance(e, B.BackendError) else None
         if getattr(a, "json", False):

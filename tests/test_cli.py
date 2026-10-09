@@ -105,6 +105,25 @@ class SpecTest(Base):
         code, out = run_cli("run", p, env=self.state_env)
         self.assertIn("JSON 문법 오류", out)
 
+    def test_unreadable_json_inputs_exit_2(self):
+        """최상위가 객체가 아닌 JSON·영상 파일·폴더는 traceback 없이 종료 코드 2, BOM 붙은 JSON 은 받는다(웹과 같음)."""
+        d = self.tmp / "badjson"
+        d.mkdir(exist_ok=True)
+        cases = {"list.json": b"[1, 2]", "str.json": b'"x"', "video.json": (self.media / "src1.mp4").read_bytes()[:4000]}
+        for name, data in cases.items():
+            (d / name).write_bytes(data)
+            code, out = run_cli("run", d / name, env=self.state_env)
+            self.assertEqual(code, 2, (name, out))
+            self.assertNotIn("Traceback", out)
+        self.assertIn("JSON 최상위는 객체({ ... })여야 합니다", run_cli("run", d / "list.json", env=self.state_env)[1])
+        code, out = run_cli("run", d, env=self.state_env)
+        self.assertEqual(code, 2, out)
+        code, out = run_cli("run", d / "nope.json", env=self.state_env)
+        self.assertEqual(code, 2, out)
+        (d / "bom.json").write_bytes("\ufeff".encode() + json.dumps({"base": self.m("base.mp4")}).encode())
+        code, out = run_cli("run", d / "bom.json", "--dry-run", env=self.state_env)
+        self.assertEqual(code, 0, out)
+
     def test_needs_server_for_ai(self):
         p = self.write_job("noserver", {"prompt": "x"})
         code, out = run_cli("run", p, env=self.state_env)
@@ -170,6 +189,21 @@ class ComposeTest(Base):
                                       "info": {"duration": 3, "width": 1280, "height": 720, "hasAudio": True}},
                              "clips": [], "bgm": None}),
             {"base": "b.mp4", "clips": [], "bgm": None}, str(self.tmp / "x.mp4"), str(self.tmp / "txt"))))
+
+    def test_base_without_video_and_bgm_without_audio(self):
+        """웹과 같은 문장으로 막는다(전에는 0 으로 나누기 traceback·ffmpeg 오류)."""
+        silent = self.tmp / "silent.mp4"
+        subprocess.run([R.ffmpeg_bin(), "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=30:d=2",
+                        "-pix_fmt", "yuv420p", str(silent)], check=True)
+        code, out = run_cli("compose", "--base", self.m("bgm.m4a"), "--source", self.m("src1.mp4"), "-o", self.tmp / "nb.mp4")
+        self.assertEqual(code, 2, out)
+        self.assertIn("bgm.m4a: 영상 트랙이 없습니다", out)
+        code, out = run_cli("compose", "--base", self.m("base.mp4"), "--bgm", silent, "-o", self.tmp / "nb.mp4")
+        self.assertEqual(code, 2, out)
+        self.assertIn("silent.mp4: 소리 트랙이 없습니다", out)
+        code, out = run_cli("compose", "--base", self.m("base.mp4"), "--captions", self.tmp / "nope.txt", "-o", self.tmp / "nb.mp4")
+        self.assertEqual(code, 2, out)
+        self.assertIn("자막 파일이 없습니다", out)
 
     def test_missing_file(self):
         p = self.write_job("missing", {"base": "nope.mp4"})
