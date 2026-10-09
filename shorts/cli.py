@@ -56,9 +56,9 @@ def resolve(path: str | None, root: Path) -> str | None:
 
 
 def resolve_spec_paths(spec: dict, root: Path, extra: list[str]) -> dict:
-    """명세 안 경로를 JSON 폴더 기준 절대경로로. 두 번째 파일(들)은 같은 이름이면 그 자리에, 아니면 sources 로."""
+    """명세 안 경로를 JSON 폴더 기준 절대경로로. 이름이 두 번째 파일(들)과 같으면 그 파일을 쓴다
+    (두 번째 파일을 명세에 붙이는 일은 그 전에 S.match_files 가 한다)."""
     by_name = {S.base_name(f): str(Path(f).resolve()) for f in extra}
-    spec = S.attach_files(spec, [str(Path(f).resolve()) for f in extra])
 
     def fix(p):
         if p is None:
@@ -410,8 +410,10 @@ def cmd_run(a) -> int:
     out.plan_stages(["검증", "서버 연결", "생성", "다운로드", "합성"] if uses_ai else ["검증", "합성"])
     out.stage("검증", f"{a.files[0] if a.files and not a.idea else '기획 결과'}" + (f" + 소스 {len(extra)}개" if extra else ""))
     spec = apply_overrides(spec, a)
-    # 두 번째 파일(소스 영상): 명세가 같은 이름으로 가리키면 그 자리, 아니면 sources 로 — 검증 전에 붙인다
-    spec = S.attach_files(spec, [str(Path(f).resolve()) for f in extra])
+    # 두 번째 파일: 명세가 같은 이름으로 가리키면 그 자리, 남는 영상은 sources, 음악은 빈 bgm — 검증 전에 붙인다(웹과 같은 규칙)
+    spec, unused = S.match_files(spec, [str(Path(f).resolve()) for f in extra])
+    for f in unused:
+        out.event("warning", f"주의: {Path(f).name} 은(는) 쓰지 않습니다 (배경음이 이미 있거나, AI 없이 이미지는 쓰지 않음)", file=f)
     errors, warnings = S.check_spec(spec)
     if errors:
         out.event("invalid", "명세 오류:\n  - " + "\n  - ".join(errors), errors=errors)
@@ -628,7 +630,7 @@ def plan_with_claude(a, out: Out, sources: list[str]):
         raise SystemExit(2)
     spec = res["spec"]
     if sources:
-        spec = S.attach_files(spec, [Path(s).name for s in sources])
+        spec, _ = S.match_files(spec, [Path(s).name for s in sources])
     out.event("claude_done", f"기획 완료 (시도 {res['attempts']}회): 장면 {len(spec.get('scenes') or [1])}개", spec=spec)
     save_to = getattr(a, "plan_output", None)
     if save_to:

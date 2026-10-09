@@ -224,7 +224,8 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
 ```bash
 ./bin/shorts run prompt.json                      # 프롬프트만: AI 생성 → 9:16 합성
 ./bin/shorts run prompt.json source.mp4           # 소스 영상 있음 (JSON 의 sources 대신)
-./bin/shorts run prompt.json base.mp4 a.mp4 b.mp4 # 이름이 JSON 의 base 와 같으면 그 자리, 나머지는 sources
+./bin/shorts run prompt.json base.mp4 a.mp4 b.mp4 # 이름이 JSON 의 base 와 같으면 그 자리, 나머지 영상은 sources
+./bin/shorts run prompt.json base.mp4 music.mp3   # 음악 파일은 bgm 이 비어 있으면 배경음 (웹 파일 칸 2와 같은 규칙)
 ./bin/shorts run prompt.json --dry-run            # 보낼 요청 본문과 ffmpeg 명령만 보기
 ./bin/shorts run prompt.json --json               # 진행 상황을 줄마다 JSON 이벤트로
 ./bin/shorts run prompt.json --resolution 1080x1080 --fps 24 --quality high --gen-size 576   # JSON 값보다 우선

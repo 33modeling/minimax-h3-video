@@ -423,6 +423,29 @@ class RequestParityTest(unittest.TestCase):
         self.assertEqual(py[0], [5, 5])
 
 
+class MatchFilesTest(Base):
+    def test_second_files_same_rule_as_web(self):
+        """두 번째 파일: 웹 matchFiles 와 같은 규칙(전에는 CLI 가 음악·이미지도 sources 에 붙여 소스에서 빠지거나 참조로 보냄)."""
+        cases = [({"base": "base.mp4"}, ["base.mp4", "a.mp4", "song.mp3", "pic.png"]),
+                 ({"base": "b.mp4", "bgm": "m.mp3"}, ["b.mp4", "other.wav", "c.mov"]),
+                 ({"prompt": "p"}, ["ref.png", "v.mp4", "voice.m4a", "more.opus"]),
+                 ({"scenes": [{"prompt": "p", "sources": ["x.mp4"]}]}, ["x.mp4", "y.jpg"])]
+        js = subprocess.run(["node", "--input-type=module", "-e",
+                             "import { matchFiles } from './src/app/match.js';"
+                             f"const cases = {json.dumps(cases)};"
+                             "console.log(JSON.stringify(cases.map(([s, n]) => { const m = matchFiles(s, n.map((name) => ({ name, type: '' })));"
+                             " return [m.spec, m.unused]; })));"], cwd=ROOT, capture_output=True, text=True, check=True)
+        py = [list(S.match_files(spec, names)) for spec, names in cases]
+        self.assertEqual(py, json.loads(js.stdout))
+        p = self.write_job("match-bgm", {"base": self.m("base.mp4")})
+        code, out = run_cli("run", p, self.m("src1.mp4"), self.m("bgm.m4a"), "--dry-run", "--json", env=self.state_env)
+        self.assertEqual(code, 0, out)
+        argv = [e for e in events(out) if e["event"] == "ffmpeg"][0]["argv"]
+        self.assertIn(self.m("bgm.m4a"), argv)
+        self.assertIn("amix=inputs=2", " ".join(argv))
+        self.assertNotIn("길이가 너무 짧거나 영상이 없어", out)
+
+
 class ProgressTest(Base):
     """진행 표시: 진행률 있음 / 없음 / 실패, --json 이벤트, TTY 제자리 갱신."""
 

@@ -236,6 +236,37 @@ def is_image_path(p) -> bool:
     return bool(re.search(r"\.(png|jpe?g|webp|gif|bmp)$", str(p), re.I))
 
 
+def is_audio_path(p) -> bool:
+    return bool(re.search(r"\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)$", str(p), re.I))
+
+
+def match_files(spec: dict, names: list[str]) -> tuple[dict, list[str]]:
+    """두 번째 파일들을 명세에 맞춘다 — 웹 src/app/match.js matchFiles 와 같은 규칙.
+    명세가 이름으로 가리키면 그 자리, 남는 영상은 sources 뒤, 남는 음악은 bgm 이 비었을 때 배경음,
+    남는 이미지는 AI 명세일 때만 참조(sources). 반환: (새 명세, 쓰지 않는 파일)."""
+    refs = [base_name(p) for p in referenced_paths(spec)]
+    uses_ai = bool(spec.get("prompt") or spec.get("scenes"))
+    extra: list[str] = []
+    unused: list[str] = []
+    bgm = None
+    for name in names:
+        if base_name(name) in refs:
+            continue
+        if is_audio_path(name):
+            if not spec.get("bgm") and not bgm:
+                bgm = name
+            else:
+                unused.append(name)
+        elif is_image_path(name):
+            (extra if uses_ai else unused).append(name)
+        else:
+            extra.append(name)
+    nxt = attach_files(spec, extra)
+    if bgm:
+        nxt["bgm"] = bgm
+    return nxt, unused
+
+
 def _make_scene(prompt, sources, image, duration, seed):
     refs = [norm_media(m) for m in (sources or [])]
     task = "ref2va" if refs else ("fl2va" if image else "t2va")
