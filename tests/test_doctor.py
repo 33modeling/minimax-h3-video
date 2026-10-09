@@ -96,3 +96,40 @@ class DoctorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnvShTest(unittest.TestCase):
+    """scripts/env.sh: 켜고 끄면 PATH·VIRTUAL_ENV 가 원래대로(bash·zsh)."""
+
+    def test_off_restores_previously_active_venv(self):
+        """다른 venv 가 켜진 셸에서 켰다 끄면 그 venv 가 사라지던 버그(PATH·VIRTUAL_ENV·deactivate)."""
+        import shutil
+        import subprocess
+        import tempfile
+        tmp = Path(tempfile.mkdtemp(prefix="shorts-envsh-"))
+        try:
+            for name in ("other", "mine"):
+                subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(tmp / name)], check=True)
+            script = f"""
+source '{tmp / "other" / "bin" / "activate"}'
+before="$PATH"; bv="$VIRTUAL_ENV"
+export SHORTS_VENV='{tmp / "mine"}'
+source '{ROOT / "scripts" / "env.sh"}' >/dev/null
+[ "$VIRTUAL_ENV" = '{tmp / "mine"}' ] || echo FAIL-on
+shorts-env-off >/dev/null
+[ "$PATH" = "$before" ] || echo FAIL-path
+[ "$VIRTUAL_ENV" = "$bv" ] || echo FAIL-venv
+command -v deactivate >/dev/null 2>&1 || echo FAIL-deactivate
+deactivate; before2="$PATH"
+source '{ROOT / "scripts" / "env.sh"}' >/dev/null; source '{ROOT / "scripts" / "env.sh"}' >/dev/null; deactivate >/dev/null
+[ "$PATH" = "$before2" ] || echo FAIL-twice
+echo DONE
+"""
+            for sh in ("bash", "zsh"):
+                if not shutil.which(sh):
+                    continue
+                r = subprocess.run([sh, "-c", script], capture_output=True, text=True, env={**os.environ, "SHORTS_VENV": ""})
+                self.assertIn("DONE", r.stdout, (sh, r.stdout, r.stderr))
+                self.assertNotIn("FAIL", r.stdout, (sh, r.stdout, r.stderr))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

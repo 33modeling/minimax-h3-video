@@ -30,8 +30,11 @@ _shorts_default() {  # 비어 있을 때만 설정
 
 # 1) .venv + .tools
 _shorts_venv="${SHORTS_VENV:-$SHORTS_ROOT/.venv}"
+_SHORTS_PREV_VENV=""
 if [ -n "${VIRTUAL_ENV:-}" ] && [ "$VIRTUAL_ENV" != "$_shorts_venv" ] && command -v deactivate >/dev/null 2>&1; then
-  echo "[shorts-env] 켜져 있던 venv($VIRTUAL_ENV)를 끄고 켭니다"; deactivate
+  # 끌 때(shorts-env-off) 이 venv 를 다시 켜서 원래 상태로 돌려 놓는다
+  echo "[shorts-env] 켜져 있던 venv($VIRTUAL_ENV)를 잠시 끄고 켭니다 (shorts-env-off 때 다시 켬)"
+  _SHORTS_PREV_VENV="$VIRTUAL_ENV"; deactivate
 fi
 _shorts_path=""
 for _shorts_d in "$_shorts_venv/bin" "$SHORTS_ROOT/.tools/bin" "$SHORTS_ROOT/.tools/node/bin"; do
@@ -82,8 +85,16 @@ fi
 
 shorts-env-off() {
   eval "$_SHORTS_RESTORE"
-  unset _SHORTS_RESTORE _SHORTS_ENV_ON SHORTS_ROOT _shorts_old
+  _shorts_prev="${_SHORTS_PREV_VENV:-}"
+  unset _SHORTS_RESTORE _SHORTS_ENV_ON SHORTS_ROOT _shorts_old _SHORTS_PREV_VENV
   unset -f deactivate shorts-env-off _shorts_set _shorts_default 2>/dev/null
+  # 켜기 전에 다른 venv 가 켜져 있었으면 다시 켠다(그 venv 의 PATH·VIRTUAL_ENV·deactivate 가 돌아옴)
+  if [ -n "$_shorts_prev" ] && [ -f "$_shorts_prev/bin/activate" ]; then
+    # shellcheck disable=SC1091
+    . "$_shorts_prev/bin/activate"
+    echo "[shorts-env] 원래 켜져 있던 venv($_shorts_prev)를 다시 켰습니다"
+  fi
+  unset _shorts_prev
   hash -r 2>/dev/null || true
   echo "[shorts-env] 껐습니다 (PATH·변수 원래대로)"
 }
