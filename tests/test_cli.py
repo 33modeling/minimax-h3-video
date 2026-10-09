@@ -404,6 +404,25 @@ class H3RoutingTest(Base):
             self.assertEqual(with_h3, builtin)
 
 
+class RequestParityTest(unittest.TestCase):
+    def test_half_seconds_round_like_web(self):
+        """4.5초 장면: 파이썬 round(4.5)=4 와 웹 Math.round(4.5)=5 가 달라 같은 JSON 에 다른 길이를 요청하던 버그."""
+        durs = [4.5, 6.5, 8.5, 7.49, 14.5]
+        js = subprocess.run(["node", "--input-type=module", "-e",
+                             "import { sglangBody, h3videoForm } from './src/ai/generate.js';"
+                             f"const out = {json.dumps(durs)}.map((d) => {{"
+                             "const sc = { prompt: 'p', task: 't2va', sources: [], image: null, duration: d, seed: 0 };"
+                             "return [sglangBody(sc, {}, (x) => x).target.duration_seconds, Number(h3videoForm(sc, {}, () => null).get('seconds'))]; });"
+                             "console.log(JSON.stringify(out));"], cwd=ROOT, capture_output=True, text=True, check=True)
+        sg, h3 = B.SGLangBackend("http://x"), B.H3VideoBackend("http://x")
+        py = [[sg.build_body({"prompt": "p", "task": "t2va", "duration": d, "ratio": "9:16", "seed": 0, "refs": [], "image": None},
+                             stage=False)["target"]["duration_seconds"],
+               int(dict(h3.build_form({"prompt": "p", "task": "t2va", "duration": d, "ratio": "9:16", "seed": 0, "refs": [],
+                                       "image": None})[0])["seconds"])] for d in durs]
+        self.assertEqual(py, json.loads(js.stdout))
+        self.assertEqual(py[0], [5, 5])
+
+
 class ProgressTest(Base):
     """진행 표시: 진행률 있음 / 없음 / 실패, --json 이벤트, TTY 제자리 갱신."""
 

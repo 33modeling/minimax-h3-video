@@ -11,6 +11,7 @@ import base64
 import hashlib
 import http.client
 import json
+import math
 import mimetypes
 import os
 import shutil
@@ -76,6 +77,11 @@ def h3video_client():
             except Exception:  # noqa: BLE001
                 _H3 = False
     return _H3 or None
+
+
+def seconds_of(req: dict) -> int:
+    """장면 길이 → 서버에 보낼 정수 초. 웹(Math.round)과 같은 반올림(파이썬 round 는 4.5 → 4 라 쓰지 않는다)."""
+    return int(math.floor(float(req["duration"]) + 0.5))
 
 
 def gen_size_of(req: dict, default_short: int) -> tuple[int, str]:
@@ -229,7 +235,7 @@ class SGLangBackend:
                 conds.append(("image", uri(req["image"]), "reference", None))
         h3 = h3video_client()
         if h3:
-            vr = h3.VideoRequest(prompt=req["prompt"], task=req["task"], duration_seconds=int(round(req["duration"])),
+            vr = h3.VideoRequest(prompt=req["prompt"], task=req["task"], duration_seconds=seconds_of(req),
                                  aspect_ratio=req["ratio"], short_edge=gen_size_of(req, H3_SHORT_EDGE)[0], seed=int(req.get("seed") or 0),
                                  conditions=[h3.Condition(t, u, role, fi) for t, u, role, fi in conds])
             try:
@@ -246,7 +252,7 @@ class SGLangBackend:
                 cj.append(d)
             body = {"task": req["task"], "prompt": req["prompt"], "conditions": cj,
                     "target": {"short_edge": gen_size_of(req, H3_SHORT_EDGE)[0], "aspect_ratio": req["ratio"],
-                               "duration_seconds": int(round(req["duration"]))},
+                               "duration_seconds": seconds_of(req)},
                     "seed": int(req.get("seed") or 0)}
         if self.model:
             body["model"] = self.model
@@ -286,7 +292,7 @@ class VLLMBackend(SGLangBackend):
     name = "vllm"
 
     def build_form(self, req: dict) -> tuple[list, list]:
-        fields = [("prompt", req["prompt"]), ("seconds", str(int(round(req["duration"])))),
+        fields = [("prompt", req["prompt"]), ("seconds", str(seconds_of(req))),
                   ("size", gen_size_of(req, VLLM_SHORT_EDGE)[1]), ("seed", str(int(req.get("seed") or 0)))]
         if self.model:
             fields.append(("model", self.model))
@@ -322,7 +328,7 @@ class H3VideoBackend:
         self.http = Http(server, api_key)
 
     def build_form(self, req: dict) -> tuple[list, list]:
-        fields = [("prompt", req["prompt"]), ("seconds", str(int(round(req["duration"])))), ("aspect_ratio", req["ratio"]),
+        fields = [("prompt", req["prompt"]), ("seconds", str(seconds_of(req))), ("aspect_ratio", req["ratio"]),
                   ("seed", str(int(req.get("seed") or 0))), ("title", req.get("title") or "shorts")]
         files = []
         if req.get("image") and req["task"] != "ref2va":
