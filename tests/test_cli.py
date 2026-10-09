@@ -223,6 +223,13 @@ class ComposeTest(Base):
         self.assertEqual(code, 2, out)
         self.assertIn("자막 파일이 없습니다", out)
 
+    def test_ctrl_c_during_render_no_traceback(self):
+        """합성 중 Ctrl+C 가 traceback 으로 끝나던 것 → 한 줄 안내와 종료 코드 130."""
+        with mock.patch.object(R, "render", side_effect=KeyboardInterrupt):
+            code, out = run_cli("compose", "--base", self.m("base.mp4"), "-o", self.tmp / "ctrlc.mp4")
+        self.assertEqual(code, 130, out)
+        self.assertIn("중단했습니다", out)
+
     def test_missing_file(self):
         p = self.write_job("missing", {"base": "nope.mp4"})
         code, out = run_cli("run", p, env=self.state_env)

@@ -796,6 +796,9 @@ def main(argv=None) -> int:
         else:
             print(f"오류: {e}\n  설명: {e.hint}\n  다시 시도: {tip}  (실패한 장면을 다시 요청하고 이어서 합성)", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:  # 합성(ffmpeg)·요청 보내는 중 Ctrl+C: traceback 대신 한 줄 (생성 대기 중이면 interrupted() 가 작업 ID 를 알림)
+        print("\n중단했습니다 (Ctrl+C)", file=sys.stderr)
+        return 130
     except InputError as e:
         if getattr(a, "json", False):
             print(json.dumps({"event": "invalid", "message": str(e), "errors": [str(e)]}, ensure_ascii=False), flush=True)
