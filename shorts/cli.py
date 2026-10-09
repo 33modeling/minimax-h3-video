@@ -105,21 +105,18 @@ def apply_overrides(spec: dict, a) -> dict:
         v = getattr(a, key, None)
         if v:
             spec[key] = v
-    if getattr(a, "fps", None):
-        spec["fps"] = a.fps
-    if getattr(a, "gen_size", None):
+    # 숫자 옵션은 0 도 그대로 넣어 검사를 받게 한다(전에는 --fps 0·--max-duration 0·--poll 0 이 말없이 무시됐다)
+    for key in ("fps", "max_duration", "poll", "timeout"):
+        if getattr(a, key, None) is not None:
+            spec[key] = getattr(a, key)
+    if getattr(a, "gen_size", None) is not None:
         spec["gen_size"] = parse_gen_size(a.gen_size)
     if getattr(a, "output", None):
         spec["output"] = a.output
-    if getattr(a, "max_duration", None):
-        spec["max_duration"] = a.max_duration
-    if getattr(a, "poll", None):
-        spec["poll"] = a.poll
-    if getattr(a, "timeout", None):
-        spec["timeout"] = a.timeout
     for key, env in (("resolution", "SHORTS_RESOLUTION"), ("quality", "SHORTS_QUALITY"), ("fps", "SHORTS_FPS")):
-        if not spec.get(key) and os.environ.get(env):  # .env 의 기본값: 옵션·JSON 에 없을 때만
-            spec[key] = int(os.environ[env]) if key == "fps" else os.environ[env]
+        v = os.environ.get(env, "").strip()
+        if spec.get(key) is None and v:  # .env 의 기본값: 옵션·JSON 에 없을 때만. 틀린 값은 명세 검사가 한국어로 알려 준다
+            spec[key] = int(v) if key == "fps" and v.isdigit() else v
     if not spec.get("server") and env_server():
         spec["server"] = env_server()
     if not spec.get("ref_server") and env_ref_server():
@@ -579,7 +576,7 @@ def cmd_compose(a) -> int:
     out.plan_stages(["검증", "합성"])
     out.stage("검증", "")
     spec: dict = {"base": a.base, "sources": a.source or [], "template": a.template, "resolution": a.resolution, "fit": a.fit,
-                  "max_duration": a.max_duration or 60, "fps": a.fps, "quality": a.quality}
+                  "max_duration": 60 if a.max_duration is None else a.max_duration, "fps": a.fps, "quality": a.quality}
     if not a.base:
         spec.pop("base")
     if a.title:
