@@ -87,8 +87,13 @@ def _type_matches(t: str, v) -> bool:
 
 
 def _num(v):
+    """JSON.stringify 처럼 1.0 → 1 (목록·객체 안까지)."""
     if isinstance(v, float) and v.is_integer():
         return int(v)
+    if isinstance(v, list):
+        return [_num(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _num(x) for k, x in v.items()}
     return v
 
 

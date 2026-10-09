@@ -298,7 +298,13 @@ def plan_timeline(spec: dict, inputs: dict) -> dict:
             "captions": captions, "title": title, "style": style, "quality": quality, "warnings": warnings}
 
 
+def to_fixed1(x: float) -> str:
+    """JS Number.prototype.toFixed(1) 과 같은 문자열. 파이썬 :.1f 는 2.25 → '2.2'(짝수 반올림), JS 는 '2.3'."""
+    from decimal import ROUND_HALF_UP, Decimal
+    return str(Decimal(x).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
 def describe_plan(plan: dict) -> str:
     segs = sum(1 for s in plan["segments"] if s["kind"] == "clip")
-    return (f"{TEMPLATE_KO[plan['template']]} · {plan['width']}×{plan['height']} · {plan['fps']}fps · 품질 {plan['quality']['name']} · {plan['duration']:.1f}초 · "
+    return (f"{TEMPLATE_KO[plan['template']]} · {plan['width']}×{plan['height']} · {plan['fps']}fps · 품질 {plan['quality']['name']} · {to_fixed1(plan['duration'])}초 · "
             f"소스 구간 {segs}개 · 자막 {len(plan['captions'])}줄")

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { checkSpec, normalizeSpec, composeInputs, attachFiles, aiScenes } from '../../src/core/spec.js';
-import { planTimeline, timeCaptions, wrapText, fitGeometry } from '../../src/core/plan.js';
+import { planTimeline, timeCaptions, wrapText, fitGeometry, describePlan } from '../../src/core/plan.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const data = JSON.parse(readFileSync(ROOT + 'tests/parity_cases.json', 'utf8'));
@@ -155,6 +155,8 @@ test('해상도 경계값과 한국어 오류', () => {
 test('파이썬 CLI 계획과 같다(웹·CLI 같은 배치)', () => {
   const py = JSON.parse(execFileSync('python3', [ROOT + 'tests/parity_plan.py'], { encoding: 'utf8' }));
   for (const name of Object.keys(plans)) {
-    assert.deepEqual(JSON.parse(JSON.stringify(plans[name])), py[name], `계획 불일치: ${name}`);
+    const { describe, ...pyPlan } = py[name];
+    assert.deepEqual(JSON.parse(JSON.stringify(plans[name])), pyPlan, `계획 불일치: ${name}`);
+    assert.equal(describePlan(plans[name]), describe, `요약 문장 불일치: ${name}`);
   }
 });

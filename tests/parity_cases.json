@@ -227,6 +227,18 @@
         "template": "pip",
         "resolution": "2160x2160"
       }
+    },
+    {
+      "name": "montage-quarter-seconds",
+      "spec": {
+        "sources": [
+          {
+            "path": "land.mp4",
+            "end": 2.25
+          }
+        ],
+        "template": "montage"
+      }
     }
   ]
 }

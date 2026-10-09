@@ -90,7 +90,7 @@ class SpecTest(Base):
     def test_same_errors_as_web(self):
         """웹(src/core/spec.js)과 같은 문장을 낸다."""
         bad = {"duration": 3, "ratio": "2:1", "templat": "x", "captions": [3, {"text": "a", "start": 2, "end": 1}],
-               "sources": [{"path": "a.mp4", "start": 3, "end": 1}]}
+               "sources": [{"path": "a.mp4", "start": 3, "end": 1}], "base": [1.0, 2.5]}
         py, _ = S.check_spec(bad)
         js = subprocess.run(["node", "-e", "import('./src/core/spec.js').then(m=>console.log(JSON.stringify(m.checkSpec("
                              + json.dumps(bad) + ").errors)))"], cwd=ROOT, capture_output=True, text=True, check=True)

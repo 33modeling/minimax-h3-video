@@ -22,7 +22,8 @@ def main():
     out = {}
     for c in data["cases"]:
         norm = S.normalize_spec(c["spec"])
-        out[c["name"]] = P.plan_timeline(norm, inputs_for(c["spec"], data["media"]))
+        plan = P.plan_timeline(norm, inputs_for(c["spec"], data["media"]))
+        out[c["name"]] = dict(plan, describe=P.describe_plan(plan))
     print(json.dumps(out, ensure_ascii=False))
 
 
