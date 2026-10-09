@@ -371,6 +371,19 @@ const scenarios = {
     ref.close();
   },
 
+  // AI: JSON 에 server 만 있고 backend 가 없으면(examples/scenes.json) CLI 처럼 서버에 물어 판별 → SGLang 이면 /v1/videos
+  async ai_auto() {
+    const fl = await startSglang(genMp4);
+    // 판별용 GET /api/spec 의 404 는 브라우저가 콘솔에 남긴다(SGLang 에는 그 경로가 없음 — ai_flaky 의 503 과 같은 경우)
+    const { page, done } = await newPage('ai-auto', { allow: ['404'] });
+    await loadJob(page, 'ai-auto', { scenes: [{ prompt: 'Coffee pours into a cup', duration: 4 }], ratio: '9:16', server: fl.url, poll: 0.2, output: 'auto.mp4' });
+    await waitReady(page, 'ai-auto');
+    await makeAndDownload(page, 'ai-auto');
+    check(fl.log.some((x) => x.kind === 'submit' && x.body.task === 't2va'), `ai_auto: SGLang 에 요청이 안 감 ${JSON.stringify(fl.log)}`);
+    await done();
+    fl.close();
+  },
+
   // Claude 기획: 가짜 엔드포인트, 1차 응답이 검증 실패 → 오류를 붙여 1회 재요청 → 성공 (구조화 출력, CLI 와 같은 요청)
   async claude() {
     const bad = jsonReply({ prompt: 'x', template: 'zoom', captions: ['a'] });

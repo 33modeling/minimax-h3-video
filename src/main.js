@@ -160,10 +160,12 @@ function syncSettings(obj) {
 }
 
 // JSON 이 비어 있는 필드는 화면의 연결 설정으로 채운다(내보내기·생성에 쓰는 실제 명세).
+// JSON 에 server 만 있고 backend 가 없으면 명세 기본값 auto(서버에 물어 판별) — CLI 와 같다.
+// (전에는 h3video 로 단정해 examples/scenes.json 처럼 SGLang 주소를 적은 명세가 /api/jobs 404 로 실패했다)
 function effectiveSpec(raw) {
   const s = { ...raw };
   if (!s.prompt && !s.scenes) return s;
-  if (s.backend == null) s.backend = conn.mode;
+  if (s.backend == null) s.backend = s.server != null ? 'auto' : conn.mode;
   if (s.server == null) s.server = conn.mode === 'sglang' ? conn.fl2va : conn.h3;
   if (s.ref_server == null && s.backend === 'sglang') s.ref_server = conn.ref2va;
   return s;
