@@ -1,8 +1,8 @@
-// Claude 기획(웹). shorts/claude.py 와 같은 시스템 프롬프트·스키마 변환을 쓴다(tests/unit/web.test.mjs 가 비교).
+// Claude 기획(웹). shorts/claude.py 와 같은 요청(시스템 프롬프트·스키마 변환·구조화 출력)을 쓴다(tests/unit/web.test.mjs 가 비교).
 // 웹은 브라우저에서 Messages API 를 직접 부른다(anthropic-dangerous-direct-browser-access).
-// 결과는 write_job 도구 호출(tool use)로 받는다. Opus 5.5 는 tool_choice 강제(type:'tool')를 400 으로 거절하므로
-// tool_choice 는 auto 로 두고 프롬프트로 도구 호출을 지시한다. 받은 JSON 은 전체 스키마+의미 검사로 다시 검증하고,
-// 실패하면 오류를 tool_result(is_error)로 돌려주며 한 번만 다시 요청한다.
+// 결과는 구조화 출력 output_config.format(json_schema)으로 JSON 텍스트만 받는다. Opus 5.5 는 tool_choice 강제(any/tool)를
+// 400 으로 거절하고, 공식 문서가 고정 JSON 모양에는 구조화 출력을 권한다. 받은 JSON 은 전체 스키마+의미 검사로 다시 검증하고,
+// 실패하면 오류를 붙여 한 번만 다시 요청한다(CLI 와 같은 문장).
 import { schema, checkSpec } from './spec.js';
 
 export const DEFAULT_MODEL = 'claude-opus-5-5';
@@ -11,8 +11,6 @@ export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 export const RUNTIME_FIELDS = ["$schema", "server", "ref_server", "backend", "poll", "timeout", "output", "model"];
 export const UNSUPPORTED = ["minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems", "pattern", "title", "$id", "$schema", "x-pattern", "x-presets", "x-hint", "description"];
 export const SYSTEM_PROMPT = "너는 세로형 숏폼(9:16, 60초 이하) 기획자다. 사용자의 아이디어(와 소스 영상 프레임)를 보고 작업 명세 JSON 하나를 만든다.\n명세는 두 단계로 실행된다: (1) 사용자의 영상 생성 서버(MiniMax-H3 같은 모델)가 장면 영상을 만들고, (2) 템플릿으로 9:16 숏폼을 합성한다.\n\n규칙\n- scenes: 장면 1~4개. 각 장면 prompt 는 영상 생성용 영어 프롬프트(피사체·동작·카메라·조명·분위기, 1~3문장). 대사가 필요하면 따옴표 안에 한국어로.\n- 장면 duration 은 4~15초 정수. 장면 길이 합계는 15~45초가 적당하다.\n- ratio 는 \"9:16\".\n- title: 상단 훅 문구, 한국어 18자 이내, 궁금증을 만드는 말.\n- captions: 한국어 자막, 한 줄에 한 장면/한 생각, 줄당 22자 이내, 4~10줄. 영상 내용과 맞춘다.\n- 소스 영상이 주어졌을 때:\n  * 소스를 AI 참조로 써서 새 장면을 만들려면 scenes[].sources 에 파일 이름을 넣는다(장면당 영상 3개 이하).\n  * 소스 자체를 주 화면으로 살리려면 base 에 파일 이름을 넣고 template 을 cutaway(소스 위로 AI 장면이 사이사이), split(위 소스·아래 AI), pip(소스 전체·AI 작은 창) 중에서 고른다.\n  * 소스를 보지 않고 지어내지 말고, 프레임에서 보이는 내용에 맞춰 자막과 프롬프트를 쓴다.\n- 소스가 없으면 template 은 \"montage\"(AI 장면을 이어 붙임).\n- 서버 주소·출력 파일 같은 실행 설정은 넣지 않는다.\n- JSON 만 출력한다.";
-export const TOOL_NAME = 'write_job';
-const TOOL_RULE = '\n- 결과는 텍스트로 쓰지 말고 write_job 도구를 한 번 호출해 낸다. 도구 입력이 곧 작업 명세 JSON 이다.';
 
 function deref(node, root) {
   if (Array.isArray(node)) return node.map((x) => deref(x, root));
@@ -38,7 +36,7 @@ function strip(node) {
   return node;
 }
 
-// 도구 입력 스키마: $ref 펼치기 + 지원 안 되는 제약 제거 + 실행 설정 필드 제거(받은 뒤 전체 스키마로 다시 검사).
+// 구조화 출력 스키마: $ref 펼치기 + 지원 안 되는 제약 제거 + 실행 설정 필드 제거(받은 뒤 전체 스키마로 다시 검사).
 export function apiSchema() {
   const sch = deref(JSON.parse(JSON.stringify(schema)), schema);
   for (const k of RUNTIME_FIELDS) delete sch.properties[k];
@@ -67,11 +65,9 @@ export function buildRequest(idea, sources, model = DEFAULT_MODEL, maxTokens = 1
   return {
     model,
     max_tokens: maxTokens,
-    system: SYSTEM_PROMPT + TOOL_RULE,
+    system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userContent(idea, sources) }],
-    tools: [{ name: TOOL_NAME, description: '숏폼 작업 명세 JSON 을 제출한다. 입력 전체가 명세다.', input_schema: apiSchema() }],
-    tool_choice: { type: 'auto' },
-    output_config: { effort: 'medium' },
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: apiSchema() } },
     fallbacks: 'default',
   };
 }
@@ -88,26 +84,20 @@ export function headers(apiKey) {
 
 export class PlanError extends Error {}
 
-// 응답 → { obj, errors, toolUseId }
+// 응답 → { obj, errors } (shorts/claude.py parse_reply 와 같은 규칙·문장)
 export function parseReply(resp) {
   if (resp.stop_reason === 'refusal') return { obj: null, errors: ['Claude 가 이 요청을 거절했습니다. 아이디어를 바꿔 보세요'] };
+  const raw = (resp.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
   if (resp.stop_reason === 'max_tokens') return { obj: null, errors: ['응답이 max_tokens 에서 잘렸습니다'] };
-  const content = resp.content || [];
-  const use = content.find((b) => b.type === 'tool_use' && b.name === TOOL_NAME);
-  let obj = null;
-  if (use) obj = use.input;
-  else {
-    const raw = content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    const m = raw.match(/\{[\s\S]*\}/);
-    try {
-      obj = JSON.parse(m ? m[0] : raw);
-    } catch (e) {
-      return { obj: null, errors: [`write_job 도구 호출도, 읽을 수 있는 JSON 도 없습니다`] };
-    }
+  let obj;
+  try {
+    obj = JSON.parse(raw);
+  } catch (e) {
+    return { obj: null, errors: [`JSON 으로 읽을 수 없습니다: ${e.message}`] };
   }
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { obj: null, errors: ['JSON 객체가 아닙니다'], toolUseId: use && use.id };
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { obj: null, errors: ['JSON 객체가 아닙니다'] };
   const { errors } = checkSpec(obj);
-  return { obj, errors, toolUseId: use && use.id };
+  return { obj, errors };
 }
 
 async function defaultPost(url, body, apiKey, signal) {
@@ -138,17 +128,16 @@ export async function plan({ idea, sources = [], apiKey, model = DEFAULT_MODEL, 
   for (let attempt = 0; attempt < 2; attempt++) {
     attempts += 1;
     const resp = await post(url, body, apiKey, signal);
-    const { obj, errors, toolUseId } = parseReply(resp);
+    const { obj, errors } = parseReply(resp);
     if (obj && !errors.length) return { spec: obj, attempts };
     last = errors;
-    log(`검증 실패 ${errors.length}건${attempt === 0 ? ' — 다시 요청합니다' : ''}: ${errors.slice(0, 3).join('; ')}`);
+    log(`검증 실패 ${errors.length}건 — ${attempt === 0 ? '다시 요청합니다' : '포기'}: ${errors.slice(0, 3).join('; ')}`);
     if (attempt > 0 || resp.stop_reason === 'refusal') break;
-    const fix = '위 JSON 이 검증에 실패했습니다. 아래 오류를 모두 고친 전체 명세로 write_job 을 다시 호출하세요.\n- ' + errors.join('\n- ');
-    // 응답의 tool_use 마다 tool_result 를 하나씩 돌려줘야 한다(첫 번째에 오류 목록).
-    const uses = (resp.content || []).filter((b) => b.type === 'tool_use');
-    const results = uses.map((b) => ({ type: 'tool_result', tool_use_id: b.id, is_error: true, content: b.id === toolUseId || uses.length === 1 ? fix : '이 호출은 무시합니다. 위 오류를 고쳐 다시 호출하세요' }));
-    const next = { role: 'user', content: results.length ? results : [{ type: 'text', text: fix }] };
-    body = { ...body, messages: [...body.messages, { role: 'assistant', content: resp.content || [] }, next] };
+    const fix = '위 JSON 이 검증에 실패했습니다. 아래 오류를 모두 고친 전체 JSON 을 다시 주세요.\n- ' + errors.join('\n- ');
+    body = {
+      ...body,
+      messages: [...body.messages, { role: 'assistant', content: resp.content || [] }, { role: 'user', content: [{ type: 'text', text: fix }] }],
+    };
   }
-  throw new PlanError(`Claude 가 쓴 명세가 두 번 모두 검증에 실패했습니다: ${last.slice(0, 3).join('; ')}`);
+  throw new PlanError(`Claude 가 만든 명세가 검증을 통과하지 못했습니다: ${last.slice(0, 3).join('; ')}`);
 }

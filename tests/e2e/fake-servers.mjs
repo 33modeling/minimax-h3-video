@@ -144,14 +144,15 @@ export async function startAnthropic(replies) {
   return { url, log, close: () => srv.close() };
 }
 
-export function toolReply(input, id = 'toolu_1') {
+// 구조화 출력(output_config.format) 응답: JSON 텍스트 한 덩어리(앞에 빈 thinking 블록 — Opus 5.5 기본 표시 방식)
+export function jsonReply(obj) {
   return {
     id: 'msg_fake',
     type: 'message',
     role: 'assistant',
     model: 'claude-opus-5-5',
-    stop_reason: 'tool_use',
-    content: [{ type: 'tool_use', id, name: 'write_job', input }],
+    stop_reason: 'end_turn',
+    content: [{ type: 'thinking', thinking: '', signature: 'sig' }, { type: 'text', text: JSON.stringify(obj) }],
     usage: { input_tokens: 10, output_tokens: 10 },
   };
 }

@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
-import { startH3video, startSglang, startAnthropic, toolReply } from './fake-servers.mjs';
+import { startH3video, startSglang, startAnthropic, jsonReply } from './fake-servers.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = join(ROOT, '.tmp/e2e');
@@ -371,10 +371,10 @@ const scenarios = {
     ref.close();
   },
 
-  // Claude 기획: 가짜 엔드포인트, 1차 응답이 검증 실패 → tool_result(is_error)로 1회 재요청 → 성공
+  // Claude 기획: 가짜 엔드포인트, 1차 응답이 검증 실패 → 오류를 붙여 1회 재요청 → 성공 (구조화 출력, CLI 와 같은 요청)
   async claude() {
-    const bad = toolReply({ prompt: 'x', template: 'zoom', captions: ['a'] }, 'toolu_bad');
-    const good = toolReply({ scenes: [{ prompt: 'Coffee pours into a cup, morning light', duration: 5 }], ratio: '9:16', title: '아침 커피', captions: ['커피를 내리고'], template: 'montage' }, 'toolu_good');
+    const bad = jsonReply({ prompt: 'x', template: 'zoom', captions: ['a'] });
+    const good = jsonReply({ scenes: [{ prompt: 'Coffee pours into a cup, morning light', duration: 5 }], ratio: '9:16', title: '아침 커피', captions: ['커피를 내리고'], template: 'montage' });
     const fake = await startAnthropic([bad, good]);
     const { page, done } = await newPage('claude', { query: `?anthropic_base=${encodeURIComponent(fake.url)}` });
     await page.click('#claudePanel summary');
@@ -387,11 +387,14 @@ const scenarios = {
     const txt = await page.inputValue('#jsonText');
     check(/시도 2회/.test(out) && /아침 커피/.test(txt), `claude: 결과 이상 — ${out}`);
     const [r1, r2] = fake.log;
-    check(r1 && r1.headers['anthropic-dangerous-direct-browser-access'] === 'true' && r1.headers['x-api-key'] === 'sk-ant-test-123' && r1.body.model === 'claude-opus-5-5' && r1.body.tools[0].name === 'write_job',
-      'claude: 요청 헤더·모델·도구 이상');
+    check(r1 && r1.headers['anthropic-dangerous-direct-browser-access'] === 'true' && r1.headers['x-api-key'] === 'sk-ant-test-123' && r1.body.model === 'claude-opus-5-5' &&
+        r1.body.output_config.format.type === 'json_schema' && !r1.body.tools && !r1.body.tool_choice && r1.body.fallbacks === 'default' &&
+        r1.headers['anthropic-beta'] === 'server-side-fallback-2026-07-01',
+      'claude: 요청 헤더·모델·구조화 출력 이상');
     check(r1 && r1.body.messages[0].content.some((b) => b.type === 'image'), 'claude: 소스 프레임 이미지가 안 감');
     const last = r2 && r2.body.messages.at(-1);
-    check(last && last.content[0].type === 'tool_result' && last.content[0].is_error && last.content[0].tool_use_id === 'toolu_bad', 'claude: 재요청이 tool_result(is_error) 가 아님');
+    check(last && last.role === 'user' && last.content[0].type === 'text' && /검증에 실패/.test(last.content[0].text) && r2.body.messages.at(-2).role === 'assistant',
+      'claude: 재요청에 오류 문장이 안 붙음');
     check((await page.evaluate(() => localStorage.getItem('shorts.anthropicKey'))) === 'sk-ant-test-123', 'claude: 키가 localStorage 에 저장 안 됨');
     await page.click('#keyClear');
     check((await page.evaluate(() => localStorage.getItem('shorts.anthropicKey'))) === null && (await page.inputValue('#apiKey')) === '', 'claude: 키 지우기 안 됨');

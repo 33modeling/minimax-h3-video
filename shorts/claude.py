@@ -4,7 +4,7 @@ Messages API 를 표준 라이브러리로 직접 호출한다(CLI 는 의존성
 - 구조화 출력 output_config.format(json_schema) 으로 JSON 만 받는다. Opus 5.5 는 tool_choice 강제를 받지 않으므로 이 방식.
 - 받은 JSON 을 전체 스키마(+의미 검사)로 다시 검증하고, 실패하면 오류를 붙여 한 번만 다시 요청한다.
 - 키는 ANTHROPIC_API_KEY 환경변수. 화면·로그에 키를 찍지 않는다.
-웹(src/core/claude.js)이 같은 시스템 프롬프트·스키마 변환을 쓴다(테스트가 비교).
+웹(src/core/claude.js)이 같은 요청 본문(시스템 프롬프트·스키마 변환·구조화 출력)을 쓴다(테스트가 비교).
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import os
 import urllib.error
 import urllib.request
 
+from . import plan as P
 from . import spec as S
 
 DEFAULT_MODEL = "claude-opus-5-5"
@@ -81,8 +82,8 @@ def user_content(idea: str, sources: list[dict]) -> list[dict]:
     if sources:
         lines.append("소스 영상:")
         for s in sources:
-            lines.append(f"- {s['name']}: {s.get('duration', 0):.1f}초, {s.get('width', 0)}×{s.get('height', 0)}, "
-                         f"프레임 {len(s.get('frames', []))}장 (시점: {', '.join(f'{t:.1f}초' for t, _ in s.get('frames', []))})")
+            lines.append(f"- {s['name']}: {P.to_fixed1(s.get('duration', 0))}초, {s.get('width', 0)}×{s.get('height', 0)}, "
+                         f"프레임 {len(s.get('frames', []))}장 (시점: {', '.join(f'{P.to_fixed1(t)}초' for t, _ in s.get('frames', []))})")
             for _t, jpg in s.get("frames", []):
                 blocks.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                           "data": base64.b64encode(jpg).decode()}})

@@ -294,7 +294,7 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
    `h3video web --cors-origin https://33modeling.pages.dev`. 원격 GPU 는 `ssh -L 8790:localhost:8790 사용자@서버` 터널로 붙인다
    (https 페이지는 다른 PC 의 http 주소를 혼합 콘텐츠로 막고 localhost 만 허용). SGLang 직접 연결은 참조 파일을 `data:` URI 로 보내므로 서버가 그걸 받아야 한다.
 5. **Claude로 기획하기**(선택): 아이디어와 Anthropic API 키(그 브라우저 localStorage 에만 저장, "키 지우기")를 넣고 요청하면 `claude-opus-5-5` 가
-   `write_job` 도구 호출로 명세를 써서 파일 칸 1을 채운다. 파일 칸 2의 영상이 있으면 프레임 몇 장을 함께 보낸다. 검증에 실패하면 오류를 붙여 한 번 다시 묻는다.
+   구조화 출력(`output_config.format`, CLI 와 같은 요청)으로 명세 JSON 을 써서 파일 칸 1을 채운다. 파일 칸 2의 영상이 있으면 프레임 몇 장을 함께 보낸다. 검증에 실패하면 오류를 붙여 한 번 다시 묻는다.
 6. **미리보기·만들기**: 저해상도(270px) 미리보기를 시간 막대로 넘겨 보거나 소리와 함께 재생한다. **만들기**를 누르면
    단계 줄(검증 → 서버 연결 → 대기열 → 생성 중 → 다운로드 → 합성 → 인코딩 → 완료)과 AI 장면 카드(상태·진행률 막대·경과·남은 시간·작업 ID 복사·재시도 표시)가 나온다.
    진행률은 탭 제목(`⏳ 42% 생성 중`)에도 나오고, "끝나면 알림"을 켜면 소리·브라우저 알림을 준다. **취소**는 언제든 되며 SGLang 은 서버 작업 삭제도 요청한다
@@ -330,7 +330,8 @@ export ANTHROPIC_API_KEY=...
 ./bin/shorts plan "..." --dry-run                                        # 보낼 요청 요약만 (키는 출력 안 함)
 ```
 
-- Messages API 를 구조화 출력(`output_config.format` json_schema)으로 불러 JSON 만 받고, 받은 JSON 을 전체 스키마로 다시 검사한다.
+- Messages API 를 구조화 출력(`output_config.format` json_schema)으로 불러 JSON 만 받고, 받은 JSON 을 전체 스키마로 다시 검사한다(웹도 같은 요청).
+  Opus 5.5 는 `tool_choice` 강제(`any`/`tool`)를 400 으로 거절하므로 도구 호출 방식은 쓰지 않는다.
   실패하면 오류를 붙여 1번만 다시 요청한다. 서버 쪽 거절 대비로 `fallbacks: "default"` 를 켠다.
 - 모델 바꾸기: `--claude-model`. 웹은 키를 그 브라우저 localStorage 에만 저장한다(지우기 버튼).
 
