@@ -291,7 +291,7 @@ class SGLangBackend:
 class VLLMBackend(SGLangBackend):
     name = "vllm"
 
-    def build_form(self, req: dict) -> tuple[list, list]:
+    def build_form(self, req: dict, read: bool = True) -> tuple[list, list]:
         fields = [("prompt", req["prompt"]), ("seconds", str(seconds_of(req))),
                   ("size", gen_size_of(req, VLLM_SHORT_EDGE)[1]), ("seed", str(int(req.get("seed") or 0)))]
         if self.model:
@@ -300,12 +300,13 @@ class VLLMBackend(SGLangBackend):
         files = []
         if ref:
             p = Path(ref)
-            files.append(("input_reference", p.name, p.read_bytes(), guess_type(str(p))))
+            files.append(("input_reference", p.name, p.read_bytes() if read else b"", guess_type(str(p))))
         return fields, files
 
     def build_body(self, req: dict, stage=True) -> dict:
-        fields, files = self.build_form(req) if stage else ([("prompt", req["prompt"])], [])
-        return {"multipart": dict(fields), "files": [f[1] for f in files]}
+        """--dry-run(stage=False)도 보낼 필드를 모두 보여 준다(파일은 읽지 않고 이름만)."""
+        fields, files = self.build_form(req, read=stage)
+        return {"multipart": dict(fields), "files": [f"{f[0]}={f[1]}" for f in files]}
 
     def submit(self, req: dict) -> str:
         fields, files = self.build_form(req)
@@ -327,24 +328,25 @@ class H3VideoBackend:
     def __init__(self, server: str, api_key: str | None = None, **_):
         self.http = Http(server, api_key)
 
-    def build_form(self, req: dict) -> tuple[list, list]:
+    def build_form(self, req: dict, read: bool = True) -> tuple[list, list]:
         fields = [("prompt", req["prompt"]), ("seconds", str(seconds_of(req))), ("aspect_ratio", req["ratio"]),
                   ("seed", str(int(req.get("seed") or 0))), ("title", req.get("title") or "shorts")]
         files = []
+
+        def add(key, path):
+            p = Path(path)
+            files.append((key, p.name, p.read_bytes() if read else b"", guess_type(str(p))))
         if req.get("image") and req["task"] != "ref2va":
-            p = Path(req["image"])
-            files.append(("first_image", p.name, p.read_bytes(), guess_type(str(p))))
+            add("first_image", req["image"])
         for r in req.get("refs", []):
-            p = Path(r["path"])
-            key = {"image": "ref_images", "audio": "ref_audios"}.get(media_kind(str(p)), "ref_videos")
-            files.append((key, p.name, p.read_bytes(), guess_type(str(p))))
+            add({"image": "ref_images", "audio": "ref_audios"}.get(media_kind(str(r["path"])), "ref_videos"), r["path"])
         if req["task"] == "ref2va" and req.get("image"):
-            p = Path(req["image"])
-            files.append(("ref_images", p.name, p.read_bytes(), guess_type(str(p))))
+            add("ref_images", req["image"])
         return fields, files
 
     def build_body(self, req: dict, stage=True) -> dict:
-        fields, files = self.build_form(req) if stage else ([("prompt", req["prompt"])], [])
+        """--dry-run(stage=False)도 보낼 필드를 모두 보여 준다(파일은 읽지 않고 이름만)."""
+        fields, files = self.build_form(req, read=stage)
         return {"multipart": dict(fields), "files": [f"{f[0]}={f[1]}" for f in files]}
 
     def submit(self, req: dict) -> str:

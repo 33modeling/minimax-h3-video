@@ -423,6 +423,28 @@ class RequestParityTest(unittest.TestCase):
         self.assertEqual(py[0], [5, 5])
 
 
+class DryRunTest(Base):
+    def test_dry_run_never_contacts_server_and_shows_all_fields(self):
+        """gen --dry-run 이 자동 판별하려고 서버에 붙어 꺼진 서버면 실패하던 것, vLLM·h3video 본문이 prompt 만 보이던 것."""
+        dead = "http://127.0.0.1:9"
+        code, out = run_cli("gen", "--server", dead, "--prompt", "a cat", "--duration", "4.5", "--dry-run", "--json", env=self.state_env)
+        self.assertEqual(code, 0, out)
+        req = [e for e in events(out) if e["event"] == "request"][0]
+        self.assertEqual(req["body"]["target"]["duration_seconds"], 5)
+        code, out = run_cli("gen", "--server", dead, "--backend", "vllm", "--prompt", "a cat", "--image", self.m("first.png"),
+                            "--dry-run", "--json", env=self.state_env)
+        self.assertEqual(code, 0, out)
+        body = [e for e in events(out) if e["event"] == "request"][0]["body"]
+        self.assertEqual(body["multipart"]["size"], "720x1280")
+        self.assertEqual(body["files"], ["input_reference=first.png"])
+        p = self.write_job("dry-h3", {"prompt": "x", "duration": 4, "backend": "h3video", "server": dead})
+        code, out = run_cli("run", p, self.m("src1.mp4"), "--dry-run", "--json", env=self.state_env)
+        self.assertEqual(code, 0, out)
+        body = [e for e in events(out) if e["event"] == "request"][0]["body"]
+        self.assertEqual(body["multipart"]["seconds"], "4")
+        self.assertEqual(body["files"], ["ref_videos=src1.mp4"])
+
+
 class MatchFilesTest(Base):
     def test_second_files_same_rule_as_web(self):
         """두 번째 파일: 웹 matchFiles 와 같은 규칙(전에는 CLI 가 음악·이미지도 sources 에 붙여 소스에서 빠지거나 참조로 보냄)."""

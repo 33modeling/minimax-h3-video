@@ -545,15 +545,22 @@ def cmd_gen(a) -> int:
     out.plan_stages(["검증", "서버 연결", "생성", "다운로드"])
     out.stage("검증", "")
     out.stage("서버 연결", server)
+    lim = B.check_h3_limits(req, ref_durs)
+    if a.dry_run:  # run --dry-run 처럼 서버에 붙지 않는다(자동 판별이면 SGLang 형식으로 보여 줌)
+        name = a.backend if a.backend != "auto" else "sglang"
+        if lim and name != "vllm":
+            out.event("invalid", "H3 사양 한도를 넘습니다:\n  - " + "\n  - ".join(lim), errors=lim)
+            return 2
+        bk = B.H3VideoBackend(server) if name == "h3video" else B.BACKENDS[name](server, None, stager=stager_from(a), model=a.model)
+        label = name if a.backend != "auto" else "자동 판별: 실행 때 서버에 물어봄 · SGLang 형식"
+        out.event("request", f"POST ({label}) " + json.dumps(bk.build_body(req, stage=False), ensure_ascii=False),
+                  backend=a.backend, body=bk.build_body(req, stage=False))
+        return 0
     backend = B.make_backend(a.backend, server, os.environ.get("SHORTS_API_KEY"), stager_from(a), a.model, a.ref_server)
     out.event("backend", f"  서버 종류: {backend.name} · 주소: {server}", backend=backend.name, server=server)
-    lim = B.check_h3_limits(req, ref_durs)
     if lim and backend.name != "vllm":
         out.event("invalid", "H3 사양 한도를 넘습니다:\n  - " + "\n  - ".join(lim), errors=lim)
         return 2
-    if a.dry_run:
-        out.event("request", f"POST ({backend.name}) " + json.dumps(backend.build_body(req, stage=False), ensure_ascii=False))
-        return 0
     output = str(Path(a.output).resolve())
     state = {"kind": "gen", "state_path": output + ".state.json", "server": server, "ref_server": a.ref_server,
              "backend": backend.name, "model": a.model, "spec": spec, "output": output,
