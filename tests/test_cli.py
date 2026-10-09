@@ -190,6 +190,21 @@ class ComposeTest(Base):
                              "clips": [], "bgm": None}),
             {"base": "b.mp4", "clips": [], "bgm": None}, str(self.tmp / "x.mp4"), str(self.tmp / "txt"))))
 
+    def test_special_characters_in_font_and_temp_paths(self):
+        """글꼴·임시 폴더 경로에 ' , [ ] ; : \\ 가 있으면 필터 그래프가 깨져 합성이 실패하던 버그(예: /Users/o'brien)."""
+        weird = self.tmp / "it's a,b;c [x] d:e \\ 한글"
+        weird.mkdir(parents=True, exist_ok=True)
+        font = weird / "font's.ttf"
+        shutil.copy(R.find_font(), font)
+        info = R.probe(self.m("src1.mp4"))
+        plan = P.plan_timeline(S.normalize_spec({"base": "b.mp4", "title": "제목 테스트", "captions": ["자막"]}),
+                               {"base": {"media": {"path": "b.mp4", "start": 0, "end": None}, "info": info}, "clips": [], "bgm": None})
+        out_mp4 = self.tmp / "weird.mp4"
+        args = R.build_command(plan, {"base": self.m("src1.mp4"), "clips": [], "bgm": None}, str(out_mp4), str(weird / "txt"),
+                               font=str(font))
+        R.run_ffmpeg(args, plan["duration"])
+        self.assertGreater(self.yellow_pixels(out_mp4), 200, "제목이 그려지지 않음")
+
     def test_base_without_video_and_bgm_without_audio(self):
         """웹과 같은 문장으로 막는다(전에는 0 으로 나누기 traceback·ffmpeg 오류)."""
         silent = self.tmp / "silent.mp4"

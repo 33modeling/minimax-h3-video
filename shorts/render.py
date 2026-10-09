@@ -101,8 +101,13 @@ def probe(path: str) -> dict:
 
 
 def _esc_path(p: str) -> str:
-    # filtergraph 안 옵션 값: \ : ' 를 이스케이프
-    return str(p).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+    """filtergraph 안 옵션 값으로 쓸 경로. ffmpeg 는 두 번 푼다(옵션 값: \\ ' : / 필터 그래프: \\ ' [ ] , ;).
+    따옴표로 감싸는 방식은 경로에 ' 가 있으면(예: TMPDIR·글꼴 경로 /Users/o'brien/…) 그래프가 깨져 합성이 실패했다."""
+    v = str(p)
+    # 윈도는 구분자 \ → / (ffmpeg 가 받음). 그 밖에서는 \ 도 파일 이름 글자라 그대로 이스케이프한다
+    v = v.replace("\\", "/") if os.sep == "\\" else v.replace("\\", "\\\\")
+    v = v.replace("'", "\\'").replace(":", "\\:")  # 1단계: 옵션 값
+    return "".join("\\" + c if c in "\\'[],;" else c for c in v)  # 2단계: 필터 그래프
 
 
 def _seg_chain(seg: dict, label_in: str, label_out: str, idx: int, fps: int = 30) -> list[str]:
@@ -183,13 +188,13 @@ def build_command(plan: dict, paths: dict, out: str, workdir: str, font: str | N
 
     ts = st["title"]
     for ln in plan["title"]:
-        draws.append(f"drawtext=fontfile='{_esc_path(font)}':textfile='{text_file(ln['text'])}':expansion=none:fontsize={ts['fontSize']}:"
+        draws.append(f"drawtext=fontfile={_esc_path(font)}:textfile={text_file(ln['text'])}:expansion=none:fontsize={ts['fontSize']}:"
                      f"fontcolor=0xffe14d:x=(w-text_w)/2:y={ln['cy']}-{ts['lineHeight']}/2:"
                      f"box=1:boxcolor=black@0.6:boxborderw={ts['pad']}")
     cs = st["caption"]
     for cap in plan["captions"]:
         for ln in cap["lines"]:
-            draws.append(f"drawtext=fontfile='{_esc_path(font)}':textfile='{text_file(ln['text'])}':expansion=none:fontsize={cs['fontSize']}:"
+            draws.append(f"drawtext=fontfile={_esc_path(font)}:textfile={text_file(ln['text'])}:expansion=none:fontsize={cs['fontSize']}:"
                          f"fontcolor=white:borderw={cs['border']}:bordercolor=black:x=(w-text_w)/2:y={ln['cy']}-{cs['lineHeight']}/2:"
                          f"enable='gte(t,{cap['start']:.3f})*lt(t,{cap['end']:.3f})'")
     chain = ",".join(draws + ["format=yuv420p"])
