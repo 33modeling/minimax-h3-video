@@ -128,7 +128,7 @@
           <li><b>서버 켜기</b>: GPU 서버에서 <code>h3video web --cors-origin <span class="origin">https://33modeling.pages.dev</span></code> 처럼 이 페이지 주소를 CORS로 허용해 띄웁니다.</li>
           <li><b>SSH 터널</b>: 내 PC에서 <code>ssh -L 8790:localhost:8790 사용자@GPU서버</code> 후 주소를 <code>http://localhost:8790</code>으로 둡니다.</li>
           <li><b>혼합 콘텐츠</b>: https 페이지는 다른 PC의 http 주소를 부를 수 없습니다. localhost(터널)만 됩니다.</li>
-          <li>JSON에 소스 영상이 있으면 참조 입력(ref2va)으로 함께 보냅니다. SGLang 직접 연결은 서버가 CORS와 data: URI 참조를 받아야 합니다. 안 되면 h3video 웹 서버를 쓰세요.</li>
+          <li>JSON에 소스 영상이 있으면 참조 입력(ref2va)으로 함께 보냅니다. SGLang 직접 연결은 참조 파일을 data: URI로 보냅니다(SGLang H3가 받는 형식). 서버가 이 페이지를 CORS로 허용해야 하고, 안 되면 h3video 웹 서버를 쓰세요.</li>
         </ul>
       </div>
     </details>
