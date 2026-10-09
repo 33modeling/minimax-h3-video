@@ -25,6 +25,7 @@ import fake_servers as F  # noqa: E402
 from shorts import backends as B  # noqa: E402
 from shorts import claude as C  # noqa: E402
 from shorts import cli  # noqa: E402
+from shorts import plan as P  # noqa: E402
 from shorts import render as R  # noqa: E402
 from shorts import spec as S  # noqa: E402
 
@@ -146,6 +147,29 @@ class ComposeTest(Base):
         self.assertIn("ffmpeg 명령", out)
         self.assertIn("filter_complex", out)
         self.assertFalse((self.tmp / "dry.mp4").exists())
+
+    def yellow_pixels(self, video, t=0.5, box=(0, 80, 720, 100)):
+        """프레임 t 의 box(x, y, w, h) 안에서 제목 색(#ffe14d)에 가까운 픽셀 수."""
+        x, y, w, h = box
+        raw = subprocess.run([R.ffmpeg_bin(), "-v", "error", "-ss", str(t), "-i", str(video), "-frames:v", "1",
+                              "-vf", f"crop={w}:{h}:{x}:{y}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                             capture_output=True, check=True).stdout
+        return sum(1 for i in range(0, len(raw), 3) if raw[i] > 200 and raw[i + 1] > 170 and raw[i + 2] < 140)
+
+    def test_percent_and_backslash_text_is_drawn(self):
+        """drawtext 기본 확장(%·\\)에 걸려 '50%' 같은 제목·자막이 통째로 빠지던 버그."""
+        out_mp4 = self.tmp / "percent.mp4"
+        caps = self.tmp / "caps-percent.txt"
+        caps.write_text("할인 50%!\n", encoding="utf-8")
+        code, out = run_cli("compose", "--base", self.m("src1.mp4"), "--title", "50% 세일 \\n", "--captions", caps, "-o", out_mp4)
+        self.assertEqual(code, 0, out)
+        self.assertGreater(self.yellow_pixels(out_mp4), 200, "제목이 그려지지 않음")
+        self.assertIn("expansion=none", " ".join(R.build_command(
+            P.plan_timeline(S.normalize_spec({"base": "b.mp4", "title": "50%"}),
+                            {"base": {"media": {"path": "b.mp4", "start": 0, "end": None},
+                                      "info": {"duration": 3, "width": 1280, "height": 720, "hasAudio": True}},
+                             "clips": [], "bgm": None}),
+            {"base": "b.mp4", "clips": [], "bgm": None}, str(self.tmp / "x.mp4"), str(self.tmp / "txt"))))
 
     def test_missing_file(self):
         p = self.write_job("missing", {"base": "nope.mp4"})

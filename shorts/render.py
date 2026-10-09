@@ -166,6 +166,7 @@ def build_command(plan: dict, paths: dict, out: str, workdir: str, font: str | N
         fg.append(f"[{cur}][s{k}]overlay={x}:{y}:eof_action=pass:enable='gte(t,{seg['t0']:.3f})*lt(t,{seg['t1']:.3f})'[{nxt}]")
         cur = nxt
     # 제목·자막: 줄마다 drawtext 하나(웹과 같은 줄바꿈). 글자는 textfile 로 넘겨 이스케이프 문제를 피한다.
+    # expansion=none: 기본값(normal)은 % 와 \ 를 확장 문법으로 읽어 "50%" 같은 글자가 들어가면 그 줄을 통째로 못 그린다.
     font = font or find_font()
     st = plan["style"]
     draws: list[str] = []
@@ -182,13 +183,13 @@ def build_command(plan: dict, paths: dict, out: str, workdir: str, font: str | N
 
     ts = st["title"]
     for ln in plan["title"]:
-        draws.append(f"drawtext=fontfile='{_esc_path(font)}':textfile='{text_file(ln['text'])}':fontsize={ts['fontSize']}:"
+        draws.append(f"drawtext=fontfile='{_esc_path(font)}':textfile='{text_file(ln['text'])}':expansion=none:fontsize={ts['fontSize']}:"
                      f"fontcolor=0xffe14d:x=(w-text_w)/2:y={ln['cy']}-{ts['lineHeight']}/2:"
                      f"box=1:boxcolor=black@0.6:boxborderw={ts['pad']}")
     cs = st["caption"]
     for cap in plan["captions"]:
         for ln in cap["lines"]:
-            draws.append(f"drawtext=fontfile='{_esc_path(font)}':textfile='{text_file(ln['text'])}':fontsize={cs['fontSize']}:"
+            draws.append(f"drawtext=fontfile='{_esc_path(font)}':textfile='{text_file(ln['text'])}':expansion=none:fontsize={cs['fontSize']}:"
                          f"fontcolor=white:borderw={cs['border']}:bordercolor=black:x=(w-text_w)/2:y={ln['cy']}-{cs['lineHeight']}/2:"
                          f"enable='gte(t,{cap['start']:.3f})*lt(t,{cap['end']:.3f})'")
     chain = ",".join(draws + ["format=yuv420p"])
