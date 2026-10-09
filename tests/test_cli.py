@@ -457,6 +457,35 @@ class StagerTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class HttpRetryTest(unittest.TestCase):
+    def test_all_5xx_are_retryable_like_web(self):
+        """HTTP 500 상태 조회를 바로 실패로 끝내던 것(웹은 5xx 모두 재시도, with_retry 설명도 '5xx')."""
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import threading
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                code = int(self.path.strip("/"))
+                self.send_response(code)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            http = B.Http(f"http://127.0.0.1:{srv.server_address[1]}", timeout=5)
+            for code, retry in ((500, True), (503, True), (504, True), (404, False), (400, False)):
+                with self.assertRaises(B.BackendError) as cm:
+                    http.get_json(f"/{code}")
+                self.assertEqual(cm.exception.retryable, retry, code)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
 class DryRunTest(Base):
     def test_dry_run_never_contacts_server_and_shows_all_fields(self):
         """gen --dry-run 이 자동 판별하려고 서버에 붙어 꺼진 서버면 실패하던 것, vLLM·h3video 본문이 prompt 만 보이던 것."""

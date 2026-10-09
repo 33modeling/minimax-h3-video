@@ -144,7 +144,7 @@ class Http:
             if e.code in (401, 403):
                 raise BackendError(f"{method} {path}: 인증 실패(HTTP {e.code}). 서버에 --api-key 를 걸었다면 SHORTS_API_KEY 를 설정하세요",
                                    code=e.code) from e
-            raise BackendError(f"{method} {path}: HTTP {e.code} {msg}", retryable=e.code in (502, 503, 504), code=e.code) from e
+            raise BackendError(f"{method} {path}: HTTP {e.code} {msg}", retryable=500 <= e.code < 600, code=e.code) from e
         except urllib.error.URLError as e:
             raise BackendError(f"서버에 연결하지 못했습니다 ({self.base}): {e.reason}. 주소·포트·SSH 터널을 확인하세요",
                                retryable=True) from e
