@@ -176,7 +176,9 @@ def media_kind(path: str) -> str:
 class Stager:
     """SGLang 은 conditions[].uri 를 *서버 프로세스*가 읽는다. 로컬 파일을 서버가 읽을 수 있는 URI 로 바꾼다.
     - inbox_dir 가 있으면 그 폴더(서버와 공유된 볼륨)로 복사하고 file:// (또는 inbox_uri 접두사)
-    - inline 이면 data: URI (서버가 data URI 를 받아야 함 — 확인 안 됨)
+    - inline 이면 data:<type>;base64,... URI — SGLang MiniMax-H3 는 conditions[].uri 로 file://(서버 로컬)·http(s)·
+      data:;base64·base64:// 를 받는다(sglang .../minimax_h3/material_io.py minimax_h3_localize_material_uri).
+      원격 서버(SSH 터널)라도 파일을 공유하지 않고 보낼 수 있지만 요청 본문이 그만큼 커진다.
     - 그 외 로컬 절대경로 file:// (서버가 같은 컴퓨터일 때)"""
 
     def __init__(self, inbox_dir: str | None = None, inbox_uri: str | None = None, inline: bool = False):
@@ -198,8 +200,8 @@ class Stager:
             dest = inbox / f"{digest}-{p.name}"
             if not dest.exists():
                 shutil.copy2(p, dest)
-            if self.inbox_uri:
-                return self.inbox_uri.rstrip("/") + "/" + dest.name
+            if self.inbox_uri:  # 파일 이름의 # ? % 공백 등은 URI 로 인코딩(서버가 urlsplit + unquote 로 읽음)
+                return self.inbox_uri.rstrip("/") + "/" + urllib.parse.quote(dest.name)
             return dest.as_uri()
         return p.as_uri()
 

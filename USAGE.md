@@ -105,7 +105,9 @@ source scripts/cluster_env.sh
 - CLI 는 `--server` 가 없으면 `SHORTS_SERVER` → `H3_ENDPOINT` 를, `--ref-server` 가 없으면 `SHORTS_REF_SERVER` → `H3_REF_ENDPOINT` 를 쓴다.
   **소스 영상·참조 이미지가 없는 장면은 fl2va(30010), 있는 장면은 ref2va(30011)** 로 자동으로 보낸다(가짜 서버 두 개로 시험함).
 - 같은 venv 에 minimax-h3-video 가 `pip install -e .` 돼 있으면 그 `h3video.client.VideoRequest` 로 요청 본문을 만든다(없으면 같은 형식의 내장 구현).
-- 소스 영상은 서버가 `file://` 로 읽으므로 `--inbox-dir "$H3_INBOX_DIR"`(group-volume)로 복사해 넘긴다.
+- 소스 영상은 기본으로 `file://` 경로로 넘기고 서버가 그 경로를 읽으므로 `--inbox-dir "$H3_INBOX_DIR"`(group-volume)로 복사해 넘긴다.
+  공유 폴더가 없으면(SSH 터널 등) `--inline` 으로 `data:…;base64` URI 를 요청에 넣어 보낸다. SGLang MiniMax-H3 는
+  `conditions[].uri` 로 `file://`(서버 로컬)·`http(s)://`·`data:;base64`·`base64://` 를 받는다(sglang `minimax_h3/material_io.py`).
 
 **내 PC 에서 SSH 터널로 붙기** — 텍스트만(t2va) 쓰면 바로 된다. 소스 영상을 보내려면 클러스터의 `h3video web`(2-3, 업로드를 inbox 로 옮겨 줌)에 붙는다.
 
@@ -292,7 +294,7 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
    fl2va 주소(기본 `:30010`, 소스 없을 때)와 ref2va 주소(기본 `:30011`, 소스 영상을 참조로 보낼 때)를 따로 넣는다. 생성 크기(짧은 변, 768 상한)도 여기서 고른다.
    "연결 확인"으로 `/api/spec`·`/api/health`(h3video) 또는 `/v1/models`(SGLang)를 불러 본다. 서버는 이 페이지 주소를 CORS 로 허용해야 한다:
    `h3video web --cors-origin https://33modeling.pages.dev`. 원격 GPU 는 `ssh -L 8790:localhost:8790 사용자@서버` 터널로 붙인다
-   (https 페이지는 다른 PC 의 http 주소를 혼합 콘텐츠로 막고 localhost 만 허용). SGLang 직접 연결은 참조 파일을 `data:` URI 로 보내므로 서버가 그걸 받아야 한다.
+   (https 페이지는 다른 PC 의 http 주소를 혼합 콘텐츠로 막고 localhost 만 허용). SGLang 직접 연결은 참조 파일을 `data:…;base64` URI 로 보낸다(SGLang MiniMax-H3 가 받는 형식, CLI 의 `--inline` 과 같음).
 5. **Claude로 기획하기**(선택): 아이디어와 Anthropic API 키(그 브라우저 localStorage 에만 저장, "키 지우기")를 넣고 요청하면 `claude-opus-5-5` 가
    구조화 출력(`output_config.format`, CLI 와 같은 요청)으로 명세 JSON 을 써서 파일 칸 1을 채운다. 파일 칸 2의 영상이 있으면 프레임 몇 장을 함께 보낸다. 검증에 실패하면 오류를 붙여 한 번 다시 묻는다.
 6. **미리보기·만들기**: 저해상도(270px) 미리보기를 시간 막대로 넘겨 보거나 소리와 함께 재생한다. **만들기**를 누르면
@@ -343,7 +345,7 @@ export ANTHROPIC_API_KEY=...
 |---|---|
 | `서버에 연결하지 못했습니다` | 주소·포트 확인, SSH 터널이 살아 있는지 `./bin/shorts server check` |
 | `인증 실패(HTTP 401)` | 서버에 `--api-key` 를 걸었으면 `export SHORTS_API_KEY=...` |
-| 참조 파일을 서버가 못 읽음 | SGLang 은 `file://` 를 서버가 읽는다. 공유 폴더 `--inbox-dir`(+`--inbox-uri`) 또는 h3video 웹 서버(업로드 지원) |
+| 참조 파일을 서버가 못 읽음 | SGLang 은 `file://` 를 서버가 읽는다. 공유 폴더 `--inbox-dir`(+`--inbox-uri`), `--inline`(data: URI 로 본문에 넣음) 또는 h3video 웹 서버(업로드 지원) |
 | 웹에서 CORS 오류 | 서버가 허브 출처를 허용해야 한다. h3video: `h3video web --cors-origin https://33modeling.pages.dev` |
 | 웹에서 혼합 콘텐츠 차단 | https 페이지는 `http://localhost`·`127.0.0.1` 만 허용된다. SSH 터널로 localhost 에 붙이거나 cloudflared·Tailscale https 터널 주소를 쓴다. 브라우저가 "로컬 네트워크 접근"을 물으면 허용 |
 | 웹에서 WebCodecs 없음 | 최신 Chrome·Edge 권장. 없으면 실시간 녹화(WebM)로 대신 내보낸다 |

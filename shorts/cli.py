@@ -693,7 +693,7 @@ def add_server_opts(p):
     p.add_argument("--timeout", type=float, help="장면당 생성 대기 한도(초), 기본 1800(H3 는 장면당 수 분)")
     p.add_argument("--inbox-dir", dest="inbox_dir", help="SGLang 서버와 공유된 폴더(참조 파일을 여기에 복사해 file:// 로 넘김)")
     p.add_argument("--inbox-uri", dest="inbox_uri", help="서버에서 본 inbox 경로 접두사 (예: file:///data/inbox)")
-    p.add_argument("--inline", action="store_true", help="참조 파일을 data: URI 로 넣어 보냄(서버 지원 필요)")
+    p.add_argument("--inline", action="store_true", help="참조 파일을 data:;base64 URI 로 요청에 넣어 보냄(SGLang H3 가 받음, 원격 서버에서 파일 공유 없이 쓸 때)")
 
 
 def build_parser() -> argparse.ArgumentParser:

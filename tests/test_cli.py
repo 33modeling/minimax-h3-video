@@ -423,6 +423,22 @@ class RequestParityTest(unittest.TestCase):
         self.assertEqual(py[0], [5, 5])
 
 
+class StagerTest(unittest.TestCase):
+    def test_inbox_uri_encodes_file_name(self):
+        """--inbox-uri 접두사에 파일 이름을 그대로 붙여 '#'·'%'·공백이 든 이름이 서버에서 다른 경로로 읽히던 버그."""
+        import urllib.parse
+        d = Path(tempfile.mkdtemp(prefix="shorts-stage-"))
+        try:
+            f = d / "clip #1 50%.mp4"
+            f.write_bytes(b"x" * 10)
+            uri = B.Stager(inbox_dir=str(d / "inbox"), inbox_uri="file:///data/inbox/").uri(str(f))
+            path = urllib.parse.unquote(urllib.parse.urlsplit(uri).path)  # SGLang material_io 가 읽는 방식
+            self.assertTrue(path.startswith("/data/inbox/") and path.endswith("-clip #1 50%.mp4"), uri)
+            self.assertTrue(B.Stager(inline=True).uri(str(f)).startswith("data:video/mp4;base64,"))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class DryRunTest(Base):
     def test_dry_run_never_contacts_server_and_shows_all_fields(self):
         """gen --dry-run 이 자동 판별하려고 서버에 붙어 꺼진 서버면 실패하던 것, vLLM·h3video 본문이 prompt 만 보이던 것."""
