@@ -120,6 +120,9 @@ class SpecTest(Base):
         self.assertEqual(code, 2, out)
         code, out = run_cli("run", d / "nope.json", env=self.state_env)
         self.assertEqual(code, 2, out)
+        code, out = run_cli("run", d / "nope.json", "--json", env=self.state_env)  # --json 이면 오류도 JSON 줄
+        self.assertEqual(code, 2, out)
+        self.assertEqual(events(out)[-1]["event"], "invalid")
         (d / "bom.json").write_bytes("\ufeff".encode() + json.dumps({"base": self.m("base.mp4")}).encode())
         code, out = run_cli("run", d / "bom.json", "--dry-run", env=self.state_env)
         self.assertEqual(code, 0, out)

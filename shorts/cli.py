@@ -20,10 +20,12 @@ from . import spec as S
 from .progress import Out, SceneBoard, fmt_time
 
 
+class InputError(Exception):
+    """입력(파일·옵션) 오류: main 이 명세 오류와 같은 종료 코드 2 로 알린다(--json 이면 JSON 이벤트)."""
+
+
 def input_error(msg: str):
-    """입력(파일·옵션) 오류: 명세 오류와 같은 종료 코드 2 로 끝낸다."""
-    print(f"오류: {msg}", file=sys.stderr)
-    raise SystemExit(2)
+    raise InputError(msg)
 
 
 def load_spec(path: str) -> tuple[dict, Path]:
@@ -794,6 +796,12 @@ def main(argv=None) -> int:
         else:
             print(f"오류: {e}\n  설명: {e.hint}\n  다시 시도: {tip}  (실패한 장면을 다시 요청하고 이어서 합성)", file=sys.stderr)
         return 1
+    except InputError as e:
+        if getattr(a, "json", False):
+            print(json.dumps({"event": "invalid", "message": str(e), "errors": [str(e)]}, ensure_ascii=False), flush=True)
+        else:
+            print(f"오류: {e}", file=sys.stderr)
+        return 2
     except S.SpecError as e:
         if getattr(a, "json", False):
             print(json.dumps({"event": "invalid", "message": str(e), "errors": e.errors}, ensure_ascii=False), flush=True)
