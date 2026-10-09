@@ -160,3 +160,12 @@ test('파이썬 CLI 계획과 같다(웹·CLI 같은 배치)', () => {
     assert.equal(describePlan(plans[name]), describe, `요약 문장 불일치: ${name}`);
   }
 });
+
+test('기본 영상 구간이 비면 0초 파일 대신 오류(CLI 와 같은 문장)', () => {
+  const spec = normalizeSpec({ base: { path: 'b.mp4', start: 100 } });
+  const inputs = { base: { media: { path: 'b.mp4', start: 100, end: null }, info: { duration: 8, width: 1280, height: 720, hasAudio: true } }, clips: [], bgm: null };
+  assert.throws(() => planTimeline(spec, inputs), /기본 영상에서 쓸 구간이 없습니다: start\/end 가 영상 길이\(8\.0초\) 밖입니다/);
+  const py = execFileSync('python3', ['-c', 'import sys,json; sys.path.insert(0,"."); from shorts import plan as P, spec as S\n'
+    + 'try:\n P.plan_timeline(S.normalize_spec({"base": {"path": "b.mp4", "start": 100}}), json.loads(sys.argv[1]))\nexcept ValueError as e:\n print(e)', JSON.stringify(inputs)], { cwd: ROOT, encoding: 'utf8' }).trim();
+  assert.throws(() => planTimeline(spec, inputs), (e) => e.message === py);
+});

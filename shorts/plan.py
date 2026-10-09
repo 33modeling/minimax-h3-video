@@ -218,6 +218,9 @@ def plan_timeline(spec: dict, inputs: dict) -> dict:
         sum_clips += c["dur"]
     T = min(spec["max_duration"], sum_clips) if template == "montage" else min(spec["max_duration"], base["dur"])
     T = r3(T)
+    # 기본 영상 구간이 비면(start 가 영상 길이보다 뒤 등) 0초짜리 빈 파일을 '완성'이라고 내던 것을 막는다
+    if T < 0.1:
+        raise ValueError(f"기본 영상에서 쓸 구간이 없습니다: start/end 가 영상 길이({to_fixed1(base['info']['duration'])}초) 밖입니다")
     segments: list[dict] = []
     audio: list[dict] = []
 

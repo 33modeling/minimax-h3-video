@@ -223,6 +223,8 @@ export function planTimeline(spec, inputs) {
   const sumClips = clips.reduce((a, c) => a + c.dur, 0);
   let T = template === 'montage' ? Math.min(spec.max_duration, sumClips) : Math.min(spec.max_duration, base.dur);
   T = r3(T);
+  // 기본 영상 구간이 비면(start 가 영상 길이보다 뒤 등) 0초짜리 빈 파일을 '완성'이라고 내던 것을 막는다
+  if (T < 0.1) throw new Error(`기본 영상에서 쓸 구간이 없습니다: start/end 가 영상 길이(${base.info.duration.toFixed(1)}초) 밖입니다`);
   const segments = [];
   const audio = [];
   const baseAudio = () => {
