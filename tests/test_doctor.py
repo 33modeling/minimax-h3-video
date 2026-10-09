@@ -74,6 +74,10 @@ class DoctorTest(unittest.TestCase):
         self.assertEqual(D.origin("/usr/bin/ffmpeg"), "시스템")
         with mock.patch.dict(os.environ, {"SHORTS_FFMPEG": "/opt/ff"}):
             self.assertEqual(D.origin("/opt/ff", "SHORTS_FFMPEG"), "SHORTS_FFMPEG")
+        # env.sh 가 SHORTS_FONT 를 .tools 글꼴로 잡은 경우에도 .tools 로 표시
+        font = R.ROOT / ".tools" / "fonts" / "NotoSansKR-Bold.otf"
+        with mock.patch.dict(os.environ, {"SHORTS_FONT": str(font)}):
+            self.assertEqual(D.origin(font, "SHORTS_FONT"), ".tools")
 
     def test_local_tools_win_over_path(self):
         import tempfile

@@ -20,17 +20,17 @@ SETUP = "scripts/setup.sh"
 
 
 def origin(path: str | os.PathLike | None, env: str | None = None) -> str:
-    """경로가 레포의 .tools/.venv 안이면 그 이름, 환경변수로 지정했으면 그 변수, 아니면 '시스템'."""
+    """경로가 레포의 .tools/.venv 안이면 그 이름, 환경변수로 지정했으면 그 변수, 아니면 '시스템'.
+    (env.sh 가 SHORTS_FONT 를 .tools 글꼴로 잡아 두므로 경로를 먼저 본다 — 전에는 [SHORTS_FONT] 로만 나왔다)"""
+    if path:
+        p = Path(path).absolute()
+        for name in (".tools", ".venv"):
+            base = R.ROOT / name
+            if p == base or base in p.parents:
+                return name
     if env and os.environ.get(env):
         return env
-    if not path:
-        return ""
-    p = Path(path).absolute()
-    for name in (".tools", ".venv"):
-        base = R.ROOT / name
-        if p == base or base in p.parents:
-            return name
-    return "시스템"
+    return "시스템" if path else ""
 
 
 def _item(cid, label, required, status, detail, fix="", source=""):
