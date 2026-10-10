@@ -14,12 +14,15 @@
 # ① 내 PC: 코드를 클러스터로 (코드를 고칠 때마다)
 CLUSTER_SSH=<계정>@<호스트> CLUSTER_CODE_DIR=/user-volume/<계정>/minimax-h3-video bash scripts/sync_to_cluster.sh
 
-# ② 클러스터: 처음 한 번 — venv·sglang 설치. 모델은 /group-volume/models/MiniMax-H3 를 확인만 한다(받지 않음)
+# ② 클러스터: 처음 한 번 — 노드 드라이버를 보고 엔진을 고른다 (2-6절)
+#    드라이버 CUDA 12.x 노드(535 계열): Diffusers 엔진. torch 2.7.1(CUDA 12.6)+diffusers venv 를 만들고,
+#      Diffusers 형식 가중치 중 없는 것만 받는다(약 72GB, --ref 면 +62GB). 텍스트 인코더 62GB 는 FL2VA 것을 링크로 재사용
+#    드라이버 CUDA 13 이상 노드: sglang 엔진. 모델은 /group-volume/models/MiniMax-H3 를 확인만 한다(받지 않음)
 cd /user-volume/<계정>/minimax-h3-video
-source scripts/cluster_env.sh && bash scripts/provision.sh
+bash scripts/provision.sh       # 레퍼런스(ref2va)도 쓸 거면 --ref
 
 # ③ H3 서버 띄우기 — 이 화면에서 포그라운드, 서버 원본 로그가 그대로 나온다 (웹 UI 는 --web 일 때만)
-bash scripts/up.sh              # 레퍼런스(ref2va)도 쓰면 --ref (GPU 8장)
+bash scripts/up.sh              # 레퍼런스(ref2va)도 쓰면 --ref
 #    끄기: 이 화면에서 Ctrl+C (서버·워커·웹 UI 전부 끄고 GPU 반환) / 다른 창에서는 bash scripts/down.sh
 
 # ④ 다른 창: 영상 만들기
@@ -35,7 +38,8 @@ h3video jobs / h3video show last                                       # 지난 
 | 알아 둘 것 | 내용 |
 |---|---|
 | 결과 | `/group-volume/minsoo3.kim/minimax-h3-video/outputs/<작업id>/` (`-o` 를 주면 거기에도 복사) |
-| 모델 위치 | `/group-volume/models/MiniMax-H3` (고정, 노드가 바뀌어도 그대로. 받지 않는다) |
+| 모델 위치 | `/group-volume/models/MiniMax-H3` (기본, 노드가 바뀌어도 그대로). Diffusers 엔진은 `/group-volume/minsoo3.kim/minimax-h3-video/models/MiniMax-H3-diffusers` (provision.sh 가 만든다) |
+| 엔진 | 드라이버 CUDA 12.x 노드 → Diffusers(`h3video.dserver`, GPU 2장: 텍스트 인코더 1 + 영상 모델 1), CUDA 13 이상 → sglang(GPU 4장). 자동으로 고르고 `up.sh` 첫 줄에 나온다. 쓰는 법은 같다 |
 | 웹 UI (선택) | CLI 만 쓰면 필요 없다. 쓰려면 `bash scripts/up.sh --web` 후 출력되는 `ssh -N -L ...` 를 PC 에서 실행 → `http://127.0.0.1:8790` |
 | 이미 떠 있으면 | `up.sh` 는 떠 있는 서버·웹 UI 를 다시 띄우지 않고 그대로 쓴다 |
 | 이미지·영상 입력 | 4-0절 표(H3), 숏폼은 [shortform/USAGE.md](shortform/USAGE.md) 3-1절 |
@@ -48,7 +52,7 @@ h3video jobs / h3video show last                                       # 지난 
 [내 PC]  코드 rsync ──▶ [클러스터 노드]  provision(1회) ─▶ up.sh (서버·웹 UI, 이 화면) ─▶ h3video gen / ref / shorts ─▶ mp4
 ```
 
-- 서버(sglang serve)는 클러스터 H100 노드에서만 돈다. 모델이 33B 라 GPU 4장이 기본이다.
+- 서버는 클러스터 H100 노드에서만 돈다. 드라이버 CUDA 12.x 노드는 Diffusers 엔진(GPU 2장), CUDA 13 이상은 sglang(GPU 4장).
 - 클라이언트(h3video)는 표준 라이브러리만 쓰므로 어디서든 돌지만, 이미지 입력을 쓰려면 서버와 같은 노드에서 띄운다(4절 참고).
 
 ---
@@ -93,9 +97,10 @@ bash scripts/sync_to_cluster.sh
 
 ```bash
 cd /user-volume/<계정>/minimax-h3-video
-bash scripts/up.sh --check      # 점검만: 모델·sglang·GPU 장수·포트
-bash scripts/up.sh              # fl2va 서버(GPU 0,1,2,3, 포트 30010). 웹 UI(8790)까지는 --web
-bash scripts/up.sh --ref        # ref2va 서버(GPU 4,5,6,7, 포트 30011)도. 8장 노드
+bash scripts/up.sh --check      # 점검만: 엔진·모델·패키지·메모리·GPU 장수·포트
+bash scripts/up.sh              # fl2va 서버(포트 30010). 웹 UI(8790)까지는 --web
+bash scripts/up.sh --ref        # ref2va 서버(포트 30011)도
+#   GPU 기본값: Diffusers 엔진 fl2va 0,1 · ref2va 2,3 (4장 노드에 둘 다) / sglang 엔진 0,1,2,3 · 4,5,6,7
 bash scripts/up.sh --cors https://33modeling.pages.dev   # 허브 '숏폼 제작'에서 웹 UI 를 부를 때
 bash scripts/down.sh            # 다른 창에서 끄기 (up.sh 화면에서는 Ctrl+C)
 ```
@@ -135,19 +140,22 @@ source scripts/cluster_env.sh
 ### 2-2. 프로비저닝 (처음 한 번, 이후에는 검증만)
 
 ```bash
-bash scripts/provision.sh                 # venv + sglang[diffusion] + 가중치 확인 (받지 않음)
+bash scripts/provision.sh                 # 엔진 venv + 가중치 확인 (Diffusers 엔진은 Diffusers 형식 중 없는 것만 받는다)
+bash scripts/provision.sh --ref           # (Diffusers 엔진) ref2va 용 transformer_ref(62GB)도
 bash scripts/provision.sh --skip-model    # 패키지만 설치
-bash scripts/provision.sh --download      # 가중치가 정말 없을 때만: 새로 받기 (수백 GB). --fl2va-only 면 Ref2VA 는 안 받음
+bash scripts/provision.sh --download      # (sglang 엔진) 가중치가 정말 없을 때만: 새로 받기 (수백 GB). --fl2va-only 면 Ref2VA 는 안 받음
 ```
 
-- venv 는 `$STORAGE_ROOT/.venv` 에 만든다. 이미 있으면 재사용한다.
+- 엔진은 `cluster_env.sh` 가 드라이버를 보고 고른다(2-6절). 고정하려면 `H3_ENGINE=sglang|diffusers bash scripts/provision.sh`.
+- venv 는 sglang 엔진 `$STORAGE_ROOT/.venv`, Diffusers 엔진 `$STORAGE_ROOT/.venv-diffusers` 에 따로 만든다. 이미 있으면 재사용한다.
+- 아래 세 줄은 sglang 엔진 이야기다. Diffusers 엔진은 2-6절.
 - **모델 위치는 `/group-volume/models/MiniMax-H3` 고정**이고, 가중치는 받지 않는다. 그 폴더에 `model_index.json` 이나 `FL2VA` 가 없으면 "가중치가 없다"고 하고 멈춘다.
 - Ref2VA 가 없으면 받지 않고 "ref2va 서버는 못 띄운다"고만 알린다. fl2va 는 그대로 쓴다.
 - `--download` 일 때만 HF Hub 에서 받고, 실패하면 hf-mirror.com 으로 다시 시도한다. 둘 다 안 되면 PC 에서 받아 rsync 한다.
 
   ```bash
   # PC 에서
-  hf download MiniMaxAI/MiniMax-H3 --include model_index.json 'FL2VA/*' 'Ref2VA/*' --local-dir MiniMax-H3
+  hf download MiniMaxAI/MiniMax-H3 --include model_index.json --include 'FL2VA/*' --include 'Ref2VA/*' --local-dir MiniMax-H3   # 패턴마다 --include
   rsync -avz MiniMax-H3/ user@host:/group-volume/models/MiniMax-H3/
   ```
 - pip 로 sglang 설치가 막히면(빌드 실패, 인덱스 차단) 3절의 도커 방식으로 간다. 이 경우 `--skip-model` 없이 한 번 더 돌려 가중치만 확인해 둔다.
@@ -198,6 +206,24 @@ bash scripts/stop.sh fl2va      # 하나만
 포트가 이미 사용 중이라고 serve.sh 가 거부하면 stop.sh 로 정리한 뒤 다시 띄운다.
 
 ---
+
+### 2-6. 드라이버 CUDA 12.x 노드 — Diffusers 엔진
+
+H3 를 지원하는 sglang(0.5.17 이상)은 CUDA 13 전용이라(torch 2.11+, flashinfer[cu13] 등) 드라이버가 CUDA 12.2(535 계열)인 노드에서는 못 띄운다.
+그런 노드에서는 diffusers 0.41 의 공식 H3 통합(MiniMaxH3ModularPipeline)을 기존 클러스터 레포(failure-atlas 등)와 같은 **torch 2.7.1(CUDA 12.6)** 로 돌린다.
+
+- 고르는 건 자동: `cluster_env.sh` 가 `nvidia-smi` 의 CUDA 버전이 13 미만이면 Diffusers 엔진을 쓴다. `up.sh` 첫 줄에 `[up] 엔진: diffusers` 로 나온다.
+- 패키지: `constraints/h100-cu126-diffusers.txt` 로 고정(torch 2.7.1·torchvision 0.22.1·torchaudio 2.7.1·diffusers 0.41.0·transformers 5.14.1 등). venv 는 `.venv-diffusers`, sglang venv 와 따로.
+- 가중치: Diffusers 형식(`modular_model_index.json`, `transformer/`, `vae/`, `audio_vae/` …)이 필요하다. 공유 폴더의 `FL2VA/`·`Ref2VA/` 는 sglang 형식이라 영상 모델·VAE 는 파일이 다르다.
+  텍스트 인코더·토크나이저·프로세서는 파일이 같아서(HF 해시 일치) 링크로 재사용하고, 나머지만 받는다: fl2va 약 72GB, `--ref` 면 transformer_ref 62GB 더.
+- GPU: 서버 하나에 2장. 텍스트 인코더(Qwen3-VL 32B, 62GB) → 두 번째 장, 영상 모델(62GB)·VAE → 첫 번째 장(diffusers 문서의 2장 방식). 1장만 주면 한 장에서 번갈아 올리고 내린다.
+- 같은 API(`/v1/videos`)라 `h3video gen/ref/batch`, 웹 UI, 숏폼이 그대로 쓴다. 다른 점:
+  - 길이는 5~15초(4초를 달라고 하면 5초로 만든다). 프레임 수는 VAE 단위(17n+5)로 맞춘다: 5초 124프레임, 8초 192프레임, 15초 345프레임(14.4초).
+  - `--negative` 는 쓰지 않는다(H3 는 guidance 가 가중치에 들어 있다). 한 요청에 한 편.
+  - 레퍼런스 `video` 는 움직임·카메라만, `video_audio` 는 소리까지.
+  - 결과 원본은 `/group-volume/minsoo3.kim/minimax-h3-video/dserver/<fl2va|ref2va>/<id>.mp4`(+ `.json`). CLI 는 평소처럼 `outputs/` 에 받는다.
+- 속도: 영상 모델을 GPU 1장으로 돌리므로 sglang 4장보다 느리다.
+- 검증(2026-10-10, 로컬): 이 조합으로 diffusers 공식 H3 테스트 75개 통과·실패 0, 작은 H3 모델로 세 작업 생성, GPU 2장 분할과 1장 결과 프레임 동일, provision.sh 의 PyPI 설치(torch 2.7.1+cu126)와 가중치 준비, serve.sh → `h3video gen/ref` → status.sh → down.sh 전 구간. 실제 H100·진짜 가중치로는 클러스터에서 처음 돈다.
 
 ## 3. pip 설치가 막힐 때: 도커로 서빙
 
@@ -487,8 +513,10 @@ non_diegetic_music: 배경음악 스타일·템포.
 | `모델 없음: ...` / provision.sh 가 `가중치가 없다` | `ls /group-volume/models/MiniMax-H3` 로 확인. 이미 받아 둔 모델을 다시 받지 않는다(받기는 `--download` 일 때만) |
 | `sglang 없음` | provision.sh 가 실패했거나 venv 가 PATH 에 없음. `which sglang` 확인. 안 되면 3절 도커 |
 | `포트 30010 이미 사용 중` / `OSError: [Errno 98] Address already in use` | 그 포트에 이미 서버·웹 UI 가 떠 있다. `up.sh` 는 떠 있는 걸 그대로 쓴다. 새로 띄우려면 `bash scripts/down.sh`, 예전 방식(tmux 세션)으로 띄운 게 남았으면 `tmux kill-session -t h3` |
-| `The NVIDIA driver on your system is too old (found version 12020)` | 노드 드라이버가 CUDA 12.2(535 계열)까지인데, H3 를 지원하는 sglang(0.5.17 이상)은 CUDA 13 전용(torch 2.11+·flashinfer[cu13])이다. **드라이버 580 이상인 노드**(B200·B300 등, 또는 드라이버 업데이트된 노드)에서 띄워야 한다. torch 만 다시 설치해서는 해결되지 않는다 |
-| `OSError: Could not load this library: .../torchaudio/lib/_torchaudio.abi3.so` | sglang 이 고정한 torchaudio(PyPI 기본판)와 torch(CUDA 13)의 CUDA 가 다르다. `$VENV/bin/pip install --force-reinstall --no-deps "torchaudio==2.11.0+cu130" --index-url https://download.pytorch.org/whl/cu130` (provision.sh 가 자동으로 맞춘다) |
+| `The NVIDIA driver on your system is too old (found version 12020)` | sglang(CUDA 13 전용)을 드라이버 CUDA 12.2 노드에서 띄웠다. 코드를 올린 뒤 `bash scripts/provision.sh` → `bash scripts/up.sh` 하면 Diffusers 엔진으로 자동으로 바뀐다(2-6절) |
+| `OSError: Could not load this library: .../torchaudio/lib/_torchaudio.abi3.so` | (sglang 엔진) sglang 이 고정한 torchaudio(PyPI 기본판)와 torch(CUDA 13)의 CUDA 가 다르다. provision.sh 가 자동으로 맞춘다. 드라이버 CUDA 12.x 노드라면 위 줄처럼 Diffusers 엔진을 쓴다 |
+| `Diffusers 형식 가중치(fl2va)가 아직 없다` | `bash scripts/provision.sh` (`--ref` 면 ref2va 것도). 없는 것만 받고, 받다 끊기면 다시 실행해서 이어 받는다 |
+| `메모리 여유 …GB < 필요 약 140GB` / 서버가 로딩 중 `Killed` | Diffusers 엔진은 적재할 때 가중치를 CPU 메모리에 먼저 올린다(서버 하나에 약 140GB). 파드 메모리 한도를 늘리거나 `--ref` 를 빼고 띄운다 |
 | `up.sh` 가 `서버가 끝났다` | 바로 위 원본 로그가 원인(OOM 등). 남은 프로세스는 끄고 GPU 를 반환한 상태 |
 | health 가 `000` | 서버 로딩 중(몇 분) 또는 죽음. `up.sh` 화면의 로그 확인 |
 | CUDA OOM | `--mode memory` 로 재시작. 그래도 안 되면 `--steps` 줄이거나 길이 단축 |

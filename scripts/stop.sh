@@ -13,4 +13,4 @@ for v in ${1:-fl2va ref2va}; do
 done
 # 하위 프로세스(sglang 워커)까지 묶음째 끄고, GPU 를 잡은 내 프로세스가 남았으면 강제 종료 (cluster_env.sh)
 h3_stop_tree "${PIDS[@]}"
-pgrep -u "$(id -un)" -af "sglang serve" || echo "[stop] 남은 sglang 프로세스 없음"
+pgrep -u "$(id -un)" -af "sglang serve|h3video.dserver" || echo "[stop] 남은 서버 프로세스 없음"

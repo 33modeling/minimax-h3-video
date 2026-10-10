@@ -11,6 +11,7 @@ dependencies = []
 
 [project.optional-dependencies]
 serve = ["sglang[diffusion]"]
+diffusers = ["diffusers", "transformers", "accelerate", "torch", "torchvision", "torchaudio", "av"]   # 버전은 constraints/h100-cu126-diffusers.txt
 dev = ["pytest"]
 
 [project.scripts]

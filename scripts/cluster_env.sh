@@ -200,7 +200,24 @@ mkdir -p "$H3_OUTPUT_DIR" "$H3_INBOX_DIR" "$H3_LOG_DIR" "$STORAGE_ROOT/runs" "$H
          "$TRITON_CACHE_DIR" "$CUDA_CACHE_PATH" "$PIP_CACHE_DIR" "$PYTHONPYCACHEPREFIX" "$MPLCONFIGDIR" || {
   echo "스크래치 생성 실패: $WORK_ROOT" >&2; return 2 2>/dev/null || exit 2; }
 
-export VENV="${H3_VENV:-$STORAGE_ROOT/.venv}"
+# 엔진: sglang = 드라이버 CUDA 13 이상 노드 | diffusers = 드라이버 CUDA 12.x 노드 (H3 용 sglang 0.5.17+ 은 CUDA 13 전용이라).
+# 기본 auto: 노드 드라이버를 보고 고른다. 고정하려면 H3_ENGINE=sglang|diffusers
+if [[ "${H3_ENGINE:-auto}" == auto ]]; then
+  _drv="$(h3_driver_cuda)"
+  if [[ -n "$_drv" && "${_drv%%.*}" -lt 13 ]]; then H3_ENGINE=diffusers; else H3_ENGINE=sglang; fi
+fi
+export H3_ENGINE
+if [[ "$H3_ENGINE" == diffusers ]]; then
+  export VENV="${H3_DIFFUSERS_VENV:-$STORAGE_ROOT/.venv-diffusers}"   # torch 2.7.1(CUDA 12.6) + diffusers 0.41 — sglang venv 와 따로
+  # Diffusers 형식 폴더: 공유 모델 폴더에 이미 있으면 그대로, 없으면 내 저장 공간에 (텍스트 인코더는 FL2VA 것을 링크로 재사용)
+  if [[ -z "${H3_DIFFUSERS_DIR:-}" ]]; then
+    if [[ -f "$H3_MODEL_DIR/modular_model_index.json" && -d "$H3_MODEL_DIR/transformer" ]]; then H3_DIFFUSERS_DIR="$H3_MODEL_DIR"
+    else H3_DIFFUSERS_DIR="$STORAGE_ROOT/models/MiniMax-H3-diffusers"; fi
+  fi
+  export H3_DIFFUSERS_DIR
+else
+  export VENV="${H3_VENV:-$STORAGE_ROOT/.venv}"
+fi
 [[ -x "$VENV/bin/python" ]] && export PATH="$VENV/bin:$PATH"
 export PYTHONPATH="$_REPO_ROOT/src:$_REPO_ROOT/shortform${PYTHONPATH:+:$PYTHONPATH}"   # h3video + shorts(숏폼)
 
@@ -213,4 +230,4 @@ elif [[ -e "$_RUNS" ]]; then
   echo "runs/ 가 실제 디렉토리 — user-volume 저장 금지. 옮긴 뒤 삭제하라: $_RUNS" >&2; return 2 2>/dev/null || exit 2
 else ln -s "$STORAGE_ROOT/runs" "$_RUNS"; fi
 
-echo "[cluster-env] storage=$STORAGE_ROOT model=$H3_MODEL_DIR outputs=$H3_OUTPUT_DIR scratch=$WORK_ROOT venv=$VENV"
+echo "[cluster-env] engine=$H3_ENGINE storage=$STORAGE_ROOT model=$H3_MODEL_DIR${H3_DIFFUSERS_DIR:+ diffusers=$H3_DIFFUSERS_DIR} outputs=$H3_OUTPUT_DIR scratch=$WORK_ROOT venv=$VENV"

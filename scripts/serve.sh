@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# MiniMax-H3 SGLang 서빙 — tmux 포그라운드에서 실행 (nohup 금지). 로그는 $H3_LOG_DIR 에 tee.
+# MiniMax-H3 서빙 — 포그라운드 실행 (nohup 금지). 로그는 $H3_LOG_DIR 에 tee.
+# 엔진은 cluster_env.sh 가 드라이버를 보고 고른다: CUDA 12.x → diffusers(h3video.dserver), CUDA 13+ → sglang.
 # 사용: source scripts/cluster_env.sh && bash scripts/serve.sh fl2va|ref2va [--gpus 0,1,2,3] [--mode speed|memory] [-- 추가 sglang 옵션]
 #   fl2va : 텍스트→영상, 첫/끝 프레임→영상 (포트 $H3_PORT_FL2VA)
 #   ref2va: 이미지·영상·오디오 레퍼런스→영상 (포트 $H3_PORT_REF2VA)
@@ -17,10 +18,16 @@ while [[ $# -gt 0 ]]; do case "$1" in
   *) echo "알 수 없는 옵션: $1"; exit 2 ;; esac; done
 if [[ -n "$GPUS" ]]; then export CUDA_VISIBLE_DEVICES="$GPUS"; NGPU=$(tr ',' '\n' <<<"$GPUS" | grep -c .); else NGPU="$H3_NUM_GPUS"; fi
 PORT="$H3_PORT_FL2VA"; [[ "$VARIANT" == ref2va ]] && PORT="$H3_PORT_REF2VA"
-[[ -f "$H3_MODEL_DIR/model_index.json" ]] || { echo "모델 없음: $H3_MODEL_DIR (provision.sh 또는 H3_MODEL_DIR 확인)"; exit 1; }
-h3_cuda_compat || exit 1   # 드라이버가 CUDA 12.x 면 CUDA 13 호환 라이브러리
-command -v sglang >/dev/null || { echo "sglang 없음 — provision.sh 실행 또는 docker 사용"; exit 1; }
-"$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" --repair
+if [[ "$H3_ENGINE" == diffusers ]]; then   # 드라이버 CUDA 12.x 노드 (cluster_env.sh 가 고른다)
+  [[ -x "$VENV/bin/python" ]] || { echo "Diffusers venv 없음: $VENV — bash scripts/provision.sh"; exit 1; }
+  "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant "$VARIANT" \
+    || { echo "→ bash scripts/provision.sh$([[ $VARIANT == ref2va ]] && echo ' --ref') (없는 것만 받는다)"; exit 1; }
+else
+  [[ -f "$H3_MODEL_DIR/model_index.json" ]] || { echo "모델 없음: $H3_MODEL_DIR (provision.sh 또는 H3_MODEL_DIR 확인)"; exit 1; }
+  h3_cuda_compat || exit 1   # 드라이버가 CUDA 12.x 면 CUDA 13 호환 라이브러리
+  command -v sglang >/dev/null || { echo "sglang 없음 — provision.sh 실행 또는 docker 사용"; exit 1; }
+  "$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" --repair
+fi
 port_busy() {
   python3 - "$PORT" <<'PY' 2>/dev/null
 import socket, sys
@@ -36,8 +43,13 @@ if port_busy; then echo "포트 $PORT 이미 사용 중 (이미 떠 있는 서�
 
 LOG="$H3_LOG_DIR/serve-$VARIANT-$(date +%Y%m%d-%H%M%S).log"
 PIDFILE="$H3_LOG_DIR/serve-$VARIANT.pid"
-echo "[serve] variant=$VARIANT gpus=${CUDA_VISIBLE_DEVICES:-all}($NGPU) mode=$MODE port=$PORT model=$H3_MODEL_DIR log=$LOG"
 echo $$ > "$PIDFILE"
+if [[ "$H3_ENGINE" == diffusers ]]; then
+  echo "[serve] engine=diffusers variant=$VARIANT gpus=${CUDA_VISIBLE_DEVICES:-all} port=$PORT model=$H3_DIFFUSERS_DIR log=$LOG"
+  exec "$VENV/bin/python" -m h3video.dserver --model-dir "$H3_DIFFUSERS_DIR" --variant "$VARIANT" \
+    --host "$H3_HOST" --port "$PORT" --out-dir "$STORAGE_ROOT/dserver/$VARIANT" "${EXTRA[@]}" 2>&1 | tee "$LOG"
+fi
+echo "[serve] engine=sglang variant=$VARIANT gpus=${CUDA_VISIBLE_DEVICES:-all}($NGPU) mode=$MODE port=$PORT model=$H3_MODEL_DIR log=$LOG"
 exec sglang serve \
   --model-path "$H3_MODEL_DIR" \
   --model-variant "$VARIANT" \
