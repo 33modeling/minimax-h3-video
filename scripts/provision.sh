@@ -32,6 +32,8 @@ log "패키지 설치 (h3video + sglang[diffusion])"
 "$VENV/bin/pip" install -e ".[serve,dev]" ${PIP_INDEX_URL:+-i "$PIP_INDEX_URL"} \
   || { log "pip 설치 실패 — sglang 은 docker lmsysorg/sglang:dev 로 대체 가능 (README 참조)"; exit 1; }
 "$VENV/bin/python" -c "import sglang, sys; print('sglang', sglang.__version__)" || log "경고: sglang import 실패"
+# Verify native torchvision operators too; importing torch alone misses ABI mismatches.
+"$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" --repair --cpu-only
 # H3 를 지원하는 sglang(0.5.17+)은 CUDA 13 전용(torch 2.11+, flashinfer[cu13]) → 노드 드라이버가 580 이상이어야 한다
 drv="$(nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}')"
 if [[ -n "$drv" && "${drv%%.*}" -lt 13 ]]; then

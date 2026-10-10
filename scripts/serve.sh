@@ -17,7 +17,9 @@ while [[ $# -gt 0 ]]; do case "$1" in
 if [[ -n "$GPUS" ]]; then export CUDA_VISIBLE_DEVICES="$GPUS"; NGPU=$(tr ',' '\n' <<<"$GPUS" | grep -c .); else NGPU="$H3_NUM_GPUS"; fi
 PORT="$H3_PORT_FL2VA"; [[ "$VARIANT" == ref2va ]] && PORT="$H3_PORT_REF2VA"
 [[ -f "$H3_MODEL_DIR/model_index.json" ]] || { echo "모델 없음: $H3_MODEL_DIR (provision.sh 또는 H3_MODEL_DIR 확인)"; exit 1; }
+h3_cuda_compat || exit 1   # 드라이버가 CUDA 12.x 면 CUDA 13 호환 라이브러리
 command -v sglang >/dev/null || { echo "sglang 없음 — provision.sh 실행 또는 docker 사용"; exit 1; }
+"$VENV/bin/python" "${H3_REPO_ROOT}/scripts/check_torchvision.py" --repair
 port_busy() {
   python3 - "$PORT" <<'PY' 2>/dev/null
 import socket, sys

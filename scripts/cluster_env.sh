@@ -89,6 +89,36 @@ else
   export H3_MODEL_DIR="$H3_MODEL_DEFAULT"   # 못 찾음: up.sh·provision.sh 가 경로를 묻는다
 fi
 
+# 드라이버가 CUDA 12.x 인 노드(ubuntu22 이미지, R535)에서 CUDA 13 프로그램(H3 용 sglang 0.5.17+)을 돌리는 호환 라이브러리.
+# NVIDIA forward compatibility: 데이터센터 GPU 는 cuda-compat 패키지의 libcuda 로 새 CUDA 를 쓸 수 있다. 관리자 권한 불필요.
+H3_CUDA_COMPAT_PKG="${H3_CUDA_COMPAT_PKG:-cuda-compat-13-0_580.178.04-1ubuntu1_amd64.deb}"
+H3_CUDA_COMPAT_DIR="${H3_CUDA_COMPAT_DIR:-$STORAGE_ROOT/cuda-compat/${H3_CUDA_COMPAT_PKG%.deb}}"
+h3_driver_cuda() { nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}'; }
+h3_cuda_compat() {   # 필요하면 (처음 한 번) 받아서 풀고 LD_LIBRARY_PATH 앞에 넣는다. 0 = 준비됨 또는 필요 없음
+  local drv lib deb url
+  drv="$(h3_driver_cuda)"
+  [[ -z "$drv" || "${drv%%.*}" -ge 13 ]] && return 0
+  lib="$(find "$H3_CUDA_COMPAT_DIR" -name 'libcuda.so.*' -printf '%h\n' 2>/dev/null | head -1)"
+  if [[ -z "$lib" ]]; then
+    deb="$(dirname "$H3_CUDA_COMPAT_DIR")/$H3_CUDA_COMPAT_PKG"; mkdir -p "$(dirname "$deb")"
+    if [[ ! -s "$deb" ]]; then
+      url="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/$H3_CUDA_COMPAT_PKG"
+      echo "[cuda-compat] 드라이버가 CUDA $drv 까지라 CUDA 13 호환 라이브러리를 받는다 (처음 한 번, 약 65MB): $url"
+      if ! curl -fL --retry 2 -o "$deb.part" "$url"; then
+        echo "[cuda-compat] 받기 실패. 인터넷이 막혀 있으면 이 파일을 받아 $deb 에 두고 다시 실행: $url"; rm -f "$deb.part"; return 1
+      fi
+      mv "$deb.part" "$deb"
+    fi
+    mkdir -p "$H3_CUDA_COMPAT_DIR"
+    if command -v dpkg-deb >/dev/null; then dpkg-deb -x "$deb" "$H3_CUDA_COMPAT_DIR"
+    else (cd "$H3_CUDA_COMPAT_DIR" && ar x "$deb" && tar xf data.tar.*); fi || { echo "[cuda-compat] 풀기 실패: $deb"; return 1; }
+    lib="$(find "$H3_CUDA_COMPAT_DIR" -name 'libcuda.so.*' -printf '%h\n' | head -1)"
+    [[ -n "$lib" ]] || { echo "[cuda-compat] 풀었는데 libcuda 가 없다: $H3_CUDA_COMPAT_DIR"; return 1; }
+  fi
+  case ":${LD_LIBRARY_PATH:-}:" in *":$lib:"*) ;; *) export LD_LIBRARY_PATH="$lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;; esac
+  echo "[cuda-compat] 드라이버 CUDA $drv 노드 → CUDA 13 호환 라이브러리 사용: $lib"
+}
+
 # 포트를 누가 쓰고 있나 (0 = 쓰는 중). ss 가 없는 컨테이너에서도 되게 실제로 바인딩해 본다.
 h3_port_busy() {
   python3 - "$1" <<'PY' 2>/dev/null

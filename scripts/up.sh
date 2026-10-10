@@ -70,14 +70,21 @@ for w in "${TODO[@]}"; do
   else START+=("$w"); fi
 done
 if [[ $problems -gt 0 ]]; then red "== 문제 ${problems}개: 위 → 를 처리한 뒤 다시 실행"; exit 1; fi
-# GPU 를 실제로 쓸 수 있는지 (드라이버보다 새 CUDA 로 빌드된 torch 면 여기서 원래 오류가 그대로 나온다)
-if ! python3 -c "import torch; torch.zeros(1).cuda()" ; then
+# 드라이버가 CUDA 12.x 면 CUDA 13 호환 라이브러리를 준비해 쓴다 (서버도 이 설정을 물려받는다)
+h3_cuda_compat || fail "CUDA 13 호환 라이브러리를 준비하지 못했다 (위 [cuda-compat] 줄 참고)"
+# GPU 를 실제로 쓸 수 있는지 (안 되면 원래 오류가 그대로 나온다)
+if ! python3 -c "import torch; torch.zeros(1).cuda(); print('[up] torch', torch.__version__, 'CUDA', torch.version.cuda, '→', torch.cuda.get_device_name(0))" ; then
   drv="$(nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}')"
   fail "torch 가 GPU 를 못 쓴다 (바로 위 원래 오류 참고). 이 노드 드라이버는 CUDA ${drv:-?} 까지" \
-       "H3 를 지원하는 sglang(0.5.17+)은 CUDA 13 전용이라 드라이버 580 이상 노드(B200·B300 등)가 필요하다. torch 재설치로는 해결되지 않는다"
+       "CUDA 13 호환 라이브러리(${LD_LIBRARY_PATH%%:*})를 썼는데도 안 되면 이 드라이버에서는 forward compatibility 가 막힌 것. H3_CUDA_COMPAT_PKG 로 다른 cuda-compat-13-* 버전을 지정해 볼 수 있다"
   red "== 문제가 있어 서버를 띄우지 않는다. 로그: $UP_LOG"; exit 1
 fi
 green "✓ torch GPU 사용 가능"
+VISION_ARGS=(); [[ $CHECK == 1 ]] || VISION_ARGS=(--repair)
+if ! "$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" "${VISION_ARGS[@]}"; then
+  red "== torchvision 점검 실패. 로그: $UP_LOG"; exit 1
+fi
+green "✓ torchvision CPU·CUDA NMS 사용 가능"
 green "== 점검 통과"; [[ $CHECK == 1 ]] && exit 0
 
 # 3) 이 화면에서 포그라운드로 실행. 각 서버의 출력(원본 로그·오류)이 그대로 이 화면에 나온다.
