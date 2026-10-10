@@ -59,6 +59,9 @@ def read_prompt(a) -> str:
         text = sys.stdin.read()
     elif a.prompt_file:
         text = Path(a.prompt_file).expanduser().read_text(encoding="utf-8")
+    elif a.prompt and "\n" not in a.prompt and len(a.prompt) < 4096 and Path(a.prompt).expanduser().is_file():
+        text = Path(a.prompt).expanduser().read_text(encoding="utf-8")   # 파일 이름을 주면 그 내용 (-f 없이)
+        print(f"[프롬프트] 파일 {a.prompt} 을 읽었다 ({len(text)}자)", file=sys.stderr)
     elif a.prompt:
         text = a.prompt
     elif not sys.stdin.isatty():
@@ -453,7 +456,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("seconds", type=int); p.add_argument("--scene-seconds", type=int, default=10); p.add_argument("--first")
 
     p = cmd("gen", cmd_gen, "영상 만들기: 글, 첫/끝 프레임(--first/--last), 참고 자료(--image/--video/--audio → ref2va 서버)")
-    p.add_argument("prompt", nargs="?", help="프롬프트. 생략하면 -f 파일이나 표준입력, '-' 는 표준입력")
+    p.add_argument("prompt", nargs="?", help="프롬프트 글, 또는 프롬프트 파일 이름(있으면 그 내용). 생략하면 표준입력")
     p.add_argument("-f", "--prompt-file", help="프롬프트 파일 (- 는 표준입력)")
     p.add_argument("--first", help="첫 프레임 이미지"); p.add_argument("--last", help="끝 프레임 이미지 (한 장면일 때)")
     p.add_argument("--image", action="append", default=[], help=f"참고 이미지 (최대 {spec.REF_LIMITS['image']}, 여러 번) → ref2va")

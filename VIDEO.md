@@ -20,7 +20,7 @@ cd /user-volume/minimax-h3-video && source scripts/cluster_env.sh
 
 ```bash
 h3video gen "비 오는 서울 밤거리, 네온이 젖은 길에 번진다" -s 8      # 글 → 영상
-h3video gen -f prompt.txt -s 8                                       # 프롬프트 파일
+h3video gen prompt.txt -s 8                                          # 프롬프트 파일 (파일 이름만 주면 된다)
 h3video gen "프롬프트" --first a.png -s 8                            # 이 그림에서 시작
 h3video gen "프롬프트" --last b.png -s 8                             # 이 그림으로 끝
 h3video gen "프롬프트" --first a.png --last b.png -s 8               # 처음·끝 둘 다
@@ -35,11 +35,12 @@ h3video gen "프롬프트" --image a.png --video m.mp4 --audio v.wav -s 8 # 사�
 
 ## 3. 프롬프트
 
-아무 형식이나 그냥 넣으면 된다(한국어, 인터넷에서 받은 양식, 파일). 서버가 H3 공식 형식(영어)으로 바꿔서 만든다. 요청마다 1분 정도 더 걸린다.
+아무 형식이나 그냥 넣으면 된다(한국어, 인터넷에서 받은 JSON·장면 나열·다른 모델용 양식, 글이나 파일). 서버가 형식을 보고 알아서 판단한다:
+H3 공식 형식의 영어로 완성된 것만 그대로 쓰고, 나머지는 공식 형식(영어)으로 바꿔서 만든다(바꿀 때 1분 정도 더 걸린다).
 
 ```bash
-h3video ir "프롬프트" -s 8 > p.txt     # 바꾼 결과만 보기 (생성 안 함)
-h3video gen -f p.txt --raw -s 8        # 고친 p.txt 를 그대로 생성
+h3video ir prompt.txt -s 8 > p.txt     # 바꾼 결과만 보기 (생성 안 함)
+h3video gen p.txt --raw -s 8           # 고친 p.txt 를 그대로 생성
 ```
 
 - `--raw`: 바꾸지 않고 쓴 그대로 보낸다. 이미 공식 형식의 영어로 완성된 프롬프트는 `--raw` 없이도 그대로 쓴다.
@@ -114,7 +115,7 @@ h3video fetch <video_id> -o a.mp4     # 서버에 남은 완성본 받기 (참�
 |---|---|
 | `서버가 응답하지 않는다` | `bash scripts/status.sh` → 꺼져 있으면 `bash scripts/up.sh` |
 | 참고 자료 요청이 안 된다 | `bash scripts/up.sh --ref` 로 띄운다 |
-| 프롬프트를 안 따른다 | `h3video ir` 로 바뀐 결과 확인 → 고쳐서 `--raw -f` |
+| 프롬프트를 안 따른다 | `h3video ir` 로 바뀐 결과 확인 → 고쳐서 `--raw` |
 | `GPU 메모리가 모자라 시작하지 않았다` | 메시지대로 `-s` 줄이기 또는 `--size 576` (6절) |
 | `out of memory` | 다른 작업이 GPU 사용 중 → `bash scripts/up.sh` 다시 |
 | 생성 중 서버가 끝났다 | `up.sh` 화면의 바로 위 오류를 확인한다 |
