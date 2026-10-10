@@ -148,8 +148,11 @@ class Http:
         except urllib.error.URLError as e:
             raise BackendError(f"서버에 연결하지 못했습니다 ({self.base}): {e.reason}. 주소·포트·SSH 터널을 확인하세요",
                                retryable=True) from e
-        except (TimeoutError, ConnectionError, http.client.HTTPException) as e:
-            raise BackendError(f"{method} {path}: 응답 시간 초과·연결 끊김 ({self.base}): {e}", retryable=True) from e
+        except TimeoutError as e:
+            raise BackendError(f"{method} {path}: 응답 시간 초과 ({self.base}): {e}", retryable=True) from e
+        except (ConnectionError, http.client.HTTPException) as e:
+            # 원인별로 문장을 나눈다: 예전처럼 한 문장에 '시간 초과'가 같이 있으면 연결 끊김에도 '응답이 너무 늦다'는 설명이 붙었다
+            raise BackendError(f"{method} {path}: 연결이 끊겼습니다 ({self.base}): {type(e).__name__}: {e}", retryable=True) from e
         if raw:
             return payload
         try:

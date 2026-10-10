@@ -8,7 +8,7 @@
 # 사용: scripts/setup.sh [--mode cli|web|cluster|all] [옵션]
 #   --mode cli       .venv + shorts(pip install -e .) + ffmpeg/ffprobe/drawtext + 한글 글꼴 (기본)
 #   --mode web       node(package.json engines) + npm ci  (--build 면 vite build 까지)
-#   --mode cluster   cli + minimax-h3-video 위치 확인 (--h3-repo 또는 H3_REPO, 기본 ../minimax-h3-video)
+#   --mode cluster   cli + minimax-h3-video 위치 확인 (--h3-repo 또는 H3_REPO, 기본: 이 폴더를 담은 minimax-h3-video 레포)
 #   --mode all       cli + web + cluster
 #   --python 경로    .venv 를 만들 파이썬          --venv 경로       .venv 대신 쓸 venv 위치
 #   --index-url URL  사내 PyPI 미러 (PIP_INDEX_URL 도 존중)
@@ -24,7 +24,7 @@ TOOLS="$ROOT/.tools"
 DL="$TOOLS/dl.$$"
 MODE=cli PY_ARG="" VENV="$ROOT/.venv" INDEX_URL="${PIP_INDEX_URL:-}"
 OFFLINE=0 YES=0 ISOLATED=0 BUILD=0 WITH_H3=0 UNINSTALL=0
-H3_REPO="${H3_REPO:-$ROOT/../minimax-h3-video}"
+H3_REPO="${H3_REPO:-$ROOT/..}"   # shortform/ 은 minimax-h3-video 레포 안에 있다
 
 # 받을 것 (출처는 ffmpeg.org·nodejs.org·astral·Google Noto 공식 배포처)
 UV_BASE=https://github.com/astral-sh/uv/releases/latest/download

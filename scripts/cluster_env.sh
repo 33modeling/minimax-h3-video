@@ -56,7 +56,7 @@ mkdir -p "$H3_OUTPUT_DIR" "$H3_INBOX_DIR" "$H3_LOG_DIR" "$STORAGE_ROOT/runs" "$H
 
 export VENV="${H3_VENV:-$STORAGE_ROOT/.venv}"
 [[ -x "$VENV/bin/python" ]] && export PATH="$VENV/bin:$PATH"
-export PYTHONPATH="$_REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$_REPO_ROOT/src:$_REPO_ROOT/shortform${PYTHONPATH:+:$PYTHONPATH}"   # h3video + shorts(숏폼)
 
 # 체크아웃의 runs/ 는 심볼릭 링크만 허용 (fdmu 패턴)
 _RUNS="$_REPO_ROOT/runs"

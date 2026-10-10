@@ -65,6 +65,8 @@ if [ -f "$SHORTS_ROOT/.env" ]; then
 fi
 
 # 3) cluster_env.sh — 읽기만
+# shortform/ 은 minimax-h3-video 레포 안에 있으므로, 따로 정하지 않았으면 상위 폴더를 쓴다
+if [ -z "${H3_REPO:-}" ] && [ -f "$SHORTS_ROOT/../src/h3video/cli.py" ]; then H3_REPO="$(cd "$SHORTS_ROOT/.." && pwd -P)"; fi
 if [ -n "${H3_REPO:-}" ]; then
   if [ -f "$H3_REPO/scripts/cluster_env.sh" ]; then
     if _shorts_vars="$(bash -c 'source "$1" >/dev/null 2>&1 || exit 3

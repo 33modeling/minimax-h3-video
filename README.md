@@ -5,6 +5,10 @@ MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 SGLang 으로
 
 **처음이면 [USAGE.md](USAGE.md)** — 코드 올리기부터 서버 실행, TUI 키, 결과 위치, 문제 해결까지 순서대로 적어 두었다.
 
+- **영상 한 편**: `h3video gen "..." -s 8` (이 레포의 기본 기능)
+- **숏폼 제작**: 장면 영상에 자막·제목·배경음악·템플릿을 얹어 9:16 숏폼으로 합성한다. [`shortform/`](shortform/) (예전 shortform-studio 레포를 2026-10-10 이 레포로 합침). `h3video shorts run job.json` 또는 `shorts run job.json`, 웹은 33modeling 허브의 "숏폼 제작". 자세한 것은 [shortform/USAGE.md](shortform/USAGE.md)
+- **클러스터에서 한 번에 띄우기**: `bash scripts/up.sh` / 끄기 `bash scripts/down.sh`
+
 ## 모델이 만들 수 있는 것 (공식 사양)
 
 | 항목 | 값 |
@@ -28,6 +32,7 @@ MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 SGLang 으로
 scripts/cluster_env.sh   # fdmu 규약: 저장은 /group-volume/minsoo3.kim/minimax-h3-video, 모델은 /group-volume/models/MiniMax-H3
 scripts/provision.sh     # venv + sglang[diffusion] + 가중치 검증(없으면 Hub→hf-mirror 다운로드)
 scripts/serve.sh         # sglang serve (tmux 포그라운드, 로그 tee)   fl2va|ref2va
+scripts/up.sh / down.sh   # 한 번에: 점검 → tmux 에 서버·웹 UI → 준비 대기 → PC 접속 안내 / 전부 끄기
 scripts/stop.sh / health.sh / sync_to_cluster.sh
 src/h3video/spec.py      # 사양 상수, 장면 분할
 src/h3video/client.py    # /v1/videos 제출·폴링·다운로드
@@ -36,9 +41,22 @@ src/h3video/web.py+ui.html  # 로컬호스트 웹 UI
 src/h3video/tui.py       # 터미널 UI (curses) — tmux 안에서 h3video tui
 src/h3video/cli.py       # h3video spec|health|plan|gen|ref|status|fetch|web
 tests/                   # 모의 SGLang 서버로 CPU 에서 전 구간 검증
+shortform/               # 숏폼 제작: shorts CLI(파이썬) + 웹(Vite, 허브 '숏폼 제작') — h3video shorts ...
 ```
 
+`pip install -e .` 한 번이면 `h3video` 와 `shorts` 명령이 같이 설치된다.
+
 ## 클러스터에서 (서버)
+
+명령 하나로 띄우고 끈다. 환경 설정, 모델·sglang·GPU·포트 점검, tmux 세션 `h3` 에 서버(포그라운드)와 웹 UI, 준비될 때까지 대기, PC 접속 명령 안내까지 한다.
+
+```bash
+cd /user-volume/<you>/minimax-h3-video
+bash scripts/up.sh             # fl2va(GPU 0-3) + 웹 UI 8790.  --ref 로 ref2va(GPU 4-7)도, --check 는 점검만
+bash scripts/down.sh           # 전부 끄기
+```
+
+아래는 같은 일을 단계별로 하는 방법이다.
 
 ```bash
 # 코드는 rsync 로 user-volume 에 (GitHub egress 없음)

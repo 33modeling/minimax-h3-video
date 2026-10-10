@@ -50,6 +50,24 @@ bash scripts/sync_to_cluster.sh
 
 ## 2. 서버 준비와 실행 (클러스터 노드에서)
 
+### 2-0. 한 번에 띄우고 끄기 (권장)
+
+```bash
+cd /user-volume/<계정>/minimax-h3-video
+bash scripts/up.sh --check      # 점검만: 모델·sglang·GPU 장수·포트
+bash scripts/up.sh              # fl2va 서버(GPU 0,1,2,3, 포트 30010) + 웹 UI(8790)
+bash scripts/up.sh --ref        # ref2va 서버(GPU 4,5,6,7, 포트 30011)도. 8장 노드
+bash scripts/up.sh --cors https://33modeling.pages.dev   # 허브 '숏폼 제작'에서 웹 UI 를 부를 때
+bash scripts/down.sh            # 전부 끄기 (tmux 세션·서버·웹 UI)
+```
+
+- `cluster_env.sh` 를 알아서 읽고, 서버와 웹 UI 는 tmux 세션 `h3` 의 창(fl2va·ref2va·web)에서 포그라운드로 돈다. 로그는 창과 `$H3_LOG_DIR` 에 같이 남는다. 보기: `tmux attach -t h3`.
+- 모델 로딩이 끝날 때까지 기다렸다가(기본 30분 한도, `H3_UP_TIMEOUT`) 준비되면 PC 에서 쓸 SSH 터널 명령을 출력한다. 서버 창이 먼저 끝나면 로그 끝부분을 보여 주고 멈춘다.
+- 이미 떠 있는 서버는 다시 띄우지 않고 그대로 쓴다. 그 포트를 다른 프로그램이 쓰고 있으면 이유를 출력하고 멈춘다.
+- `--gpus`, `--ref-gpus`, `--mode speed|memory`, `--no-web` 으로 바꿀 수 있다. 처음 한 번은 `bash scripts/provision.sh`(아래 2-2)가 먼저 필요하다.
+
+아래 2-1~2-5 는 같은 일을 단계별로 하는 방법이다.
+
 ### 2-1. 환경 변수 읽기 (매 셸마다)
 
 ```bash
@@ -333,7 +351,7 @@ ssh -N -L 8790:127.0.0.1:8790 -L 30010:127.0.0.1:30010 user@host &
 
 텍스트만 쓸 거면 PC 에서 `h3video web` 을 바로 띄워도 된다(30010 포워딩만 있으면 됨).
 
-다른 웹 페이지(33modeling 허브의 "숏폼 제작", shortform-studio)에서 이 서버로 바로 작업을 보내려면 CORS 를 켠다(기본은 꺼짐).
+다른 웹 페이지(33modeling 허브의 "숏폼 제작", 이 레포의 `shortform/`)에서 이 서버로 바로 작업을 보내려면 CORS 를 켠다(기본은 꺼짐).
 
 ```bash
 h3video web --host 127.0.0.1 --port 8790 --cors-origin https://33modeling.pages.dev   # 여러 개는 쉼표, * 는 전부 허용

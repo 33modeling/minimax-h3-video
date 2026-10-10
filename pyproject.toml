@@ -15,6 +15,8 @@ dev = ["pytest"]
 
 [project.scripts]
 h3video = "h3video.cli:main"
+shorts = "shorts.cli:main"          # 숏폼 제작 (shortform/)
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "shortform"]
+include = ["h3video*", "shorts*"]

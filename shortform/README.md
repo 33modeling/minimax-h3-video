@@ -1,4 +1,6 @@
-# shortform-studio
+# 숏폼 제작 (shortform/)
+
+> 2026-10-10: 예전 `shortform-studio` 레포를 **minimax-h3-video 레포의 `shortform/`** 으로 합쳤다. 레포 루트에서 `pip install -e .` 하면 `shorts` 와 `h3video shorts` 가 같이 생기고, 클러스터 서버는 루트의 `bash scripts/up.sh` 로 띄운다.
 
 프롬프트 JSON(작업 명세)과 소스 영상(선택) 두 파일로 9:16 숏폼을 만든다.
 

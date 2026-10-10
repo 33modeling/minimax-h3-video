@@ -33,6 +33,7 @@ EXAMPLES = """예:
   h3video ref "<Subject 1>이 손을 흔든다" --image me.png -s 6
   h3video batch prompts.txt -o out/                     여러 개를 차례로 (--- 로 구분)
   h3video jobs / h3video show last                     지난 작업, 마지막 작업 상세
+  h3video shorts run job.json [source.mp4]             숏폼 제작 (자막·음악·템플릿 합성, shortform/)
 공통 옵션(--endpoint, --output-dir 등)은 명령 앞뒤 어디에 써도 된다."""
 
 
@@ -449,10 +450,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cors-origin", default=None,
                    help="이 서버를 부를 수 있는 웹 출처(쉼표 구분, * 는 전부). 기본 끔. 환경변수 H3_CORS_ORIGIN")
     cmd("tui", cmd_tui, "터미널 UI (tmux 안에서)")
+    sub.add_parser("shorts", help="숏폼 제작 (shortform/ 의 shorts CLI, 인자는 그대로 전달: h3video shorts --help)")
     return ap
 
 
+def run_shorts(argv: list[str]) -> None:
+    """`h3video shorts ...` → 숏폼 제작 CLI(shortform/shorts). 인자는 그대로 넘긴다."""
+    try:
+        from shorts.cli import main as shorts_main
+    except ImportError:
+        here = Path(__file__).resolve().parents[2] / "shortform"
+        if not (here / "shorts" / "cli.py").is_file():
+            raise H3Error("숏폼 모듈(shortform/shorts)을 찾지 못했다. 레포 루트에서 pip install -e . 하거나 source scripts/cluster_env.sh") from None
+        sys.path.insert(0, str(here))
+        from shorts.cli import main as shorts_main
+    sys.exit(shorts_main(argv) or 0)
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["shorts"]:
+        try:
+            return run_shorts(argv[1:])
+        except H3Error as e:
+            sys.exit(f"오류: {e}")
     ap = build_parser()
     a = ap.parse_args(argv)
     if not getattr(a, "fn", None):

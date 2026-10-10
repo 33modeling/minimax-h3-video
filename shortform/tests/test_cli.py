@@ -29,7 +29,7 @@ from shorts import plan as P  # noqa: E402
 from shorts import render as R  # noqa: E402
 from shorts import spec as S  # noqa: E402
 
-H3_REPO = Path(os.environ.get("H3VIDEO_REPO", "/home/kms/dev/minimax-h3-video"))
+H3_REPO = Path(os.environ.get("H3VIDEO_REPO", Path(__file__).resolve().parents[2]))   # shortform/ 을 담은 minimax-h3-video 레포
 
 
 def run_cli(*argv, env=None) -> tuple[int, str]:
@@ -874,3 +874,33 @@ class ClaudePlanTest(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConnectionDropHintTest(unittest.TestCase):
+    """연결 즉시 끊김(SSH 터널은 있고 서버는 꺼짐)은 '시간 초과'가 아니라 '서버가 꺼졌거나 터널이 끊겼다'로 안내한다."""
+
+    def test_reset_gets_the_connection_hint(self):
+        import socket
+        import threading
+        from shorts import backends
+        s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", 0)); s.listen(20)
+        stop = threading.Event()
+
+        def loop():
+            s.settimeout(0.2)
+            while not stop.is_set():
+                try:
+                    c, _ = s.accept(); c.close()
+                except OSError:
+                    pass
+        threading.Thread(target=loop, daemon=True).start()
+        try:
+            client = backends.Http(f"http://127.0.0.1:{s.getsockname()[1]}", timeout=5)
+            with self.assertRaises(backends.BackendError) as e:
+                client.get_json("/health")
+            msg = str(e.exception)
+            self.assertIn("연결이 끊겼습니다", msg)
+            self.assertNotIn("시간 초과", msg)
+            self.assertIn("서버가 꺼졌거나 SSH 터널이 끊겼습니다", backends.explain_error(msg))
+        finally:
+            stop.set(); s.close()

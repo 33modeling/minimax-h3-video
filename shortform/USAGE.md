@@ -1,4 +1,4 @@
-# shortform-studio 사용법
+# 숏폼 제작 사용법 (minimax-h3-video/shortform)
 
 파일 두 개 — **프롬프트 JSON(작업 명세)** 와 **소스 영상(없어도 됨)** — 로 9:16 숏폼 MP4 를 만든다.
 영상 생성은 내가 띄운 서버(MiniMax-H3 같은 모델을 SGLang·vLLM 으로 서빙, 또는 minimax-h3-video 웹 서버)가 하고,
@@ -32,7 +32,7 @@ CLI 는 env.sh 를 켜지 않아도 `.tools/bin` 의 ffmpeg 와 `.tools/fonts` �
 ### 1-1. 로컬 PC (CLI)
 
 ```bash
-git clone https://github.com/33modeling/shortform-studio.git && cd shortform-studio
+git clone https://github.com/33modeling/minimax-h3-video.git && cd minimax-h3-video/shortform
 scripts/setup.sh                 # = --mode cli: .venv + pip install -e . + ffmpeg/drawtext + 한글 글꼴
 source scripts/env.sh            # 이 셸에서만 .venv·.tools 켜기 (+ .env 로드)
 shorts doctor                    # ✓/✗/△ 점검, 필수 항목 실패면 종료 코드 1 (--json 도 됨)
@@ -43,19 +43,20 @@ shorts doctor                    # ✓/✗/△ 점검, 필수 항목 실패면 �
 - 옵션: `--python /경로/python3.12`, `--venv 경로`(env.sh 에는 `export SHORTS_VENV=경로`), `--index-url URL`(사내 PyPI 미러, `PIP_INDEX_URL` 도 존중), `--yes`.
 - `make setup` · `make doctor` · `make test` · `make build` 로도 된다(`make setup ARGS=--yes`).
 
-### 1-2. 클러스터 (minimax-h3-video 옆에서)
+### 1-2. 클러스터 (minimax-h3-video 레포 안에서)
 
 shorts 는 **자기 `.venv` 를 쓰고 H3 의 venv 는 건드리지 않는다.** 요청 본문은 기본으로 내장 호환 클라이언트(h3video `client.VideoRequest` 와 같은 형식)가 만든다.
 
 ```bash
-# minimax-h3-video 옆에 두면 기본값(../minimax-h3-video)으로 찾는다. 아니면 --h3-repo 경로 또는 H3_REPO
+# shortform/ 은 minimax-h3-video 레포 안에 있어서 상위 폴더를 자동으로 H3 레포로 쓴다. 다른 곳이면 --h3-repo 경로 또는 H3_REPO
+# (레포 루트에서 pip install -e . 했거나 source scripts/cluster_env.sh 했다면 `h3video shorts ...` 로 바로 써도 된다)
 scripts/setup.sh --mode cluster --yes                   # cli 준비 + h3 레포 확인, .env 에 H3_REPO 기록(새 .env 일 때)
 scripts/setup.sh --mode cluster --with-h3video --yes    # (선택) h3video 소스를 .venv 에 pip install -e --no-deps (sglang 은 안 받음)
 source scripts/env.sh            # H3_REPO 가 있으면 cluster_env.sh 를 서브셸에서 읽어 H3_ENDPOINT·H3_REF_ENDPOINT·H3_INBOX_DIR 만 가져옴
 shorts doctor && shorts server check
 ```
 
-- 서버(SGLang, H100 4장)는 그 레포에서 따로 띄운다: `source scripts/cluster_env.sh && bash scripts/provision.sh && bash scripts/serve.sh fl2va` (2-1절).
+- 서버(SGLang, H100 4장)는 레포 루트에서 `bash scripts/up.sh` 하나로 띄운다(끄기 `bash scripts/down.sh`). 단계별로는 2-1절.
 - env.sh 는 cluster_env.sh 를 **읽기만** 한다. HOME·PATH·HF 설정은 가져오지 않으므로 지금 셸이 바뀌지 않는다. 우선순위: 셸에 이미 있는 값 > `.env` > cluster_env.sh 기본값.
 - `H3_INBOX_DIR` 이 있으면 `SHORTS_INBOX` 기본값이 된다(`--inbox-dir` 생략 가능).
 
@@ -77,12 +78,12 @@ CLI 는 서버 주소만 있으면 종류(SGLang / vLLM / h3video)를 스스로 
 
 ### 2-1. 클러스터에서 H3 띄우고 바로 쓰기 (minimax-h3-video + SGLang, H100 4장)
 
-minimax-h3-video(비공개 33modeling/minimax-h3-video)의 스크립트를 그대로 쓴다. GPU 가 없는 이 환경에서는 실행해 보지 못했다.
+레포 루트(minimax-h3-video, 33modeling/minimax-h3-video)의 스크립트를 그대로 쓴다. 한 번에 하려면 `bash scripts/up.sh`. GPU 가 없는 이 환경에서는 실행해 보지 못했다.
 
 ```bash
 # 0) 내 PC: 코드 올리기 (클러스터는 GitHub egress 없음)
 CLUSTER_SSH=user@host CLUSTER_CODE_DIR=/user-volume/<me>/minimax-h3-video bash scripts/sync_to_cluster.sh
-# shortform-studio 도 같은 방식(rsync)으로 클러스터에 올린다
+# shortform/ 은 같은 레포라 위 동기화에 같이 올라간다
 
 # 1) 클러스터: venv + sglang[diffusion] + 가중치 확인
 cd /user-volume/<me>/minimax-h3-video && source scripts/cluster_env.sh
@@ -99,7 +100,7 @@ bash scripts/health.sh
 
 # 4) 환경변수(H3_ENDPOINT=…:30010, H3_REF_ENDPOINT=…:30011, H3_INBOX_DIR) 잡고 실행
 source scripts/cluster_env.sh
-/user-volume/<me>/shortform-studio/bin/shorts run prompt.json [source.mp4] --inbox-dir "$H3_INBOX_DIR"
+/user-volume/<me>/minimax-h3-video/shortform/bin/shorts run prompt.json [source.mp4] --inbox-dir "$H3_INBOX_DIR"
 ```
 
 - CLI 는 `--server` 가 없으면 `SHORTS_SERVER` → `H3_ENDPOINT` 를, `--ref-server` 가 없으면 `SHORTS_REF_SERVER` → `H3_REF_ENDPOINT` 를 쓴다.
