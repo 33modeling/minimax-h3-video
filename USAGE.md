@@ -1,12 +1,42 @@
 # 사용 설명서 (처음부터 끝까지)
 
-이 문서는 아무것도 준비되지 않은 상태에서 첫 영상이 나올 때까지를 순서대로 적은 것이다.
-요약 명령만 보려면 README.md, 예시 명령만 보려면 examples/jobs_example.md.
+## 빠른 시작 (이것만 보면 된다)
 
-전체 흐름은 네 단계다.
+```bash
+# ① 내 PC: 코드를 클러스터로 (코드를 고칠 때마다)
+CLUSTER_SSH=<계정>@<호스트> CLUSTER_CODE_DIR=/user-volume/<계정>/minimax-h3-video bash scripts/sync_to_cluster.sh
+
+# ② 클러스터: 처음 한 번 — venv·sglang 설치. 모델은 /group-volume/models/MiniMax-H3 를 확인만 한다(받지 않음)
+cd /user-volume/<계정>/minimax-h3-video
+source scripts/cluster_env.sh && bash scripts/provision.sh
+
+# ③ 서버 + 웹 UI 띄우기 — 이 화면에서 포그라운드, 서버 원본 로그가 그대로 나온다
+bash scripts/up.sh              # 레퍼런스(ref2va)도 쓰면 --ref (GPU 8장)
+#    끄기: 이 화면에서 Ctrl+C (서버·워커·웹 UI 전부 끄고 GPU 반환) / 다른 창에서는 bash scripts/down.sh
+
+# ④ 다른 창: 영상 만들기
+source scripts/cluster_env.sh
+h3video gen "비 오는 서울 밤거리, 네온 반사" -s 8 -o ~/videos/          # 글 → 영상
+h3video gen "..." --first first.png -s 8                               # 이 그림에서 시작
+h3video ref "<Subject 1>이 손을 흔든다" --image me.png -s 6             # 내 얼굴·동작 참고 (--ref 로 띄웠을 때)
+h3video batch prompts.txt -o ~/videos/                                 # 여러 개 차례로 (--- 로 구분)
+h3video shorts run job.json --image first.png --ref face.png          # 숏폼: 자막·음악·템플릿 합성
+h3video jobs / h3video show last                                       # 지난 작업 / 마지막 작업 상세
+```
+
+| 알아 둘 것 | 내용 |
+|---|---|
+| 결과 | `/group-volume/minsoo3.kim/minimax-h3-video/outputs/<작업id>/` (`-o` 를 주면 거기에도 복사) |
+| 모델 위치 | 기본 `/group-volume/models/MiniMax-H3`. 못 찾으면 `up.sh` 가 경로를 묻고 `.cluster_env.local.sh` 에 저장 |
+| PC 브라우저 | `up.sh` 가 마지막에 출력하는 `ssh -N -L ...` 를 PC 에서 실행 → `http://127.0.0.1:8790`. 허브 '숏폼 제작'의 서버 주소도 `http://localhost:8790` |
+| 이미 떠 있으면 | `up.sh` 는 떠 있는 서버·웹 UI 를 다시 띄우지 않고 그대로 쓴다 |
+| 이미지·영상 입력 | 4-0절 표(H3), 숏폼은 [shortform/USAGE.md](shortform/USAGE.md) 3-1절 |
+| 막히면 | 7절 표. 오류는 `up.sh` 화면의 원본 로그에 그대로 나온다 |
+
+아래는 같은 내용을 단계마다 자세히 적은 것이다.
 
 ```
-[내 PC]  코드 rsync ──▶ [클러스터 노드]  provision(1회) ─▶ serve(tmux) ─▶ h3video tui / gen ─▶ mp4
+[내 PC]  코드 rsync ──▶ [클러스터 노드]  provision(1회) ─▶ up.sh (서버·웹 UI, 이 화면) ─▶ h3video gen / ref / shorts ─▶ mp4
 ```
 
 - 서버(sglang serve)는 클러스터 H100 노드에서만 돈다. 모델이 33B 라 GPU 4장이 기본이다.
@@ -442,8 +472,9 @@ non_diegetic_music: 배경음악 스타일·템포.
 | `저장 경로가 group-volume 밖` | STORAGE_ROOT 를 group-volume 아래로. 부록 A |
 | `모델 없음: ...` / provision.sh 가 `가중치를 찾지 못했다` | `bash scripts/up.sh` 가 경로를 물어볼 때 가중치 폴더를 입력(저장됨). 또는 `.cluster_env.local.sh` 에 `export H3_MODEL_DIR=<경로>`. 이미 받아 둔 모델을 다시 받지 않는다(받기는 `--download` 일 때만) |
 | `sglang 없음` | provision.sh 가 실패했거나 venv 가 PATH 에 없음. `which sglang` 확인. 안 되면 3절 도커 |
-| `포트 30010 이미 사용 중` | `bash scripts/stop.sh` 후 재시도. 다른 사람 프로세스면 `ss -ltnp` 로 확인 |
-| health 가 `000` | 서버 로딩 중(몇 분) 또는 죽음. 서버 tmux 창 로그 확인 |
+| `포트 30010 이미 사용 중` / `OSError: [Errno 98] Address already in use` | 그 포트에 이미 서버·웹 UI 가 떠 있다. `up.sh` 는 떠 있는 걸 그대로 쓴다. 새로 띄우려면 `bash scripts/down.sh`, 예전 방식(tmux 세션)으로 띄운 게 남았으면 `tmux kill-session -t h3` |
+| `up.sh` 가 `서버가 끝났다` | 바로 위 원본 로그가 원인(OOM 등). 남은 프로세스는 끄고 GPU 를 반환한 상태 |
+| health 가 `000` | 서버 로딩 중(몇 분) 또는 죽음. `up.sh` 화면의 로그 확인 |
 | CUDA OOM | `--mode memory` 로 재시작. 그래도 안 되면 `--steps` 줄이거나 길이 단축 |
 | 장면 체인에서 `ffmpeg` 오류 | 서버 노드에 ffmpeg 설치. 단일 장면(≤15초)은 ffmpeg 없이 된다 |
 | 이미지 넣었는데 `file not found` 류 | PC 에서 띄웠기 때문. 클러스터 노드에서 tui/gen 실행 |
@@ -488,14 +519,16 @@ export H3_NUM_GPUS=4
 
 ```bash
 # 서버
-source scripts/cluster_env.sh && bash scripts/serve.sh fl2va --gpus 0,1,2,3
+bash scripts/up.sh                  # 서버 + 웹 UI (이 화면, Ctrl+C 로 전부 끄기)
+bash scripts/up.sh --check          # 점검만
+bash scripts/down.sh                # 다른 창에서 끄기
 source scripts/cluster_env.sh && bash scripts/health.sh
-source scripts/cluster_env.sh && bash scripts/stop.sh
 # 생성
 source scripts/cluster_env.sh && h3video tui
 source scripts/cluster_env.sh && h3video gen "..." -s 8 --ir -o ~/videos/
 source scripts/cluster_env.sh && h3video batch prompts.txt -o ~/videos/
 h3video jobs && h3video show last
+source scripts/cluster_env.sh && h3video shorts run job.json --image first.png --ref face.png
 # 코드 갱신 (PC)
 CLUSTER_SSH=user@host CLUSTER_CODE_DIR=/user-volume/<계정>/minimax-h3-video bash scripts/sync_to_cluster.sh
 ```
