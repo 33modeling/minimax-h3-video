@@ -147,6 +147,28 @@ def find(exclude=()):
     return found
 
 
+def stop(pids):
+    """TERM → 30초 안에 안 꺼지면 KILL."""
+    import signal
+    for p in pids:
+        try:
+            os.kill(p, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    for _ in range(30):
+        alive = [p for p in pids if is_alive(p)]
+        if not alive:
+            return
+        time.sleep(1)
+    print(f"[leftover] 30초 안에 안 꺼져 강제 종료: {alive}")
+    for p in alive:
+        try:
+            os.kill(p, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    time.sleep(2)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kill", action="store_true")
@@ -154,8 +176,18 @@ def main():
     ap.add_argument("--keep-web", action="store_true", help="웹 UI 는 빼고 (H3 서버만 — up.sh·down.sh)")
     ap.add_argument("--web-only", action="store_true", help="웹 UI 만 (web.sh)")
     ap.add_argument("--gpu-users", action="store_true", help="이 계정에서 GPU 를 잡은 프로세스 전부 보여 주기만")
+    ap.add_argument("--has-gpu-users", action="store_true", help="이 계정에 GPU 를 잡은 프로세스가 있으면 종료 코드 0")
+    ap.add_argument("--kill-gpu-users", action="store_true", help="이 계정에서 GPU 를 잡은 프로세스를 전부 끈다 (up.sh 가 묻고 나서)")
     ap.add_argument("--exclude", type=int, nargs="*", default=[])
     a = ap.parse_args()
+    if a.has_gpu_users:
+        return 0 if gpu_holders(a.exclude) else 1
+    if a.kill_gpu_users:
+        users = gpu_holders(a.exclude)
+        for pid, gpus, cmd in users:
+            print(f"[gpu] 끈다: pid {pid}  GPU {','.join(gpus) or '-'}  {cmd}")
+        stop([p for p, _, _ in users])
+        return 0
     if a.gpu_users:
         users = gpu_holders(a.exclude)
         if not users:   # 붙여 넣을 때 한글이 지워져도 알 수 있게 영어 표시를 같이 둔다
@@ -186,25 +218,7 @@ def main():
         print(f"   pid {pid}  GPU 장치 {','.join(gpus) or '-'}  {cmd}")
     if not a.kill:
         return 1
-    pids = [p for p, _, _ in procs]
-    for p in pids:
-        try:
-            os.kill(p, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    for _ in range(30):
-        alive = [p for p in pids if is_alive(p)]
-        if not alive:
-            break
-        time.sleep(1)
-    else:
-        print(f"[leftover] 30초 안에 안 꺼져 강제 종료: {alive}")
-        for p in alive:
-            try:
-                os.kill(p, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        time.sleep(2)
+    stop([p for p, _, _ in procs])
     print("[leftover] 내렸다")
     return 0
 

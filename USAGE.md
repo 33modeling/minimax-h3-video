@@ -43,6 +43,7 @@ bash scripts/down.sh                 # 다른 창에서 H3 서버 끄기 (웹 UI
    - `--ref` 없이: 빈 GPU 전부를 fl2va 에 (4장이면 텍스트 인코더·VAE 1장 + 영상 모델 3장에 나눠 영상 하나를 함께 만든다)
    - `--ref`: 빈 GPU 를 fl2va·ref2va 가 반씩 (4장이면 2장씩)
    - 직접 고르려면 `--gpus 0,1,2,3 --ref-gpus 4,5,6,7`
+   - 이 계정의 다른 작업(다른 실험 등)이 GPU 를 쓰고 있어 모자라거나 서버당 1장이 되면: 그 프로세스(pid·명령)를 보여 주고 **끄고 진행할지 묻는다(y/N)**. 묻지 않고 끄려면 `bash scripts/up.sh --force`
 3. 모델·패키지·가이드·메모리·GPU 를 점검하고, 문제가 있으면 이유와 할 일을 출력하고 멈춘다.
 4. 서버를 **이 화면에서** 띄운다. 서버 원본 로그가 그대로 나오고 `logs/up-<시각>.log` 에도 남는다. 로딩 시간 제한은 없다.
 5. 준비되면 `✓ fl2va 준비됨` 이 나온다. 그다음 다른 창에서 영상을 만든다([VIDEO.md](VIDEO.md)).
@@ -79,6 +80,7 @@ bash scripts/down.sh                 # 다른 창에서 H3 서버 끄기 (웹 UI
 |---|---|
 | `모델 없음` / `Diffusers 형식 가중치가 아직 없다` | `bash scripts/provision.sh` (`--ref` 면 ref2va 것도). 없는 것만 받는다 |
 | `Diffusers venv 없음` | `bash scripts/provision.sh --skip-model` |
+| 다른 실험이 GPU 를 쓰고 있다 | `up.sh` 가 목록을 보여 주고 끌지 묻는다(y). 바로 끄려면 `bash scripts/up.sh --force` |
 | `비어 있는 GPU 가 N장뿐이다` | H3 서버는 이미 다 내린 뒤다. 바로 아래에 이 계정에서 GPU 를 잡은 프로세스(pid·명령)가 나온다. 그것을 끄거나 끝나길 기다리거나 `--ref` 를 뺀다. 목록이 비어 있으면 다른 계정·파드가 쓰는 것 |
 | `--gpus 와 --ref-gpus 가 GPU N 에서 겹친다` | 서로 다른 GPU 를 준다 |
 | `포트 30010 을 다른 프로그램이 쓰고 있다` | `bash scripts/down.sh` 후 다시 |

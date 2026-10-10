@@ -7,15 +7,16 @@
 #   bash scripts/up.sh --ref           ref2va 서버도 (포트 30011)
 #     GPU: --gpus 를 안 주면 비어 있는 GPU 를 쓴다. diffusers 엔진은 빈 GPU 전부(--ref 면 반씩), sglang 은 4장씩. 다른 프로세스가 쓰는 GPU 는 피한다
 #   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7 --mode memory
+#   bash scripts/up.sh --force         이 계정의 다른 GPU 작업을 먼저 끄고 띄운다 (기본은 GPU 가 모자라거나 서버당 1장이면 목록을 보여 주고 y/N 으로 묻는다)
 #   bash scripts/up.sh --check         점검만
 # 끄기: 이 화면에서 Ctrl+C (다른 창에서는 bash scripts/down.sh)
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"
-GPUS=""; REF_GPUS=""; REF=0; WEB=0; CHECK=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"
+GPUS=""; REF_GPUS=""; REF=0; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"
 while [[ $# -gt 0 ]]; do case "$1" in
-  --ref) REF=1; shift ;; --check) CHECK=1; shift ;;
+  --ref) REF=1; shift ;; --check) CHECK=1; shift ;; --force|-y) FORCE=1; shift ;;
   --web|--no-web) echo "웹 UI 는 이제 따로 띄운다: 다른 창에서 bash scripts/web.sh (H3 서버와 서로 안 건드린다)"; shift ;;
   --gpus) GPUS="$2"; shift 2 ;; --ref-gpus) REF_GPUS="$2"; shift 2 ;;
   --mode) MODE_ARGS=(--mode "$2"); shift 2 ;; --cors) echo "--cors 는 웹 UI 옵션이다: bash scripts/web.sh --cors $2"; shift 2 ;;
@@ -113,26 +114,26 @@ for w in "${TODO[@]}"; do
     else fail "$w: 포트 $p 를 다른 프로그램이 쓰고 있다" "bash scripts/down.sh 또는 bash scripts/status.sh 로 확인"; fi
   else START+=("$w"); fi
 done
-# GPU: 띄울 서버마다 **비어 있는** GPU 를 쓴다. 다른 프로세스가 차지한 GPU 에 올리면 CUDA OOM 이 난다 (그 프로세스는 건드리지 않는다)
+# GPU: 띄울 서버마다 **비어 있는** GPU 를 쓴다. 모자라면 이 계정의 다른 작업이 잡은 GPU 를 보여 주고, 끄고 진행할지 묻는다(--force 면 묻지 않고 끈다)
 FREE_MIB=${H3_GPU_BUSY_MIB:-2048}   # 이만큼(MiB)보다 더 쓰고 있으면 '사용 중'
-GALL=(); declare -A GUSED=() GTOT=()
-while IFS=, read -r i u tt; do i=${i// /}; [[ -n "$i" ]] || continue; GALL+=("$i"); GUSED[$i]=${u// /}; GTOT[$i]=${tt// /}; done \
-  < <(nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null)
-FREE=(); for i in "${GALL[@]}"; do [[ ${GUSED[$i]} -le $FREE_MIB ]] && FREE+=("$i"); done
-gpu_table() { local i; for i in "${GALL[@]}"; do echo "     GPU $i: $(( ${GUSED[$i]} / 1024 ))GB / $(( ${GTOT[$i]} / 1024 ))GB 사용$([[ ${GUSED[$i]} -gt $FREE_MIB ]] && echo '  ← 사용 중')"; done
-  echo "   이 계정에서 GPU 를 잡은 프로세스 (컨테이너라 nvidia-smi 로는 안 보여 /proc 으로 찾음):"
-  python3 "$ROOT/scripts/h3_leftovers.py" --gpu-users; }
-TAKEN=(); gpu_problems=$problems
-if [[ ${#GALL[@]} -eq 0 ]]; then fail "GPU 가 안 보인다 (nvidia-smi 실패)" "GPU 노드인지, nvidia-smi 가 되는지 확인"
-else
+GPUS_ARG="$GPUS"; REF_GPUS_ARG="$REF_GPUS"
+gerr() { GERR+=("$1"); GHINT+=("${2:-}"); }
+select_gpus() {   # → GPUS·REF_GPUS 를 정하고, 문제는 GERR 에 모은다
+  GPUS="$GPUS_ARG"; REF_GPUS="$REF_GPUS_ARG"; GERR=(); GHINT=(); GALL=(); FREE=(); TAKEN=()
+  declare -gA GUSED=() GTOT=()
+  local i u tt w want got sel left
+  while IFS=, read -r i u tt; do i=${i// /}; [[ -n "$i" ]] || continue; GALL+=("$i"); GUSED[$i]=${u// /}; GTOT[$i]=${tt// /}; done \
+    < <(nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null)
+  for i in "${GALL[@]}"; do [[ ${GUSED[$i]} -le $FREE_MIB ]] && FREE+=("$i"); done
+  if [[ ${#GALL[@]} -eq 0 ]]; then gerr "GPU 가 안 보인다 (nvidia-smi 실패)" "GPU 노드인지, nvidia-smi 가 되는지 확인"; return; fi
   if [[ -n "$GPUS" && -n "$REF_GPUS" ]]; then   # 두 서버가 같은 GPU 를 쓰면 OOM
-    for i in ${GPUS//,/ }; do [[ ",$REF_GPUS," == *",$i,"* ]] && fail "--gpus($GPUS)와 --ref-gpus($REF_GPUS)가 GPU $i 에서 겹친다" "서로 다른 GPU 를 준다"; done
+    for i in ${GPUS//,/ }; do [[ ",$REF_GPUS," == *",$i,"* ]] && gerr "--gpus($GPUS)와 --ref-gpus($REF_GPUS)가 GPU $i 에서 겹친다" "서로 다른 GPU 를 준다"; done
   fi
   for w in "${START[@]}"; do   # 직접 준 GPU 먼저 확인
-    [[ $w == fl2va ]] && want="$GPUS"; [[ $w == ref2va ]] && want="$REF_GPUS"; [[ $w == web || -z "${want:-}" ]] && continue
+    want=""; [[ $w == fl2va ]] && want="$GPUS"; [[ $w == ref2va ]] && want="$REF_GPUS"; [[ -z "$want" ]] && continue
     for i in ${want//,/ }; do
-      if [[ -z "${GUSED[$i]:-}" ]]; then fail "$w: GPU $i 가 없다 (이 노드 GPU: ${GALL[*]})"
-      elif [[ ${GUSED[$i]} -gt $FREE_MIB ]]; then fail "$w: GPU $i 를 다른 프로세스가 $(( ${GUSED[$i]} / 1024 ))GB 쓰고 있다 (여기에 올리면 OOM)" "비어 있는 GPU: ${FREE[*]:-없음} → --gpus 로 바꾸거나 --gpus 를 빼면 알아서 고른다"
+      if [[ -z "${GUSED[$i]:-}" ]]; then gerr "$w: GPU $i 가 없다 (이 노드 GPU: ${GALL[*]})"
+      elif [[ ${GUSED[$i]} -gt $FREE_MIB ]]; then gerr "$w: GPU $i 를 다른 프로세스가 $(( ${GUSED[$i]} / 1024 ))GB 쓰고 있다" "비어 있는 GPU: ${FREE[*]:-없음} → --gpus 를 바꾸거나 빼면 알아서 고른다"
       fi; TAKEN+=("$i")
     done
   done
@@ -144,19 +145,41 @@ else
   else PER=4; fi
   for w in "${AUTO[@]}"; do
     got=(); for i in "${FREE[@]}"; do [[ " ${TAKEN[*]} " == *" $i "* ]] && continue; got+=("$i"); [[ ${#got[@]} -ge $PER ]] && break; done
-    if [[ ${#got[@]} -lt $PER ]]; then fail "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "$([[ $CHECK == 1 ]] && echo "--check 라 남은 H3 서버는 아직 안 내렸다(실제로 띄우면 먼저 내린다). " || echo "전에 띄운 H3 서버는 위에서 모두 내렸다. ")아래에 GPU 를 잡은 프로세스를 보여 준다: 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --ref 빼기')"; continue; fi
+    if [[ ${#got[@]} -lt $PER ]]; then gerr "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "GPU 를 잡은 작업을 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --ref 빼기')"; continue; fi
     TAKEN+=("${got[@]}"); sel=$(IFS=,; echo "${got[*]}")
     [[ $w == fl2va ]] && GPUS=$sel; [[ $w == ref2va ]] && REF_GPUS=$sel
   done
-  layout() {   # GPU 목록 → 쓰는 방식 (diffusers)
-    local n; n=$(tr ',' '\n' <<<"$1" | grep -c .)
-    [[ "$H3_ENGINE" != diffusers ]] && return
-    if [[ $n -ge 3 ]]; then echo " — 텍스트 인코더·VAE 1장 + 영상 모델 $((n - 1))장에 나눠 함께"
-    elif [[ $n -eq 2 ]]; then echo " — 텍스트 인코더 1장 + 영상 모델 1장"
-    else echo " — 1장에서 번갈아 올림 (느림)"; fi; }
-  if [[ $problems -eq $gpu_problems ]]; then
-    for w in "${START[@]}"; do [[ $w == fl2va ]] && green "✓ fl2va GPU $GPUS (비어 있음)$(layout "$GPUS")"; [[ $w == ref2va ]] && green "✓ ref2va GPU $REF_GPUS (비어 있음)$(layout "$REF_GPUS")"; done
+}
+gpu_table() { local i; for i in "${GALL[@]}"; do echo "     GPU $i: $(( ${GUSED[$i]} / 1024 ))GB / $(( ${GTOT[$i]} / 1024 ))GB 사용$([[ ${GUSED[$i]} -gt $FREE_MIB ]] && echo '  ← 사용 중 (busy)')"; done
+  echo "   이 계정에서 GPU 를 잡은 프로세스:"
+  python3 "$ROOT/scripts/h3_leftovers.py" --gpu-users; }
+if [[ $FORCE == 1 && $CHECK != 1 ]] && python3 "$ROOT/scripts/h3_leftovers.py" --has-gpu-users; then
+  yellow "· --force: 이 계정의 다른 GPU 작업을 끄고 GPU 를 고른다"
+  python3 "$ROOT/scripts/h3_leftovers.py" --kill-gpu-users; sleep 5
+fi
+select_gpus
+thin=0   # diffusers 인데 서버당 1장이면 아주 느리다 → 다른 작업을 끌지 묻는다
+if [[ "$H3_ENGINE" == diffusers ]]; then for g in "$GPUS" "$REF_GPUS"; do [[ -n "$g" && "$g" != *,* ]] && thin=1; done; fi
+if [[ (${#GERR[@]} -gt 0 || $thin == 1) && $CHECK != 1 ]] && python3 "$ROOT/scripts/h3_leftovers.py" --has-gpu-users; then
+  yellow "· GPU 가 $([[ ${#GERR[@]} -gt 0 ]] && echo '모자란다' || echo '서버당 1장뿐이라 아주 느리다'). 이 계정의 다른 작업이 GPU 를 쓰고 있다:"; gpu_table
+  if [[ $FORCE == 1 ]]; then ans=y; echo "   --force: 끄고 진행한다"
+  elif { : </dev/tty; } 2>/dev/null; then read -r -p "   위 프로세스를 끄고 H3 서버를 띄울까? (y/N) " ans </dev/tty || ans=n
+  else ans=n; echo "   (묻지 못하는 환경) 끄고 진행하려면: bash scripts/up.sh --force"; fi
+  if [[ "${ans:-n}" == [yY]* ]]; then
+    python3 "$ROOT/scripts/h3_leftovers.py" --kill-gpu-users; sleep 5
+    select_gpus
   fi
+fi
+gpu_problems=$problems
+for k in "${!GERR[@]}"; do fail "${GERR[$k]}" "${GHINT[$k]}"; done
+layout() {   # GPU 목록 → 쓰는 방식 (diffusers)
+  local n; n=$(tr ',' '\n' <<<"$1" | grep -c .)
+  [[ "$H3_ENGINE" != diffusers ]] && return
+  if [[ $n -ge 3 ]]; then echo " — 텍스트 인코더·VAE 1장 + 영상 모델 $((n - 1))장에 나눠 함께"
+  elif [[ $n -eq 2 ]]; then echo " — 텍스트 인코더 1장 + 영상 모델 1장"
+  else echo " — 1장에서 번갈아 올림 (느림)"; fi; }
+if [[ $problems -eq $gpu_problems ]]; then
+  for w in "${START[@]}"; do [[ $w == fl2va ]] && green "✓ fl2va GPU $GPUS (비어 있음)$(layout "$GPUS")"; [[ $w == ref2va ]] && green "✓ ref2va GPU $REF_GPUS (비어 있음)$(layout "$REF_GPUS")"; done
 fi
 if [[ $problems -gt 0 ]]; then
   [[ ${#GALL[@]} -gt 0 ]] && { echo "   GPU 상태:"; gpu_table; }
