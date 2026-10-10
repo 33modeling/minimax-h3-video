@@ -60,7 +60,7 @@ def _fmt(sec: float) -> str:
     return f"{int(sec // 60):02d}:{sec % 60:06.3f}"
 
 
-def scene_prompts(description: str, durations: list[int], rewrite: bool = True) -> list[str]:
+def scene_prompts(description: str, durations: list[int] | int, rewrite: bool = True) -> list[str]:
     """장면 체인(16초 이상)용: 한 프롬프트를 장면들로 나눈다.
 
     - 공식 형식(3단)이면 integrated_multimodal_description 의 샷을 시작 시각(`At mm:ss.sss`)으로 장면에 나누고,
@@ -68,6 +68,8 @@ def scene_prompts(description: str, durations: list[int], rewrite: bool = True) 
       어떤 장면에 시작하는 샷이 없으면 그 시각에 이어지던 샷을 넣는다.
     - 그냥 글이면 원문 그대로, 서버가 다듬을 때 쓰라고 몇 번째 장면·몇 초 부분인지만 덧붙인다 (rewrite=False 면 원문만).
     """
+    if isinstance(durations, int):   # 예전 호출(장면 수만): 10초씩으로 본다
+        durations = [10] * durations
     n = len(durations)
     starts = [sum(durations[:i]) for i in range(n)]
     total = sum(durations)
