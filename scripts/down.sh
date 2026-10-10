@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 다른 창에서 끄기: serve.sh pid 파일의 서버와 up.sh 가 띄운 웹 UI (up.sh 화면에서는 Ctrl+C 로 충분).
 #   bash scripts/down.sh
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null

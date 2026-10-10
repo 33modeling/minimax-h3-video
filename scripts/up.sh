@@ -10,6 +10,7 @@
 #   bash scripts/up.sh --cors https://33modeling.pages.dev    허브 '숏폼 제작'에서 웹 UI 를 부를 수 있게
 #   bash scripts/up.sh --check         점검만
 # 끄기: 이 화면에서 Ctrl+C (다른 창에서는 bash scripts/down.sh)
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"

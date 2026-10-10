@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 서빙 프로세스 정리. 사용: source scripts/cluster_env.sh && bash scripts/stop.sh [fl2va|ref2va]
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 [[ -n "${STORAGE_ROOT:-}" ]] || { echo "cluster_env.sh 를 먼저 source 하라"; exit 1; }
 # shellcheck source=/dev/null

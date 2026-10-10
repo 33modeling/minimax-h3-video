@@ -3,6 +3,7 @@
 # 사용: source scripts/cluster_env.sh && bash scripts/serve.sh fl2va|ref2va [--gpus 0,1,2,3] [--mode speed|memory] [-- 추가 sglang 옵션]
 #   fl2va : 텍스트→영상, 첫/끝 프레임→영상 (포트 $H3_PORT_FL2VA)
 #   ref2va: 이미지·영상·오디오 레퍼런스→영상 (포트 $H3_PORT_REF2VA)
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -Eeuo pipefail
 # 환경은 이 스크립트가 직접 읽는다: 셸에 남은 예전 값(H3_MODEL_DIR 등)이 아니라 고정 위치를 쓰게
 # shellcheck source=/dev/null

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 서버가 떴는지 한 번에 보기 (어느 창에서든): fl2va·ref2va·웹 UI 상태, 로딩 중이면 로그 마지막 줄, GPU 메모리.
 #   bash scripts/status.sh
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null

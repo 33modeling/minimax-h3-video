@@ -3,6 +3,7 @@
 # ("The NVIDIA driver on your system is too old (found version 12020)" 오류: 드라이버는 CUDA 12.2 까지인데 torch 가 CUDA 13 용일 때)
 #   bash scripts/fix_torch_cuda.sh          확인하고 필요하면 바꾼다 (provision.sh 가 끝에 자동으로 부른다)
 #   bash scripts/fix_torch_cuda.sh --check  확인만
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null

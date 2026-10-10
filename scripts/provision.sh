@@ -3,6 +3,7 @@
 # 사용: source scripts/cluster_env.sh && bash scripts/provision.sh [--fl2va-only] [--skip-model] [--download]
 # 가중치는 기본으로 **받지 않는다**: 이미 받아 둔 곳을 찾아 확인만 한다(cluster_env.sh 가 자동으로 찾음).
 # 정말 새로 받아야 할 때만 --download (수백 GB, 받을 위치는 H3_MODEL_DIR).
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"
 # 환경은 이 스크립트가 직접 읽는다: 셸에 남은 예전 값(H3_MODEL_DIR 등)이 아니라 고정 위치를 쓰게
