@@ -5,6 +5,7 @@
 #   ref2va: 이미지·영상·오디오 레퍼런스→영상 (포트 $H3_PORT_REF2VA)
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # 환경은 이 스크립트가 직접 읽는다: 셸에 남은 예전 값(H3_MODEL_DIR 등)이 아니라 고정 위치를 쓰게
 # shellcheck source=/dev/null
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cluster_env.sh" >/dev/null || { echo "cluster_env.sh 실패"; exit 1; }
@@ -19,7 +20,7 @@ PORT="$H3_PORT_FL2VA"; [[ "$VARIANT" == ref2va ]] && PORT="$H3_PORT_REF2VA"
 [[ -f "$H3_MODEL_DIR/model_index.json" ]] || { echo "모델 없음: $H3_MODEL_DIR (provision.sh 또는 H3_MODEL_DIR 확인)"; exit 1; }
 h3_cuda_compat || exit 1   # 드라이버가 CUDA 12.x 면 CUDA 13 호환 라이브러리
 command -v sglang >/dev/null || { echo "sglang 없음 — provision.sh 실행 또는 docker 사용"; exit 1; }
-"$VENV/bin/python" "${H3_REPO_ROOT}/scripts/check_torchvision.py" --repair
+"$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" --repair
 port_busy() {
   python3 - "$PORT" <<'PY' 2>/dev/null
 import socket, sys
