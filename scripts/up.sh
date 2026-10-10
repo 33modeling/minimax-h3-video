@@ -32,7 +32,11 @@ cd "$ROOT"
 # 2) 점검
 if h3_model_ok "$H3_MODEL_DIR"; then green "✓ 모델: $H3_MODEL_DIR"
   if [[ $REF == 1 ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "--ref 빼고 실행 (fl2va 만)"; fi
-else fail "모델 없음: $H3_MODEL_DIR" "ls $H3_MODEL_DIR 로 확인"; fi
+else
+  fail "모델 없음: $H3_MODEL_DIR (model_index.json 이나 FL2VA 폴더를 찾지 못함)"
+  echo "   그 폴더에 들어 있는 것:"; ls -la "$H3_MODEL_DIR" 2>&1 | head -20 | sed 's/^/     /'
+  echo "   $(dirname "$H3_MODEL_DIR") 안:"; ls "$(dirname "$H3_MODEL_DIR")" 2>&1 | head -20 | sed 's/^/     /'
+fi
 command -v sglang >/dev/null && green "✓ sglang: $(command -v sglang)" || fail "sglang 없음" "bash scripts/provision.sh (venv: $VENV)"
 ngpu=0; command -v nvidia-smi >/dev/null && ngpu=$(nvidia-smi -L 2>/dev/null | grep -c '^GPU')
 need=$(tr ',' '\n' <<<"$GPUS" | grep -c .); [[ $REF == 1 ]] && need=$((need + $(tr ',' '\n' <<<"$REF_GPUS" | grep -c .)))

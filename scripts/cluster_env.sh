@@ -10,6 +10,7 @@
 
 REPO_NAME=minimax-h3-video
 _REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_h3_env_model="${H3_MODEL_DIR:-}"   # 셸에서 이미 정해 둔 값 (어디서 덮어썼는지 알려 주려고)
 # .cluster_env.local.sh 안에서 이 파일을 다시 읽어도 되돌아가 반복하지 않게
 [[ -n "${_H3_IN_LOCAL_ENV:-}" ]] && { return 0 2>/dev/null || exit 0; }
 if [[ -f "$_REPO_ROOT/.cluster_env.local.sh" ]]; then _H3_IN_LOCAL_ENV=1; source "$_REPO_ROOT/.cluster_env.local.sh"; unset _H3_IN_LOCAL_ENV; fi
@@ -20,6 +21,36 @@ export MODELS_DIR="${MODELS_DIR:-$GROUP_VOLUME_ROOT/models}"
 # 모델 위치 (고정): /group-volume/models/MiniMax-H3
 export H3_MODEL_DIR="${H3_MODEL_DIR:-$GROUP_VOLUME_ROOT/models/MiniMax-H3}"
 h3_model_ok() { [[ -d "$1" ]] && { [[ -f "$1/model_index.json" ]] || compgen -G "$1/[Ff][Ll]2[Vv][Aa]" >/dev/null; }; }
+# 위치는 그대로 두고, 그 안의 구조만 맞춰 찾는다: 한 단계 더 들어간 폴더, HF 캐시(models--…/snapshots/<해시>) 등.
+# 폴더 이름의 대소문자가 다르면(minimax-h3 등) /group-volume/models 안에서 그 이름도 본다. 받기는 하지 않는다.
+h3_resolve_model() {
+  local base="$1" d f
+  h3_model_ok "$base" && { echo "$base"; return 0; }
+  if [[ ! -d "$base" ]]; then
+    for d in "$(dirname "$base")"/*; do [[ -d "$d" && "${d##*/},," == "${base##*/},," ]] && base="$d"; done
+    shopt -s nocasematch; for d in "$(dirname "$base")"/*; do [[ -d "$d" && "${d##*/}" == "${base##*/}" ]] && base="$d"; done; shopt -u nocasematch
+  fi
+  h3_model_ok "$base" && { echo "$base"; return 0; }
+  [[ -d "$base" ]] || return 1
+  while read -r f; do
+    d="$(dirname "$f")"
+    case "${d##*/}" in [Ff][Ll]2[Vv][Aa]|[Rr][Ee][Ff]2[Vv][Aa]) d="$(dirname "$d")" ;; esac
+    h3_model_ok "$d" && { echo "$d"; return 0; }
+  done < <(timeout 20 find -L "$base" -maxdepth 5 -iname model_index.json 2>/dev/null | sort)
+  return 1
+}
+H3_MODEL_DEFAULT="$GROUP_VOLUME_ROOT/models/MiniMax-H3"
+if ! h3_model_ok "$H3_MODEL_DIR"; then
+  if _m="$(h3_resolve_model "$H3_MODEL_DIR")"; then
+    export H3_MODEL_DIR="$_m"
+  elif [[ "$H3_MODEL_DIR" != "$H3_MODEL_DEFAULT" ]] && _m="$(h3_resolve_model "$H3_MODEL_DEFAULT")"; then
+    # 다른 경로로 덮어써져 있는데 거기 가중치가 없으면 기본 위치를 쓴다
+    if [[ -n "$_h3_env_model" && "$_h3_env_model" == "$H3_MODEL_DIR" ]]; then _src="셸 환경변수 H3_MODEL_DIR (unset H3_MODEL_DIR, ~/.bashrc 확인)"
+    else _src="$_REPO_ROOT/.cluster_env.local.sh 의 H3_MODEL_DIR 줄 (지우면 됨)"; fi
+    echo "[cluster-env] $H3_MODEL_DIR 에 가중치가 없어 기본 위치를 쓴다: $_m  ← 덮어쓴 곳: $_src" >&2
+    export H3_MODEL_DIR="$_m"
+  fi
+fi
 
 # 포트를 누가 쓰고 있나 (0 = 쓰는 중). ss 가 없는 컨테이너에서도 되게 실제로 바인딩해 본다.
 h3_port_busy() {
