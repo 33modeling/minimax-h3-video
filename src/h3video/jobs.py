@@ -265,7 +265,7 @@ class Worker(threading.Thread):
 def plan_job(job: Job) -> list[Scene]:
     """총 길이를 장면으로 나누고 장면마다 task 를 정한다 (워커와 CLI --dry-run 공용)."""
     durations = spec.plan_scenes(job.total_seconds, job.scene_seconds)
-    prompts = P.scene_prompts(job.prompt, len(durations)) if len(durations) > 1 else [job.prompt]
+    prompts = P.scene_prompts(job.prompt, durations, rewrite=not job.raw) if len(durations) > 1 else [job.prompt]
     scenes = []
     for i, (d, pr) in enumerate(zip(durations, prompts)):
         task = job.task

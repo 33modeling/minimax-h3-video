@@ -118,3 +118,37 @@ class PreparePrompt(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScenePrompts(unittest.TestCase):
+    IR = ("integrated_multimodal_description: [Shot 1] A fox runs. The camera tracks it. [Shot 2] At 00:06.000, the camera cuts to "
+          "a wide shot as the fox jumps. [Shot 3] At 00:12.500, the camera cuts to a close-up of the fox. [Shot 4] At 00:16.000, "
+          "the shot cuts to the fox walking away.\n\noverall_soundscape: Snow crunching.\n\nnon_diegetic_music: Soft piano.")
+
+    def test_ir_split_by_time_keeps_sound_fields(self):
+        a, b = P.scene_prompts(self.IR, [10, 10])
+        for s in (a, b):
+            f = P.split_fields(s)
+            self.assertEqual((f["overall_soundscape"], f["non_diegetic_music"]), ("Snow crunching.", "Soft piano."))
+        self.assertIn("[Shot 2] At 00:06.000, the camera cuts to a wide shot", a)
+        self.assertNotIn("close-up", a)
+        # 10초에 이어지던 넓은 샷이 2장면 첫 샷, 이후 샷은 장면 기준 시각으로
+        self.assertTrue(P.split_fields(b)["integrated_multimodal_description"].startswith("[Shot 1] A wide shot as the fox jumps."))
+        self.assertIn("[Shot 2] At 00:02.500, the camera cuts to a close-up", b)
+        self.assertIn("[Shot 3] At 00:06.000, the shot cuts to the fox walking away", b)
+
+    def test_ir_without_cuts_in_later_scene(self):
+        ir = "integrated_multimodal_description: [Shot 1] A fox sleeps.\n\noverall_soundscape: Wind.\n\nnon_diegetic_music: None."
+        a, b = P.scene_prompts(ir, [8, 8])
+        self.assertEqual(a, b)
+        self.assertIn("[Shot 1] A fox sleeps.", b)
+
+    def test_plain_text(self):
+        a, b = P.scene_prompts("여우가 달린다", [10, 10])
+        self.assertTrue(a.startswith("여우가 달린다") and "1번째 장면, 전체의 0~10초" in a)
+        self.assertIn("2번째 장면, 전체의 10~20초", b)
+        self.assertEqual(P.scene_prompts("여우가 달린다", [10, 10], rewrite=False), ["여우가 달린다"] * 2)
+
+    def test_alignment_line_dropped_from_fields(self):
+        f = P.split_fields(P.keyframe_note(True, False, 8) + "\n\n" + self.IR)
+        self.assertTrue(f["integrated_multimodal_description"].startswith("[Shot 1] A fox runs."))
