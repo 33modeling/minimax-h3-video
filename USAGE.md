@@ -200,46 +200,124 @@ h3video tui
 ### 4-2. CLI
 
 ```bash
-source scripts/cluster_env.sh
+source scripts/cluster_env.sh      # 클러스터: 서버 주소·저장 경로가 자동으로 잡힌다
 
-h3video spec                      # 모델 사양 (길이·해상도·화면비 등)
-h3video health                    # 서버 응답 확인
-h3video plan 45                   # 45초를 어떻게 나눌지 미리보기 → [9, 9, 9, 9, 9]
-
-# 8초, 16:9
-h3video gen "새벽 안개 낀 해운대, 드론이 바다 위를 낮게 날아 해변으로 접근." --seconds 8 --ratio 16:9
-
-# Context-IR 3단 형식으로 감싸서 (품질 권장)
-h3video gen "..." --ir --soundscape "파도, 갈매기, 바람" --music "잔잔한 피아노 솔로" --seconds 12
-
-# 프롬프트를 파일에서
-h3video gen --prompt-file prompt.txt --seconds 10 --title barbeach
-
-# 첫 프레임 이미지에서 시작해 40초 (10초 장면 4개 체인)
-h3video gen "..." --first key.png --seconds 40 --scene-seconds 10
-
-# 첫·끝 프레임 둘 다 지정 (한 장면일 때만 끝 프레임이 의미 있음)
-h3video gen "..." --first a.png --last b.png --seconds 6
-
-# 레퍼런스 → 영상 (ref2va 서버 30011 필요)
-h3video ref "<Subject 1>이 카메라를 보며 한국어로 인사한다" --image me.png --audio voice.mp3 --seconds 6
+h3video                            # 명령 목록과 예시
+h3video health                     # 서버 확인 (fl2va 가 안 되면 종료 코드 1)
+h3video spec                       # 모델 사양 (길이·해상도·화면비 등)
+h3video plan 45                    # 45초를 어떻게 나눌지 → [9, 9, 9, 9, 9]
 ```
 
-`gen` / `ref` 공통 옵션:
+#### 영상 하나 (`gen`)
+
+```bash
+# 8초 (기본 16:9)
+h3video gen "새벽 안개 낀 해운대, 드론이 바다 위를 낮게 날아 해변으로 접근." -s 8
+
+# 세로 9:16, 파일 이름, 원하는 곳에 저장 (-o 는 파일 경로, 또는 / 로 끝나는 폴더)
+h3video gen "..." -s 10 -r 9:16 -t haeundae -o ~/videos/
+
+# Context-IR 3단 형식으로 감싸서 (품질 권장)
+h3video gen "..." --ir --soundscape "파도, 갈매기, 바람" --music "잔잔한 피아노 솔로" -s 12
+
+# 긴 프롬프트: 파일, 또는 표준입력
+h3video gen -f prompt.txt -s 10
+cat prompt.txt | h3video gen -s 10            # 프롬프트 인자를 생략하면 표준입력을 읽는다
+
+# 첫 프레임 이미지에서 시작해 40초 (10초 장면 4개 체인, ffmpeg 필요)
+h3video gen "..." --first key.png -s 40 --scene-seconds 10
+
+# 첫·끝 프레임 둘 다 (끝 프레임은 마지막 장면에만 쓰인다)
+h3video gen "..." --first a.png --last b.png -s 6
+
+# 넣지 않을 것, 매번 다른 결과(시드 무작위)
+h3video gen "..." -n "자막, 워터마크, 흐릿함" --seed random
+
+# 보내기 전에 확인: 장면 분할과 서버에 갈 요청 JSON 만 출력 (서버 필요 없음)
+h3video gen "..." --first key.png -s 40 --dry-run
+```
+
+#### 레퍼런스로 (`ref`, ref2va 서버 30011 필요)
+
+```bash
+h3video ref "<Subject 1>이 카메라를 보며 한국어로 인사한다" --image me.png --audio voice.mp3 -s 6
+h3video ref -f ref_prompt.txt --image a.png --image b.png --video move.mp4 -s 8 -o out/
+```
+
+이미지 최대 9개, 영상 3개, 오디오 3개, 합계 12개. 넘으면 서버에 보내기 전에 오류로 멈춘다.
+
+#### 여러 개를 차례로 (`batch`)
+
+프롬프트 파일 하나에 영상 여러 개를 적고 한 번에 돌린다. 서버가 한 번에 하나씩 만드니 순서대로 처리하고, 끝나면 결과 경로를 한 줄씩 출력한다. 예시: `examples/batch_example.txt`.
+
+```text
+title: haeundae-dawn
+seconds: 8
+새벽 안개 낀 해운대, 드론이 바다 위를 낮게 날아 해변으로 접근한다.
+---
+title: seoul-rain
+seconds: 12
+ratio: 9:16
+비 오는 서울 밤거리, 네온사인이 젖은 아스팔트에 번진다.
+```
+
+```bash
+h3video batch prompts.txt -o out/              # 결과를 out/ 에 모은다
+h3video batch prompts.txt -s 10 -r 9:16        # 블록에 없는 옵션의 기본값
+h3video batch prompts.txt --dry-run            # 블록마다 요청만 확인
+```
+
+- 영상마다 `---` 줄로 나눈다. 블록 맨 위의 `key: value` 줄은 그 영상만의 옵션이고, 나머지 줄(여러 줄 가능)이 프롬프트다. `#` 로 시작하는 줄은 주석.
+- 쓸 수 있는 key: `seconds` `ratio` `seed` `title` `first` `last` `negative` `scene-seconds` `steps` `ir` `soundscape` `music` `image` `video` `audio`. `image` 등은 쉼표로 여러 개.
+- 파일 경로(`first`, `image` 등)는 프롬프트 파일이 있는 폴더 기준이다.
+- 블록 하나라도 잘못되면(없는 파일, 4초 미만 등) 아무것도 보내기 전에 "N번째 블록" 오류로 멈춘다.
+
+#### 지난 작업과 서버의 영상
+
+```bash
+h3video jobs                       # 최근 20개: id, 시각, 상태, 길이, 제목, 결과 경로 (--limit, --json)
+h3video show last                  # 마지막 작업 상세: 장면별 상태·video_id·오류·결과 (id 나 id 앞부분도 됨)
+h3video status <video_id>          # 서버에 상태 묻기
+h3video fetch <video_id> -o a.mp4  # 서버에서 완성본 받기
+h3video fetch <video_id> --ref     # ref2va(30011) 영상은 --ref
+```
+
+#### 옵션 (`gen` · `ref` · `batch` 공통)
 
 | 옵션 | 기본 | 설명 |
 |---|---|---|
-| `--seconds` | 8 | 총 길이. 4~15 는 한 장면, 16 이상은 장면 체인 |
-| `--ratio` | 16:9 | 16:9, 9:16, 1:1, 4:3, 3:4, 21:9, auto |
-| `--seed` | 0 | 같은 프롬프트·시드면 같은 결과 |
-| `--scene-seconds` | 10 | 체인일 때 장면 하나 길이. 실제 분할은 `plan` 으로 확인 |
+| `-s`, `--seconds` | 8 | 총 길이. 4~15 는 한 장면, 16 이상은 장면 체인 |
+| `-r`, `--ratio` | 16:9 | 16:9, 9:16, 1:1, 4:3, 3:4, 21:9, auto |
+| `--seed` | 0 | 정수 또는 `random`. 같은 프롬프트·시드면 같은 결과. 체인이면 장면마다 1씩 더한다 |
+| `--scene-seconds` | 10 | 체인일 때 장면 하나 길이. 실제 분할은 `plan` 이나 `--dry-run` 으로 확인 |
 | `--steps` | 서버 기본 | 디노이징 스텝. 줄이면 빠르고 거칠다 |
-| `--title` | 프롬프트 앞부분 | 최종 mp4 파일명 |
+| `-t`, `--title` | 프롬프트 앞부분 | 결과 mp4 이름 |
+| `-n`, `--negative` | 없음 | 넣지 않을 것 |
+| `-o`, `--out` | 없음 | 결과를 여기로도 복사. 파일 경로(확장자 없으면 .mp4), 또는 `/` 로 끝나거나 이미 있는 폴더. `batch` 는 폴더 |
+| `--dry-run` | 끔 | 서버에 보내지 않고 장면 분할과 요청 JSON 만 출력 |
+| `--ir` | 끔 | Context-IR 3단 형식으로 감싸기. `--soundscape`, `--music` 으로 소리 설명 |
 
-전역 옵션(서브커맨드 앞에 쓴다): `--endpoint`, `--ref-endpoint`, `--output-dir`, `--inbox-dir`, `--poll`(폴링 간격 초).
-cluster_env.sh 를 source 했으면 전부 자동으로 채워진다.
+`gen` 만: 프롬프트(인자, `-f 파일`, `-f -` 표준입력, 생략 시 파이프 입력), `--first`, `--last`.
+`ref` 만: 프롬프트(같은 방식), `--image`, `--video`, `--audio`(여러 번).
 
-실행하면 `job <id> 시작` 뒤에 장면별 상태가 바뀔 때마다 한 줄씩 찍히고, 끝나면 최종 mp4 경로를 출력한다.
+공통 옵션 `--endpoint`, `--ref-endpoint`, `--output-dir`, `--inbox-dir`, `--poll` 은 명령 앞뒤 어디에 써도 된다.
+`cluster_env.sh` 를 source 했으면 전부 자동으로 채워진다.
+
+#### 실행 중과 끝난 뒤
+
+```text
+job 20261010-142233-a1b2c3 등록: 40초, 16:9, 시드 0
+  [14:22:40] 진행 장면1 서버 대기열  (경과 6초)
+  [14:23:10] 진행 장면1 35%  (경과 36초)
+  [14:31:02] 진행 장면1 완료 · 장면2 12%  (경과 8분 28초)
+/group-volume/.../outputs/20261010-142233-a1b2c3/barbeach.mp4
+끝: 1/1개 완료, 33분 10초
+```
+
+- 보내기 전에 확인하는 것: 입력 파일이 있는지, 길이·화면비·레퍼런스 개수가 맞는지, 서버가 응답하는지. 하나라도 걸리면 GPU 를 쓰기 전에 이유와 할 일을 출력하고 멈춘다.
+- 진행 상황은 표준 오류로, **결과 mp4 경로만 표준 출력**으로 나온다. 스크립트에서 `out=$(h3video gen "..." -s 8)` 로 경로를 받을 수 있다.
+- 종료 코드: `0` 성공, `1` 실패(생성 실패·서버 응답 없음·입력 오류), `2` 옵션 오류, `130` Ctrl+C.
+- **Ctrl+C**: 이 터미널의 처리를 멈추고 작업을 "중단됨"으로 기록한다. 서버에서 이미 만들던 장면은 끝까지 갈 수 있으니, 출력되는 `h3video fetch <video_id>` 로 나중에 받으면 된다.
 
 ### 4-3. 웹 UI
 
@@ -315,7 +393,10 @@ non_diegetic_music: 배경음악 스타일·템포.
 | 장면 체인에서 `ffmpeg` 오류 | 서버 노드에 ffmpeg 설치. 단일 장면(≤15초)은 ffmpeg 없이 된다 |
 | 이미지 넣었는데 `file not found` 류 | PC 에서 띄웠기 때문. 클러스터 노드에서 tui/gen 실행 |
 | TUI 한글이 깨짐 | `n` 키(에디터) 로 입력. tmux 안에서 실행 |
-| 결과가 안 보임 | `$H3_OUTPUT_DIR` 확인. TUI `Enter` 로 출력 경로 표시 |
+| 결과가 안 보임 | `$H3_OUTPUT_DIR` 확인. `h3video show last` 나 TUI `Enter` 로 출력 경로 표시 |
+| CLI 가 `서버가 응답하지 않는다` 로 멈춤 | 출력된 안내대로: 클러스터면 `scripts/health.sh`·`serve.sh`, PC 면 SSH 터널, 주소가 다르면 `--endpoint`. 요청만 보려면 `--dry-run` |
+| Ctrl+C 로 끊었는데 서버는 계속 만듦 | 정상. 출력된 `h3video fetch <video_id>` 로 끝난 장면을 받는다 (ref2va 는 `--ref`) |
+| `fetch` 가 404 | ref2va 영상이면 `--ref` 를 붙인다 |
 
 서버 로그: `$H3_LOG_DIR/serve-fl2va-*.log`. 요청이 정확히 뭐였는지는 `outputs/<job_id>/scene01.request.json`.
 
@@ -355,7 +436,9 @@ source scripts/cluster_env.sh && bash scripts/health.sh
 source scripts/cluster_env.sh && bash scripts/stop.sh
 # 생성
 source scripts/cluster_env.sh && h3video tui
-source scripts/cluster_env.sh && h3video gen "..." --seconds 8 --ir
+source scripts/cluster_env.sh && h3video gen "..." -s 8 --ir -o ~/videos/
+source scripts/cluster_env.sh && h3video batch prompts.txt -o ~/videos/
+h3video jobs && h3video show last
 # 코드 갱신 (PC)
 CLUSTER_SSH=user@host CLUSTER_CODE_DIR=/user-volume/<계정>/minimax-h3-video bash scripts/sync_to_cluster.sh
 ```

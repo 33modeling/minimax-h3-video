@@ -55,6 +55,7 @@ class Job:
     refs: list[dict] = field(default_factory=list)   # {"type","path"}
     scene_seconds: int = 10
     steps: int | None = None
+    negative: str | None = None
     created: float = field(default_factory=time.time)
     started: float | None = None
     finished: float | None = None
@@ -84,7 +85,7 @@ class JobStore:
     def _load(self):
         for f in sorted(self.root.glob("*/job.json")):
             try:
-                d = json.loads(f.read_text())
+                d = json.loads(f.read_text(encoding="utf-8"))
                 d.pop("elapsed", None)
                 d["scenes"] = [Scene(**s) for s in d.get("scenes", [])]
                 self.jobs[d["id"]] = Job(**d)
@@ -94,7 +95,7 @@ class JobStore:
     def save(self, job: Job):
         p = self._path(job.id)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(job.to_json(), ensure_ascii=False, indent=2))
+        p.write_text(json.dumps(job.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
 
     def add(self, job: Job):
         with self.lock:
@@ -107,6 +108,19 @@ class JobStore:
 
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)
+
+    def find(self, key: str) -> Job | None:
+        """작업 id, id 앞부분, 또는 'last'(가장 최근)로 찾는다."""
+        with self.lock:
+            jobs = sorted(self.jobs.values(), key=lambda j: j.created, reverse=True)
+        if key == "last":
+            return jobs[0] if jobs else None
+        if key in self.jobs:
+            return self.jobs[key]
+        hits = [j for j in jobs if j.id.startswith(key) or j.id.endswith(key)]
+        if len(hits) > 1:
+            raise H3Error(f"'{key}' 에 맞는 작업이 {len(hits)}개다. 더 길게 적어라: " + ", ".join(j.id for j in hits[:5]))
+        return hits[0] if hits else None
 
 
 def ffmpeg() -> str | None:
@@ -173,14 +187,7 @@ class Worker(threading.Thread):
                     self.current = None
 
     def plan(self, job: Job):
-        durations = spec.plan_scenes(job.total_seconds, job.scene_seconds)
-        prompts = P.scene_prompts(job.prompt, len(durations)) if len(durations) > 1 else [job.prompt]
-        job.scenes = []
-        for i, (d, pr) in enumerate(zip(durations, prompts)):
-            task = job.task
-            if len(durations) > 1 and i > 0 and task in ("t2va", "fl2va"):
-                task = "fl2va"          # 이전 장면 마지막 프레임을 첫 프레임으로
-            job.scenes.append(Scene(index=i, prompt=pr, duration=d, task=task))
+        job.scenes = plan_job(job)
         self.store.save(job)
 
     def process(self, job: Job):
@@ -191,27 +198,8 @@ class Worker(threading.Thread):
         parts: list[Path] = []
         prev_frame: Path | None = None
         for sc in job.scenes:
-            conds: list[Condition] = []
-            prompt_text = sc.prompt
-            if sc.task == "fl2va":
-                first = prev_frame or (job.first_image if sc.index == 0 else None)
-                last = job.last_image if sc.index == len(job.scenes) - 1 else None
-                if first:
-                    conds.append(Condition("image", stage_input(first, self.inbox_dir), "keyframe", 0))
-                if last:
-                    conds.append(Condition("image", stage_input(last, self.inbox_dir), "keyframe", -1))
-                if not conds:
-                    sc.task = "t2va"
-                elif not P.is_context_ir(prompt_text):
-                    prompt_text = P.keyframe_note(first=bool(first), last=bool(last)) + "\n\n" + prompt_text
-            elif sc.task == "ref2va":
-                for r in job.refs:
-                    conds.append(Condition(r["type"], stage_input(r["path"], self.inbox_dir), "reference"))
-                if prev_frame:
-                    conds.append(Condition("image", stage_input(prev_frame, self.inbox_dir), "reference"))
-            req = VideoRequest(prompt=prompt_text, task=sc.task, duration_seconds=sc.duration,
-                               aspect_ratio=job.aspect_ratio, seed=job.seed + sc.index,
-                               conditions=conds, num_inference_steps=job.steps)
+            req = build_request(job, sc, prev_frame, lambda path: stage_input(path, self.inbox_dir))
+            sc.task = req.task
             client = self.ref_client if sc.task == "ref2va" else self.client
             sc.status = "queued"; self.store.save(job)
             sc.video_id = client.submit(req)
@@ -224,7 +212,7 @@ class Worker(threading.Thread):
             client.wait(sc.video_id, poll=self.poll, on_progress=on_progress)
             out = job_dir / f"scene{sc.index + 1:02d}.mp4"
             client.download(sc.video_id, out)
-            (job_dir / f"scene{sc.index + 1:02d}.request.json").write_text(json.dumps(req.to_json(), ensure_ascii=False, indent=2))
+            (job_dir / f"scene{sc.index + 1:02d}.request.json").write_text(json.dumps(req.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
             sc.status, sc.progress, sc.output = "completed", 1.0, str(out)
             parts.append(out)
             self.store.save(job)
@@ -239,9 +227,46 @@ class Worker(threading.Thread):
         self.store.save(job)
 
 
+def plan_job(job: Job) -> list[Scene]:
+    """총 길이를 장면으로 나누고 장면마다 task 를 정한다 (워커와 CLI --dry-run 공용)."""
+    durations = spec.plan_scenes(job.total_seconds, job.scene_seconds)
+    prompts = P.scene_prompts(job.prompt, len(durations)) if len(durations) > 1 else [job.prompt]
+    scenes = []
+    for i, (d, pr) in enumerate(zip(durations, prompts)):
+        task = job.task
+        if len(durations) > 1 and i > 0 and task in ("t2va", "fl2va"):
+            task = "fl2va"          # 이전 장면 마지막 프레임을 첫 프레임으로
+        scenes.append(Scene(index=i, prompt=pr, duration=d, task=task))
+    return scenes
+
+
+def build_request(job: Job, sc: Scene, prev_frame, stage) -> VideoRequest:
+    """장면 하나의 요청. stage(path) 는 입력 파일을 서버가 읽을 URI 로 바꾼다 (실제 실행: stage_input, 미리보기: file:// 표기만)."""
+    conds: list[Condition] = []
+    prompt_text, task = sc.prompt, sc.task
+    if task == "fl2va":
+        first = prev_frame or (job.first_image if sc.index == 0 else None)
+        last = job.last_image if sc.index == len(job.scenes) - 1 else None
+        if first:
+            conds.append(Condition("image", stage(first), "keyframe", 0))
+        if last:
+            conds.append(Condition("image", stage(last), "keyframe", -1))
+        if not conds:
+            task = "t2va"
+        elif not P.is_context_ir(prompt_text):
+            prompt_text = P.keyframe_note(first=bool(first), last=bool(last)) + "\n\n" + prompt_text
+    elif task == "ref2va":
+        for r in job.refs:
+            conds.append(Condition(r["type"], stage(r["path"]), "reference"))
+        if prev_frame:
+            conds.append(Condition("image", stage(prev_frame), "reference"))
+    return VideoRequest(prompt=prompt_text, task=task, duration_seconds=sc.duration, aspect_ratio=job.aspect_ratio,
+                        seed=job.seed + sc.index, conditions=conds, num_inference_steps=job.steps, negative_prompt=job.negative)
+
+
 def new_job(prompt: str, seconds: int = 8, aspect_ratio: str = "16:9", seed: int = 0, task: str | None = None,
             first_image: str | None = None, last_image: str | None = None, refs: list[dict] | None = None,
-            scene_seconds: int = 10, steps: int | None = None, title: str = "") -> Job:
+            scene_seconds: int = 10, steps: int | None = None, title: str = "", negative: str | None = None) -> Job:
     refs = refs or []
     if task is None:
         task = "ref2va" if refs else ("fl2va" if (first_image or last_image) else "t2va")
@@ -252,4 +277,4 @@ def new_job(prompt: str, seconds: int = 8, aspect_ratio: str = "16:9", seed: int
         raise H3Error(f"최소 {spec.DURATION_MIN}초")
     return Job(id=time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6], prompt=prompt, total_seconds=seconds,
                aspect_ratio=aspect_ratio, seed=seed, task=task, first_image=first_image, last_image=last_image,
-               refs=refs, scene_seconds=scene_seconds, steps=steps, title=title)
+               refs=refs, scene_seconds=scene_seconds, steps=steps, title=title, negative=negative or None)

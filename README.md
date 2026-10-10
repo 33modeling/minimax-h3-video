@@ -94,14 +94,20 @@ source scripts/cluster_env.sh && h3video tui     # 클러스터 노드 tmux 안�
 ## CLI
 
 ```bash
-h3video spec                                  # 사양
+h3video health                                # 서버 확인
 h3video plan 45                               # 45초 → [9, 9, 9, 9, 9]
-h3video gen "프롬프트" --seconds 8 --ratio 16:9
+h3video gen "프롬프트" -s 8 -r 16:9 -o out/     # 8초, out/ 에도 저장
 h3video gen "프롬프트" --ir --soundscape "파도, 갈매기" --music "피아노"   # Context-IR 3단 형식(권장)
-h3video gen "프롬프트" --first key.png --seconds 40 --scene-seconds 10   # 장면 체인
-h3video ref "프롬프트" --image me.png --audio voice.mp3 --seconds 6      # ref2va
-h3video status <video_id> / h3video fetch <video_id> --out x.mp4
+h3video gen "프롬프트" --first key.png -s 40 --scene-seconds 10         # 장면 체인
+cat prompt.txt | h3video gen -s 10              # 표준입력 (또는 -f prompt.txt)
+h3video gen "프롬프트" -s 40 --dry-run           # 보내지 않고 장면 분할·요청만 확인
+h3video ref "프롬프트" --image me.png --audio voice.mp3 -s 6           # ref2va
+h3video batch examples/batch_example.txt -o out/                        # 여러 개 차례로 (--- 구분)
+h3video jobs / h3video show last              # 지난 작업, 마지막 작업 상세
+h3video fetch <video_id> [--ref] -o x.mp4     # 서버에서 받기 (ref2va 는 --ref)
 ```
+
+결과 mp4 경로만 표준 출력으로 나오고, 종료 코드는 0 성공·1 실패·2 옵션 오류·130 Ctrl+C. 자세한 것은 [USAGE.md](USAGE.md) 4-2절.
 
 ## 프롬프트 요령
 
