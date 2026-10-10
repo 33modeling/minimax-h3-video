@@ -84,6 +84,13 @@ def frames_for(seconds: float, per_chunk: int, keep: int, fps: int, lo: float, h
     return down, want
 
 
+def _seed(v) -> int:
+    s = int(v or 0)
+    if not 0 <= s < 2**63:
+        raise BadRequest(f"seed 는 0 ~ 2^63-1: {s}")
+    return s
+
+
 class Engine:
     """파이프라인 적재와 생성. 작업은 한 번에 하나 (GPU 하나를 나눠 쓰지 않는다)."""
 
@@ -104,33 +111,46 @@ class Engine:
             self._start_workers(model_dir, variant, devices[1:], dtype, attn)   # 워커가 영상 모델을 올리는 동안 여기서도 올린다
             stage = {n: blocks.sub_blocks.pop(n) for n in ("before_encode", "text_encoder", "vae_encoder")}
             m = ComponentsManager()
-            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
             self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m)
             self.cond.load_components(dtype=dt)
+            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
+            self._cond_dev = devices[0]
+            den = blocks.sub_blocks["denoise"]   # 워커로 보낼 상태 값: 디노이징 입력 + 작업을 고르는 값(references·image·last_image)
+            self._den_keys = {i.name for i in den.inputs if i.name} | {n for n in (getattr(den, "block_trigger_inputs", None) or []) if n}
             self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks["decode"]}).init_pipeline(model_dir)
             self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
             self.pipe, self.geo = None, self.cond
             self._wait_workers()
         elif len(devices) >= 2:
+            # 여러 장 방식과 같은 구조: 조건(텍스트 인코더·VAE 인코드) → 디노이징(영상 모델만 있는 장) → 디코딩(VAE 장).
+            # 예전 구조(VAE 인코드를 영상 모델 쪽에서)는 ref2va 결과가 한 장 방식과 달랐다 (float32 평균차 5.8/255, 2026-10-10)
+            from .dworker import geometry
+            from diffusers import AutoencoderKLMiniMaxH3, AutoencoderKLMiniMaxH3Audio
             self.mode = "split"
-            log(f"GPU 2장 방식: 텍스트 인코더 → {devices[1]}, 영상 모델·VAE → {devices[0]}")
-            first = {n: blocks.sub_blocks.pop(n) for n in ("before_encode", "text_encoder")}
-            m_text = ComponentsManager()
-            m_text.enable_auto_cpu_offload(device=devices[1], memory_reserve_margin=MARGIN)
-            self.cond = SequentialPipelineBlocks.from_blocks_dict(first).init_pipeline(model_dir, components_manager=m_text)
+            log(f"GPU 2장 방식: 텍스트 인코더·VAE → {devices[1]}, 영상 모델 → {devices[0]}")
+            stage = {n: blocks.sub_blocks.pop(n) for n in ("before_encode", "text_encoder", "vae_encoder")}
+            m_c = ComponentsManager()
+            self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m_c)
             self.cond.load_components(dtype=dt)
+            m_c.enable_auto_cpu_offload(device=devices[1], memory_reserve_margin=MARGIN)
+            self._cond_dev = devices[1]
+            self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks.pop("decode")}).init_pipeline(model_dir)
+            self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
             m_main = ComponentsManager()
+            self.pipe = blocks.init_pipeline(model_dir, components_manager=m_main)   # 남은 블록 = 디노이징
+            tname = "transformer" if variant == "fl2va" else "transformer_ref"
+            self.pipe.load_components(names=[tname, "scheduler", "audio_scheduler"], dtype=dt)
             m_main.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
-            self.pipe = blocks.init_pipeline(model_dir, components_manager=m_main)
-            self.pipe.load_components(workflow=load_wf, dtype=dt)
-            self.geo = self.pipe
+            self.pipe.vae = geometry(AutoencoderKLMiniMaxH3, model_dir, "vae")   # 디노이징은 VAE 설정값만 읽는다
+            self.pipe.audio_vae = geometry(AutoencoderKLMiniMaxH3Audio, model_dir, "audio_vae")
+            self.geo = self.cond
         else:
             log(f"GPU 1장 방식: {devices[0]} 에서 컴포넌트를 번갈아 올린다 (CPU 메모리에 가중치 상주)")
             self.cond = None
             m = ComponentsManager()
-            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
             self.pipe = blocks.init_pipeline(model_dir, components_manager=m)
             self.pipe.load_components(workflow=load_wf, dtype=dt)
+            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
             self.geo = self.pipe
         self._steps_done = 0
         if self.mode != "cp":   # cp 는 워커가 영상 모델을 갖고 진행 스텝을 보내 준다
@@ -175,7 +195,7 @@ class Engine:
         for t in vals.get("condition_latents") or []:
             r["cond"] += int(t.shape[-3]) * (int(t.shape[-2]) // 2) * (int(t.shape[-1]) // 2)
         for t in vals.get("audio_condition_latents") or []:
-            r["cond"] += int(t.shape[-1]) * (int(t.shape[0]) if t.dim() == 3 else 1)
+            r["cond"] += int(t.numel()) // int(g.audio_latent_channels or 32)
         if state is None:   # 조건을 아직 모르면 키프레임만 (한 장 = 잠재 프레임 1개)
             r["cond"] = len(plan["keyframes"]) * grid
         return r
@@ -277,9 +297,12 @@ class Engine:
     def _denoise_remote(self, state, g, gen: dict) -> dict:
         import torch
         state.values.pop("generator", None)   # 생성기는 직렬화가 안 된다 → 상태만 넘긴다
+        keep = self._den_keys | {k for ks in state.kwargs_mapping.values() for k in ks}
+        state.values = {k: v for k, v in state.values.items() if k in keep}   # 원본 레퍼런스 영상 등은 빼서 크기를 줄인다
+        cuda_keys = [k for k, v in state.values.items() if _on_cuda(v)]   # diffusers 가 CPU 에 둔 값(text_token_tags 등)은 CPU 로 둔다
         state.values = _to_cpu(state.values)
         buf = io.BytesIO()
-        torch.save({"state": state, "gen_state": g.get_state(), "kwargs": gen}, buf)
+        torch.save({"state": state, "gen_state": g.get_state(), "kwargs": gen, "cuda_keys": cuda_keys}, buf)
         self._conn.send_bytes(buf.getvalue())
         while True:
             m = self._recv()
@@ -355,7 +378,7 @@ class Engine:
                 "seconds": secs, "asked_seconds": target.get("duration_seconds", 8),
                 "aspect": str(target.get("aspect_ratio") or "16:9"),
                 "short_edge": int(target.get("short_edge") or self.short_edge),
-                "steps": int(steps) if steps else 50, "seed": int(body.get("seed") or 0),
+                "steps": int(steps) if steps else 50, "seed": _seed(body.get("seed")),
                 "rewrite": body.get("rewrite", True) is not False,
                 "ignored": [k for k in ("negative_prompt",) if body.get(k)]}
 
@@ -482,27 +505,30 @@ class Engine:
         if plan["ignored"]:
             log(f"무시: {plan['ignored']} (H3 는 guidance 가 가중치에 들어 있어 negative_prompt 를 쓰지 않는다)")
         stop = threading.Event()
+        g = torch.Generator(device="cpu").manual_seed(plan["seed"])
 
         def ticker():
             while not stop.wait(2):
                 on_progress(min(0.99, self._steps_done / total))
         self._steps_done = 0
         threading.Thread(target=ticker, daemon=True).start()
-        g = torch.Generator(device="cpu").manual_seed(plan["seed"])
         try:
             gen = {k: inputs[k] for k in ("num_frames", "height", "width", "num_inference_steps")}
             if self.mode == "single":
                 self.check_memory(plan, h, w, when=" (생성 전)")
                 r = self.pipe(**inputs, generator=g, output=OUTPUTS)
-            elif self.mode == "split":
+            elif self.mode == "split":   # 조건(VAE 장) → 디노이징(영상 모델 장) → 디코딩(VAE 장)
                 state = self.cond(**inputs, generator=g)
                 self.check_memory(plan, h, w, state, when=" (조건 포함)")
-                r = self.pipe(state=state, generator=g, output=OUTPUTS, **gen)
+                res = self.pipe(state=state, generator=g, output=["latents", "audio_latents"], **gen)
+                dev = torch.device(self._cond_dev)
+                r = self.dec(latents=res["latents"].to(dev), audio_latents=res["audio_latents"].to(dev), output=OUTPUTS)
             else:   # cp: 조건(여기) → 디노이징(워커들) → 디코딩(여기)
                 state = self.cond(**inputs, generator=g)
                 self.check_memory(plan, h, w, state, when=" (조건 포함)")
                 res = self._denoise_remote(state, g, gen)
-                r = self.dec(latents=res["latents"], audio_latents=res["audio_latents"], output=OUTPUTS)
+                dev = torch.device(self._cond_dev)   # 워커가 CPU 로 돌려준 latents → VAE 가 있는 첫 장으로
+                r = self.dec(latents=res["latents"].to(dev), audio_latents=res["audio_latents"].to(dev), output=OUTPUTS)
         finally:
             stop.set()
             if torch.cuda.is_available():
@@ -573,35 +599,56 @@ class Server:
     def worker(self) -> None:
         while True:
             vid = self.q.get()
-            job = self.jobs[vid]
-            job["status"], job["started_at"] = "in_progress", int(time.time())
-            if job.get("kind") != "rewrite":
-                self.save(job)
-            out = self.out_dir / f"{vid}.mp4"
             try:
-                if job.get("kind") == "rewrite":   # 다듬기 미리보기: 생성 없이 프롬프트만
-                    job.update(status="completed", progress=1.0, prompt_used=self.engine.rewrite_only(job["plan"]))
-                    log(f"다듬기 미리보기 {vid} 완료")
-                    job["finished_at"] = int(time.time())
-                    job["done"].set()
-                    continue
-                used = self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
-                job.update(status="completed", progress=1.0, file=str(out), prompt_used=used)
-                log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
-            except WorkerDied as e:   # 워커 묶음이 죽으면 이후 요청도 못 한다 → 서버를 끝내 up.sh 가 정리하게
-                job.update(status="failed", error=str(e), finished_at=int(time.time()))
-                self.save(job)
-                log(f"실패 {vid}: {e} → 서버를 끝낸다")
-                os._exit(3)
-            except Exception as e:   # noqa: BLE001 — 실패는 작업 상태로 돌려주고 서버는 계속 돈다
+                self._one(vid)
+            except Exception:   # noqa: BLE001 — 저장 실패 등으로 작업 스레드가 죽으면 이후 요청이 영원히 대기한다
                 traceback.print_exc()
-                job.update(status="failed", error=f"{type(e).__name__}: {e}")
-                log(f"실패 {vid}: {job['error']}")
-                if job.get("kind") == "rewrite":
+                job = self.jobs.get(vid) or {}
+                job.update(status="failed", error=job.get("error") or "서버 내부 오류 (서버 로그 참고)")
+                if "done" in job:
                     job["done"].set()
-                    continue
-            job["finished_at"] = int(time.time())
+
+    def _one(self, vid: str) -> None:
+        job = self.jobs[vid]
+        job["status"], job["started_at"] = "in_progress", int(time.time())
+        if job.get("kind") != "rewrite":
             self.save(job)
+        out = self.out_dir / f"{vid}.mp4"
+        try:
+            if job.get("kind") == "rewrite":   # 다듬기 미리보기: 생성 없이 프롬프트만
+                job.update(status="completed", progress=1.0, prompt_used=self.engine.rewrite_only(job["plan"]))
+                log(f"다듬기 미리보기 {vid} 완료")
+                job["finished_at"] = int(time.time())
+                job["done"].set()
+                return
+            used = self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
+            job.update(status="completed", progress=1.0, file=str(out), prompt_used=used)
+            log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
+        except WorkerDied as e:   # 워커 묶음이 죽으면 이후 요청도 못 한다 → 서버를 끝내 up.sh 가 정리하게
+            job.update(status="failed", error=str(e), finished_at=int(time.time()))
+            self.save(job)
+            log(f"실패 {vid}: {e} → 서버를 끝낸다")
+            os._exit(3)
+        except Exception as e:   # noqa: BLE001 — 실패는 작업 상태로 돌려주고 서버는 계속 돈다
+            traceback.print_exc()
+            job.update(status="failed", error=f"{type(e).__name__}: {e}")
+            log(f"실패 {vid}: {job['error']}")
+            if job.get("kind") == "rewrite":
+                job["done"].set()
+                return
+        job["finished_at"] = int(time.time())
+        self.save(job)
+
+
+def _on_cuda(obj) -> bool:
+    import torch
+    if isinstance(obj, torch.Tensor):
+        return obj.is_cuda
+    if isinstance(obj, (list, tuple)):
+        return any(_on_cuda(x) for x in obj)
+    if isinstance(obj, dict):
+        return any(_on_cuda(v) for v in obj.values())
+    return False
 
 
 def _to_cpu(obj):
@@ -667,8 +714,11 @@ def make_handler(srv: Server):
                 return self._json(400, {"error": "본문이 없거나 너무 크다 (JSON, 4MB 이하)"})
             try:
                 body = json.loads(self.rfile.read(n))
+                if not isinstance(body, dict) or not isinstance(body.get("target", {}), dict) \
+                        or not all(isinstance(c, dict) for c in body.get("conditions") or []):
+                    raise BadRequest("본문은 JSON 객체, target 은 객체, conditions 는 객체 목록이어야 한다")
                 return self._json(200, srv.rewrite(body) if path.endswith("/rewrite") else srv.submit(body))
-            except (BadRequest, json.JSONDecodeError, TypeError, ValueError) as e:
+            except (BadRequest, json.JSONDecodeError, TypeError, ValueError, AttributeError, KeyError) as e:
                 return self._json(400, {"error": str(e)})
             except RuntimeError as e:
                 return self._json(500, {"error": str(e)})

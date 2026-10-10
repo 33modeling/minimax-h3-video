@@ -101,16 +101,23 @@ def main(argv=None) -> int:
     dist.all_reduce(free_min, op=dist.ReduceOp.MIN)   # 영상 모델을 올린 뒤 가장 빠듯한 장의 여유 (본체가 요청마다 메모리 검사에 쓴다)
     if rank == 0:
         conn.send_bytes(f"READY {world} {int(free_min.item())}".encode())
-    bdev = device if use_cuda else None
     while True:
-        box = [conn.recv_bytes() if rank == 0 else None]
-        dist.broadcast_object_list(box, src=0, device=bdev)
+        # 작업은 CPU(gloo)로 나눠 받는다: GPU 메모리를 쓰지 않고, 쉬는 동안 1분마다 PING 을 돌려
+        # 기다리는 집합 통신이 30분 제한에 걸려 워커가 죽지 않게 한다
+        if rank == 0:
+            box = [conn.recv_bytes() if conn.poll(60) else b"PING"]
+        else:
+            box = [None]
+        dist.broadcast_object_list(box, src=0)
         msg = box[0]
+        if msg == b"PING":
+            continue
         if msg == b"STOP":
             break
         job = torch.load(io.BytesIO(msg), weights_only=False, map_location="cpu")
         state = job["state"]
-        state.values = to_device(state.values, device)
+        for k in job.get("cuda_keys", []):   # 본체에서 GPU 에 있던 값만 GPU 로 (diffusers 가 CPU 에 두는 값은 그대로)
+            state.values[k] = to_device(state.values[k], device)
         gen = torch.Generator("cpu")
         gen.set_state(job["gen_state"])
         steps[0] = 0
