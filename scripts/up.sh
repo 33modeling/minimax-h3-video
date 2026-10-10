@@ -30,7 +30,8 @@ source "$ROOT/scripts/cluster_env.sh" || { red "cluster_env.sh 실패 (위 메�
 cd "$ROOT"
 
 # 2) 점검
-if h3_model_ok "$H3_MODEL_DIR"; then green "✓ 모델: $H3_MODEL_DIR"
+h3_model_ok "$H3_MODEL_DIR" || h3_ask_model_dir || true    # 기본·저장·검색으로도 없으면 경로를 묻는다
+if h3_model_ok "$H3_MODEL_DIR" || grep -qs "^export H3_MODEL_DIR=\"$H3_MODEL_DIR\"" "$ROOT/.cluster_env.local.sh"; then green "✓ 모델: $H3_MODEL_DIR"
   if [[ $REF == 1 ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "--ref 빼고 실행 (fl2va 만)"; fi
 else
   fail "모델 없음: $H3_MODEL_DIR (model_index.json 이나 FL2VA 폴더를 찾지 못함)"

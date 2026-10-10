@@ -18,15 +18,12 @@ if [[ -f "$_REPO_ROOT/.cluster_env.local.sh" ]]; then _H3_IN_LOCAL_ENV=1; source
 export GROUP_VOLUME_ROOT="${GROUP_VOLUME_ROOT:-/group-volume}"
 export STORAGE_ROOT="${STORAGE_ROOT:-$GROUP_VOLUME_ROOT/minsoo3.kim/$REPO_NAME}"
 export MODELS_DIR="${MODELS_DIR:-$GROUP_VOLUME_ROOT/models}"
-# 모델 위치 (고정): /group-volume/models/MiniMax-H3 — 셸 환경변수나 .cluster_env.local.sh 의 H3_MODEL_DIR 는 쓰지 않는다
+# 모델 위치: ① 기본 /group-volume/models/MiniMax-H3 → 없으면 ② 저장해 둔 경로(.cluster_env.local.sh·셸의 H3_MODEL_DIR)
+#            → ③ group-volume 검색 → 그래도 없으면 ④ up.sh·provision.sh 가 경로를 묻는다. 받기는 하지 않는다.
 H3_MODEL_DEFAULT="$GROUP_VOLUME_ROOT/models/MiniMax-H3"
-if [[ -n "${H3_MODEL_DIR:-}" && "${H3_MODEL_DIR%/}" != "$H3_MODEL_DEFAULT" ]]; then
-  echo "[cluster-env] H3_MODEL_DIR=$H3_MODEL_DIR 는 무시하고 고정 위치를 쓴다: $H3_MODEL_DEFAULT" >&2
-fi
-export H3_MODEL_DIR="$H3_MODEL_DEFAULT"
+_h3_model_saved="${H3_MODEL_DIR:-}"
 h3_model_ok() { [[ -d "$1" ]] && { [[ -f "$1/model_index.json" ]] || compgen -G "$1/[Ff][Ll]2[Vv][Aa]" >/dev/null; }; }
-# 위치는 그대로 두고, 그 안의 구조만 맞춰 찾는다: 한 단계 더 들어간 폴더, HF 캐시(models--…/snapshots/<해시>) 등.
-# 폴더 이름의 대소문자가 다르면(minimax-h3 등) /group-volume/models 안에서 그 이름도 본다. 받기는 하지 않는다.
+# 한 폴더 안의 구조 맞추기: 한 단계 더 들어간 폴더, HF 캐시(models--…/snapshots/<해시>), 대소문자 다른 이름
 h3_resolve_model() {
   local base="$1" d f
   h3_model_ok "$base" && { echo "$base"; return 0; }
@@ -43,7 +40,54 @@ h3_resolve_model() {
   done < <(timeout 20 find -L "$base" -maxdepth 5 -iname model_index.json 2>/dev/null | sort)
   return 1
 }
-if ! h3_model_ok "$H3_MODEL_DIR" && _m="$(h3_resolve_model "$H3_MODEL_DIR")"; then export H3_MODEL_DIR="$_m"; fi
+# group-volume 검색: model_index.json 과 fl2va 폴더가 있는 곳
+h3_find_models() {
+  local f d
+  timeout 30 find -L "$GROUP_VOLUME_ROOT/models" "$GROUP_VOLUME_ROOT/minsoo3.kim" -maxdepth 6 -iname model_index.json 2>/dev/null | sort | while read -r f; do
+    d="$(dirname "$f")"
+    case "${d##*/}" in [Ff][Ll]2[Vv][Aa]|[Rr][Ee][Ff]2[Vv][Aa]) d="$(dirname "$d")" ;; esac
+    compgen -G "$d/[Ff][Ll]2[Vv][Aa]" >/dev/null && h3_model_ok "$d" && realpath -m -- "$d"
+  done
+}
+# 그래도 못 찾았을 때 경로를 묻는다 (up.sh·provision.sh 가 부른다). 정한 경로는 .cluster_env.local.sh 에 저장해 다음부터 묻지 않는다.
+h3_ask_model_dir() {
+  local p a tries=0 local_file="$_REPO_ROOT/.cluster_env.local.sh" real_home
+  real_home="$(getent passwd "$(id -un)" | cut -d: -f6)"
+  if ! { : </dev/tty; } 2>/dev/null; then
+    echo "모델(MiniMax-H3 가중치)을 찾지 못했다: $H3_MODEL_DIR" >&2
+    echo "  → $local_file 에 export H3_MODEL_DIR=<가중치 폴더> 를 적고 다시 실행" >&2
+    return 1
+  fi
+  echo "모델(MiniMax-H3 가중치)을 찾지 못했다: $H3_MODEL_DIR"
+  echo "  $GROUP_VOLUME_ROOT/models 안에 있는 것:"; ls -1 "$GROUP_VOLUME_ROOT/models" 2>/dev/null | head -20 | sed 's/^/    /'
+  while (( tries < 3 )); do
+    read -r -e -p "가중치 폴더 경로를 입력하세요 (Tab 자동완성, 빈 값은 취소): " p </dev/tty || return 1
+    [[ -z "$p" ]] && return 1
+    p="${p/#\~/$real_home}"; p="$(realpath -m -- "$p")"
+    if h3_model_ok "$p"; then :
+    elif [[ -d "$p" ]]; then
+      echo "  이 폴더에는 model_index.json 이나 fl2va 폴더가 안 보인다. 들어 있는 것:"; ls -1 "$p" | head -15 | sed 's/^/    /'
+      read -r -p "  그래도 이 경로를 쓸까요? [y/N] " a </dev/tty; [[ "$a" =~ ^[Yy] ]] || { tries=$((tries + 1)); continue; }
+    else echo "  없는 경로: $p"; tries=$((tries + 1)); continue; fi
+    export H3_MODEL_DIR="$p"
+    touch "$local_file"
+    if grep -q '^export H3_MODEL_DIR=' "$local_file"; then sed -i "s|^export H3_MODEL_DIR=.*|export H3_MODEL_DIR=\"$p\"|" "$local_file"
+    else echo "export H3_MODEL_DIR=\"$p\"" >> "$local_file"; fi
+    echo "  저장함: $local_file (다음부터 묻지 않는다)"
+    return 0
+  done
+  return 1
+}
+
+if _m="$(h3_resolve_model "$H3_MODEL_DEFAULT")"; then
+  export H3_MODEL_DIR="$_m"
+elif [[ -n "$_h3_model_saved" ]] && _m="$(h3_resolve_model "$_h3_model_saved")"; then
+  export H3_MODEL_DIR="$_m"; echo "[cluster-env] 기본 위치에 없어 저장된 경로를 쓴다: $_m" >&2
+elif _m="$(h3_find_models | awk '!seen[$0]++' | head -1)"; [[ -n "$_m" ]]; then
+  export H3_MODEL_DIR="$_m"; echo "[cluster-env] 기본 위치에 없어 찾은 곳을 쓴다: $_m" >&2
+else
+  export H3_MODEL_DIR="$H3_MODEL_DEFAULT"   # 못 찾음: up.sh·provision.sh 가 경로를 묻는다
+fi
 
 # 포트를 누가 쓰고 있나 (0 = 쓰는 중). ss 가 없는 컨테이너에서도 되게 실제로 바인딩해 본다.
 h3_port_busy() {
