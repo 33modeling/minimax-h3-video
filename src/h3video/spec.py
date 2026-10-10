@@ -1,7 +1,8 @@
 """MiniMax-H3 공식 사양 (github.com/MiniMax-AI/MiniMax-H3 README 기준, 2026-08 공개판)."""
 
 MODEL_ID = "MiniMaxAI/MiniMax-H3"
-DURATION_MIN = 4          # 초
+DURATION_MIN = 4          # 초 (Diffusers 엔진은 5초 미만을 5초로 만든다)
+SCENE_MIN = 5             # 장면 체인에서 한 장면의 최소 길이 — 4초 장면은 서버가 5초로 늘려 전체 길이가 어긋난다
 DURATION_MAX = 15         # 초 — 단일 생성 상한. 더 길면 장면 체인(chain)으로 이어 붙인다
 FPS = 24
 SHORT_EDGE_DEFAULT = 768  # 로컬 H3-Base 는 768p. 2K 는 공식 API(H3-Regenerate-2K) 전용
@@ -24,13 +25,13 @@ def clamp_duration(seconds) -> int:
 
 
 def plan_scenes(total_seconds: float, scene_seconds: int = 10) -> list[int]:
-    """총 길이를 장면들로 균등 분할. 15초 이하면 한 장면. 모든 장면은 4~15초."""
+    """총 길이를 장면들로 균등 분할. 15초 이하면 한 장면. 체인의 장면은 5~15초 (4초 장면은 서버가 5초로 늘려 길이가 어긋난다)."""
     import math
-    scene_seconds = clamp_duration(scene_seconds)
+    scene_seconds = max(SCENE_MIN, clamp_duration(scene_seconds))
     total = max(DURATION_MIN, int(round(total_seconds)))
     if total <= DURATION_MAX:
         return [total]
-    n = math.ceil(total / scene_seconds)
+    n = min(math.ceil(total / scene_seconds), total // SCENE_MIN)
     base, rem = divmod(total, n)
     return [base + 1] * rem + [base] * (n - rem)
 

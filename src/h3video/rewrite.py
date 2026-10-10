@@ -59,6 +59,20 @@ def already_written(prompt: str, task: str) -> bool:
     return re.search(rf"(^|\n)\s*{first}\s*:", strip_instruction(prompt)) is not None
 
 
+_HANGUL = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]")
+
+
+def needs_rewrite(prompt: str, task: str) -> bool:
+    """사용자가 넣은 프롬프트를 바꿔야 하나. 공식 형식의 필드가 순서대로 다 있고, 대사(<d>…</d>)·따옴표 속을 뺀
+    설명이 영어일 때만 그대로 쓴다. 한국어로 쓴 것·자기 형식·필드가 빠진 것은 전부 바꾼다."""
+    body = strip_instruction(prompt)
+    if extract(body, task) is None:
+        return True
+    plain = re.sub(r"<d>.*?</d>", " ", body, flags=re.S)
+    plain = re.sub(r"\"[^\"]*\"|“[^”]*”|'[^']*'|‘[^’]*’|「[^」]*」", " ", plain)
+    return _HANGUL.search(plain) is not None
+
+
 def max_shot(text: str) -> int:
     return max([int(n) for n in re.findall(r"\[Shot (\d+)\]", text)] or [1])
 
@@ -80,7 +94,7 @@ def instruction(slots: list[str], seconds: float, shots: int) -> str | None:
 def extract(text: str, task: str) -> str | None:
     """모델 출력에서 최종 프롬프트만 꺼낸다. 필드가 순서대로 다 있어야 한다 (없으면 None)."""
     fields = REF_FIELDS if task == "ref2va" else BASE_FIELDS
-    t = re.sub(r"```[a-zA-Z]*", "", text).replace("**", "").strip()
+    t = re.sub(r"```[a-zA-Z]*", "", text).replace("**", "").replace("`", "").strip()
     pos = []
     for f in fields:
         m = re.search(rf"(^|\n)\s*{f}\s*:", t[pos[-1] if pos else 0:])
@@ -88,14 +102,20 @@ def extract(text: str, task: str) -> str | None:
             return None
         pos.append((pos[-1] if pos else 0) + m.start() + len(m.group(1)))
     body = t[pos[0]:].strip()
-    last = re.search(rf"(^|\n)\s*{fields[-1]}\s*:[^\n]*", body)
-    if last is None or len(last.group(0).split(":", 1)[1].strip()) == 0:
+    last = re.search(rf"(^|\n)\s*{fields[-1]}\s*:", body)
+    head, tail = body[:last.end()], body[last.end():].strip()
+    tail = re.split(r"\n\s*\n", tail, maxsplit=1)[0].strip()   # 마지막 칸은 한 문단: 그 뒤 모델의 덧붙임 말은 버린다
+    if not tail:
         return None
-    return body
+    return head + " " + tail
 
 
 def user_text(mode: str, seconds: float, prompt: str, labels: list[str]) -> str:
-    lines = [f"Mode: {mode}", f"Target duration: {seconds:.2f} seconds (24 fps)."]
+    lines = [f"Mode: {mode}", f"Target duration: {seconds:.2f} seconds (24 fps).",
+             "The user's request below may be in Korean, in the user's own structure, or partly in the target format. "
+             "Convert all of it into the exact target format in English, keeping every detail the user wrote "
+             "(dialogue, lyrics and on-screen text stay in their original language). Notes in parentheses about scene "
+             "numbers and time ranges tell you which part of a longer video this request covers."]
     if labels:
         lines.append("Inputs (labels are fixed, use them exactly): " + "; ".join(labels))
     if mode in ("I2VA", "FL2VA", "L2VA"):

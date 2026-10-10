@@ -68,7 +68,7 @@ def read_prompt(a) -> str:
     text = text.strip()
     if not text:
         raise H3Error("프롬프트가 필요하다: 인자로 쓰거나 -f 파일, -f - (표준입력)")
-    if a.ir and not P.is_context_ir(text):
+    if a.ir and not P.is_context_ir(text) and not refs_of(a):   # 참고 자료(ref2va)는 형식이 달라 감싸지 않는다(서버가 바꾼다)
         text = P.build_context_ir(text, a.soundscape, a.music)
     return text
 
@@ -232,8 +232,17 @@ def cmd_health(a):
         sys.exit(1)
 
 
+def refs_of(a) -> list[dict]:
+    return [{"type": t, "path": p} for t in ("image", "video", "audio") for p in getattr(a, t, None) or []]
+
+
 def cmd_gen(a):
-    job = job_from_args(a, read_prompt(a))
+    """글·첫/끝 프레임이면 fl2va, --image/--video/--audio 를 주면 ref2va 로 알아서 보낸다."""
+    refs = refs_of(a)
+    if refs and (a.first or a.last):
+        raise H3Error("--first/--last(그 그림이 실제 첫·끝 장면)와 --image/--video/--audio(참고 자료)는 같이 쓸 수 없다. "
+                      "둘은 다른 모델(fl2va / ref2va)이다")
+    job = job_from_args(a, read_prompt(a), refs or None)
     preview(job) if a.dry_run else run_jobs(a, [job], a.out)
 
 
@@ -311,6 +320,8 @@ def cmd_batch(a):
                     v = seed_arg(v)
                 elif attr in ("ir", "raw"):
                     v = v.lower() in ("1", "y", "yes", "true", "on", "예")
+                elif attr == "size" and v not in (512, 576, 640, 704, 768):
+                    raise H3Error(f"size 는 512·576·640·704·768 중 하나: {v}")
                 elif attr == "ratio" and v not in spec.ASPECT_RATIOS:
                     raise H3Error(f"ratio 는 {spec.ASPECT_RATIOS} 중 하나: {v}")
                 setattr(b, attr, v)
@@ -441,10 +452,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = cmd("plan", cmd_plan, "길이 → 장면 분할 미리보기")
     p.add_argument("seconds", type=int); p.add_argument("--scene-seconds", type=int, default=10); p.add_argument("--first")
 
-    p = cmd("gen", cmd_gen, "텍스트(+첫/끝 프레임) → 영상")
+    p = cmd("gen", cmd_gen, "영상 만들기: 글, 첫/끝 프레임(--first/--last), 참고 자료(--image/--video/--audio → ref2va 서버)")
     p.add_argument("prompt", nargs="?", help="프롬프트. 생략하면 -f 파일이나 표준입력, '-' 는 표준입력")
     p.add_argument("-f", "--prompt-file", help="프롬프트 파일 (- 는 표준입력)")
     p.add_argument("--first", help="첫 프레임 이미지"); p.add_argument("--last", help="끝 프레임 이미지 (한 장면일 때)")
+    p.add_argument("--image", action="append", default=[], help=f"참고 이미지 (최대 {spec.REF_LIMITS['image']}, 여러 번) → ref2va")
+    p.add_argument("--video", action="append", default=[], help=f"참고 영상 (최대 {spec.REF_LIMITS['video']}) → ref2va")
+    p.add_argument("--audio", action="append", default=[], help=f"참고 오디오 (최대 {spec.REF_LIMITS['audio']}) → ref2va")
     add_video_opts(p)
 
     p = cmd("ref", cmd_ref, "레퍼런스(이미지·영상·오디오) → 영상 (ref2va)")

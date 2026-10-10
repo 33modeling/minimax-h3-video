@@ -112,10 +112,11 @@ class JobStore:
             self.jobs[job.id] = job
             # 같은 호스트에서 처리하던 프로세스가 이미 없으면 중단된 작업이다. 다른 노드(group-volume 공유)의 작업은 판단하지 않는다.
             if job.status in ("pending", "running") and job.host == HOST and job.pid and job.pid != os.getpid() and not pid_alive(job.pid):
-                ids = [s.video_id for s in job.scenes if s.video_id and s.status != "completed"]
+                left = [s for s in job.scenes if s.video_id and s.status != "completed"]
                 job.status, job.finished = "failed", job.finished or time.time()
                 job.error = f"처리하던 프로세스(pid {job.pid})가 끝나 중단됨" + (
-                    f". 서버에서 만들던 장면은 h3video fetch {ids[-1]} 로 받을 수 있다" if ids else "")
+                    f". 서버에서 만들던 장면은 h3video fetch {left[-1].video_id}{' --ref' if left[-1].task == 'ref2va' else ''} 로 받을 수 있다"
+                    if left else "")
                 try:
                     self.save(job)
                 except OSError:

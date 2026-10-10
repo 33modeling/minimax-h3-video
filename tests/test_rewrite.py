@@ -152,3 +152,61 @@ class ScenePrompts(unittest.TestCase):
     def test_alignment_line_dropped_from_fields(self):
         f = P.split_fields(P.keyframe_note(True, False, 8) + "\n\n" + self.IR)
         self.assertTrue(f["integrated_multimodal_description"].startswith("[Shot 1] A fox runs."))
+
+
+class NeedsRewrite(unittest.TestCase):
+    def test_rules(self):
+        en = RW.extract(GOOD_BASE, "fl2va")
+        self.assertFalse(RW.needs_rewrite(en, "fl2va"))                                    # 완성된 영어 공식 형식만 그대로
+        self.assertFalse(RW.needs_rewrite(P.keyframe_note(True, False, 8) + "\n\n" + en, "fl2va"))
+        self.assertTrue(RW.needs_rewrite("눈 속을 달리는 여우", "fl2va"))                       # 한국어
+        ko_fields = en.replace("A fox runs.", "여우가 달린다.")
+        self.assertTrue(RW.needs_rewrite(ko_fields, "fl2va"))                              # 필드는 있는데 설명이 한국어
+        self.assertTrue(RW.needs_rewrite("integrated_multimodal_description: [Shot 1] A fox runs.", "fl2va"))   # 필드가 빠짐
+        self.assertTrue(RW.needs_rewrite("장면1: 여우\n장면2: 클로즈업", "fl2va"))           # 자기 형식
+        dialog = en.replace("A fox runs.", 'A girl (S1) says: <d>[Korean] 안녕하세요</d> and waves.')
+        self.assertFalse(RW.needs_rewrite(dialog, "fl2va"))                                # 대사 속 한국어는 괜찮다
+        self.assertFalse(RW.needs_rewrite(en.replace("A fox runs.", 'A sign reads "서울역".'), "fl2va"))   # 화면 글자
+
+
+class ExtractLayouts(unittest.TestCase):
+    def test_values_on_next_line_like_guide(self):
+        ref = "\n\n".join(f"{f}:\nline for {f}" for f in RW.REF_FIELDS)   # 가이드 7절 예시처럼 값이 다음 줄
+        out = RW.extract(ref, "ref2va")
+        self.assertIsNotNone(out)
+        self.assertTrue(out.rstrip().endswith("line for non_diegetic_music"))
+        base = "integrated_multimodal_description:\n[Shot 1] A fox.\n\noverall_soundscape:\nWind.\n\nnon_diegetic_music:\nPiano."
+        self.assertTrue(RW.extract(base, "fl2va").endswith("Piano."))
+
+    def test_trailing_chatter_and_backticks_dropped(self):
+        text = ("`integrated_multimodal_description:` [Shot 1] A fox.\n\n`overall_soundscape:` Wind.\n\n"
+                "`non_diegetic_music:` Piano.\n\nNote: I kept the dialogue in Korean.\n```")
+        out = RW.extract(text, "fl2va")
+        self.assertTrue(out.endswith("Piano."))
+        self.assertNotIn("Note:", out)
+        self.assertNotIn("`", out)
+
+
+class GenWithReferences(unittest.TestCase):
+    def run_cli(self, *args):
+        import io, contextlib
+        from h3video import cli
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                cli.main(list(args))
+                code = 0
+            except SystemExit as e:
+                code = e.code
+        return code, out.getvalue(), err.getvalue()
+
+    def test_gen_image_goes_to_ref2va(self):
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as d:
+            img = os.path.join(d, "me.png"); open(img, "wb").write(b"\x89PNG")
+            code, out, err = self.run_cli("gen", "<Subject 1> waves", "--image", img, "-s", "6", "--dry-run")
+            self.assertEqual(code, 0, err)
+            self.assertIn('"task": "ref2va"', out + err)
+            code, out, err = self.run_cli("gen", "x", "--image", img, "--first", img, "-s", "6", "--dry-run")
+            self.assertNotEqual(code, 0)
+            self.assertIn("같이 쓸 수 없다", out + err + str(code))

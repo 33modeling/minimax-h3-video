@@ -22,6 +22,7 @@ import io
 import json
 import os
 import queue
+import re
 import shutil
 import threading
 import time
@@ -302,6 +303,9 @@ class Engine:
         if int(body.get("num_outputs_per_prompt") or 1) != 1:
             raise BadRequest("num_outputs_per_prompt 는 1 만 된다 (여러 개는 seed 를 바꿔 여러 번 요청)")
         target = body.get("target") or {}
+        se = int(target.get("short_edge") or self.short_edge)
+        if not (256 <= se <= 1024 and se % 32 == 0):
+            raise BadRequest(f"short_edge 는 256~1024 의 32 배수 (CLI --size 512·576·640·704·768): {se}")
         conds = body.get("conditions") or []
         for c in conds:
             uri = str(c.get("uri") or "")
@@ -323,7 +327,7 @@ class Engine:
                 if slot in slots:
                     raise BadRequest(f"키프레임 자리가 겹친다: {slot}")
                 slots.append(slot)
-            keyframes = list(zip(slots, keyframes))
+            keyframes = sorted(zip(slots, keyframes), key=lambda x: x[0] != "image")   # diffusers 와 같은 순서: 첫 프레임 먼저
         if task == "ref2va":
             refs = conds
             kinds = [str(c.get("type", "image")) for c in refs]
@@ -432,7 +436,7 @@ class Engine:
         raw = RW.strip_instruction(plan["prompt"])
         secs = plan["num_frames"] / 24
         body = raw
-        if plan["rewrite"] and not RW.already_written(raw, task):
+        if plan["rewrite"] and RW.needs_rewrite(raw, task):
             guide = self.guides.get("ref" if task == "ref2va" else "base")
             if not guide:
                 log("공식 작성 가이드가 없어 다듬지 않고 그대로 보낸다 → bash scripts/provision.sh (가이드 2개만 받는다)")
@@ -452,6 +456,7 @@ class Engine:
                         break
                     log(f"다듬은 결과가 형식에 안 맞는다 ({time.time() - t0:.0f}초). 앞부분: {text[:300]!r}")
                 else:
+                    body = re.sub(r"\s*\(전체 \d+초 영상을 .*?\)\s*$", "", raw, flags=re.S)   # 장면 안내는 다듬는 모델에게만
                     log("두 번 다 형식이 안 맞아 원래 프롬프트를 그대로 쓴다")
         line = RW.instruction(slots, secs, RW.max_shot(body)) if task == "fl2va" else None
         return f"{line}\n\n{body}" if line else body
@@ -582,12 +587,12 @@ class Server:
                     continue
                 used = self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
                 job.update(status="completed", progress=1.0, file=str(out), prompt_used=used)
+                log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
             except WorkerDied as e:   # 워커 묶음이 죽으면 이후 요청도 못 한다 → 서버를 끝내 up.sh 가 정리하게
                 job.update(status="failed", error=str(e), finished_at=int(time.time()))
                 self.save(job)
                 log(f"실패 {vid}: {e} → 서버를 끝낸다")
                 os._exit(3)
-                log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
             except Exception as e:   # noqa: BLE001 — 실패는 작업 상태로 돌려주고 서버는 계속 돈다
                 traceback.print_exc()
                 job.update(status="failed", error=f"{type(e).__name__}: {e}")

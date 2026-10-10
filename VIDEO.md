@@ -17,16 +17,17 @@ h3video gen "프롬프트" --last b.png -s 8                 # 이 그림으로 
 h3video gen "프롬프트" --first a.png --last b.png -s 8   # 처음·끝 둘 다
 h3video gen -f prompt.txt -s 10                          # 프롬프트를 파일로
 
-h3video ref "<Subject 1>이 손을 흔든다" --image me.png -s 6               # 사진 참고
-h3video ref "프롬프트" --image a.png --video move.mp4 --audio voice.wav   # 사진·영상·소리 참고
+h3video gen "<Subject 1>이 손을 흔든다" --image me.png -s 6               # 사진 참고
+h3video gen "프롬프트" --image a.png --video move.mp4 --audio voice.wav   # 사진·영상·소리 참고
 ```
 
-- `gen`: 준 그림이 영상의 첫·끝 장면이 된다.
-- `ref`: 사진(최대 9)·영상(3)·소리(3)를 참고해 얼굴·옷·움직임·목소리를 따라 한다. `bash scripts/up.sh --ref` 로 띄웠을 때만.
+- `--first`/`--last`: 준 그림이 영상의 첫·끝 장면이 된다.
+- `--image`/`--video`/`--audio`: 사진(최대 9)·영상(3)·소리(3)를 참고해 얼굴·옷·움직임·목소리를 따라 한다. 레퍼런스 서버(`bash scripts/up.sh --ref`)로 알아서 보낸다. 둘은 다른 모델이라 같이 쓸 수 없다. (`h3video ref …` 도 그대로 된다)
 
 ## 2. 프롬프트 확인·수정
 
-서버가 프롬프트를 공식 형식으로 다듬어서 만든다(요청마다 1분 정도 추가).
+어떤 프롬프트든 그냥 넣으면 된다(한국어, 인터넷에서 받은 다른 양식, 파일 `-f`). 서버가 H3 공식 형식(영어)으로 바꿔서 만든다(요청마다 1분 정도 추가).
+이미 공식 형식의 영어로 완성된 것만 그대로 쓴다.
 
 ```bash
 h3video ir "프롬프트" -s 8 > p.txt     # 다듬은 프롬프트만 저장 (생성 안 함)
@@ -34,14 +35,15 @@ vi p.txt                               # 고치기
 h3video gen -f p.txt --raw -s 8        # 고친 그대로 생성
 ```
 
-- `--raw`: 다듬지 않고 쓴 그대로 보낸다.
+- `--raw`: 바꾸지 않고 쓴 그대로 보낸다.
 - 그림을 쓰는 요청이면 `ir` 과 `gen` 에 같은 `--first`/`--last`/`--image` 를 준다.
+- 16초 이상이면 장면(5~15초)으로 나눠 이어 붙인다. 장면마다 어느 부분인지 알려 주고 바꾼다. 보내기 전 확인: `--dry-run`
 
 ## 3. 옵션
 
 | 옵션 | 기본 | 뜻 |
 |---|---|---|
-| `-s` | 8 | 길이(초). 5~15초, 16초 이상은 장면을 이어 붙인다 |
+| `-s` | 8 | 길이(초). 5~15초(4초는 5초로), 16초 이상은 장면을 이어 붙인다 |
 | `-r` | 16:9 | 화면비: 16:9, 9:16, 1:1, 4:3, 3:4, 21:9, auto |
 | `--seed` | 0 | 같은 값이면 같은 결과, `random` 은 매번 다르게 |
 | `--steps` | 50 | 줄이면 빠르고 거칠다 |
@@ -102,4 +104,4 @@ h3video show last         # 마지막 작업 상세
 | 프롬프트를 안 따른다 | `h3video ir` 로 확인 → 고쳐서 `--raw -f` |
 | `GPU 메모리가 모자라 시작하지 않았다` | 메시지에 나온 대로 `-s` 줄이기 또는 `--size 576` (4절) |
 | `out of memory` | 다른 작업이 GPU 를 쓰는 중 → `bash scripts/up.sh` 다시 (빈 GPU 만 쓴다) |
-| `fl2va 는 … 만 받는다` | `ref` 는 `bash scripts/up.sh --ref` 필요 |
+| `fl2va 는 … 만 받는다` / ref 서버 응답 없음 | 참고 자료(`--image` 등)는 `bash scripts/up.sh --ref` 필요 |

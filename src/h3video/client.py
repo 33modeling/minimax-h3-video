@@ -194,7 +194,7 @@ class H3Client:
                 raise H3Error(f"생성 실패 {video_id}: {st.get('error')}")
             if time.monotonic() - t0 > timeout:
                 raise H3Error(f"대기 시간 초과 {video_id} ({int(timeout)}초, 마지막 상태 {s}). 서버에서는 계속될 수 있으니 "
-                              f"끝난 뒤 h3video fetch {video_id} 로 받는다. 한도는 H3_WAIT_TIMEOUT(초)")
+                              f"끝난 뒤 h3video fetch {video_id} 로 받는다(레퍼런스 영상이면 --ref). 한도는 H3_WAIT_TIMEOUT(초)")
             time.sleep(poll)
 
     def download(self, video_id: str, out_path: str | os.PathLike) -> Path:
