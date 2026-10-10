@@ -302,7 +302,7 @@ def cmd_ir(a):
     res = H3Client(ep).rewrite(req)
     print(res["prompt"])
     print(f"[ir] {time.time() - t0:.0f}초. 이대로 만들려면 같은 옵션으로 gen/ref (서버가 같은 시드로 다시 다듬는다), "
-          f"고쳐서 쓰려면 파일로 저장해 --raw -f 파일", file=sys.stderr)
+          f"고쳐서 쓰려면 파일로 저장해 gen 파일 --raw", file=sys.stderr)
 
 
 BATCH_KEYS = {"seconds", "ratio", "seed", "title", "first", "last", "negative", "scene-seconds", "steps",

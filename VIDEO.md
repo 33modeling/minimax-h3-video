@@ -37,13 +37,43 @@ h3video gen "비 오는 서울 밤거리, 네온이 젖은 길에 번진다" -s 
 h3video gen prompt.txt --first a.png -s 8                          # 이 그림에서 시작
 h3video gen prompt.txt --last b.png -s 8                           # 이 그림으로 끝
 h3video gen prompt.txt --first a.png --last b.png -s 8             # 처음·끝 둘 다
-h3video gen "<Subject 1>이 손을 흔든다" --image me.png -s 6          # 사진 참고
+h3video gen "1번 사진 사람이 손을 흔든다" --image me.png -s 6        # 사진 참고
 h3video gen prompt.txt --image a.png --video m.mp4 --audio v.wav   # 사진·영상·소리 참고
 ```
 
 - `--first`/`--last`: 그 그림이 영상의 실제 첫·끝 장면이 된다.
 - `--image`/`--video`/`--audio`: 얼굴·옷·화풍·움직임·목소리를 참고한다. 창 1 을 `up.sh --ref` 로 띄웠을 때만. `--first`/`--last` 와 같이 못 쓴다.
-- 참고 자료는 사진 9·영상 3·소리 3(합계 12)까지. 소리만 넣을 수는 없다. 프롬프트에서 넣은 순서대로 `<Subject 1>` `<Picture 1>` `<Video 1>` `<Audio 1>` 로 가리킨다.
+- 참고 자료는 사진 9·영상 3·소리 3(합계 12)까지. 소리만 넣을 수는 없다. 넣은 순서대로 1번·2번이고, 프롬프트에 "1번 사진" "1번 영상" 처럼 쓴다(`<Picture 1>` `<Video 1>` 표기도 된다).
+
+## 얼굴·그림체 바꾸기
+
+창 1 을 `bash scripts/up.sh --ref` 로 띄운다(GPU 를 2장씩 나눠 써서 더 느리고, 한 장면은 최대 12초).
+사진을 `--image` 로 넣고, 무엇을 가져올지(얼굴·옷·그림체·동작)를 사진 번호와 함께 말로 적는다.
+
+```bash
+# 이 사람이 나오게 (얼굴 유지)
+h3video gen "1번 사진 사람이 바닷가를 걸으며 웃는다" --image face.png -s 8
+
+# 얼굴은 그대로, 그림체는 말로
+h3video gen "1번 사진 사람을 지브리풍 애니메이션으로, 비 오는 거리에서 우산을 쓴다" --image face.png -s 8
+
+# 얼굴은 1번 사진, 그림체는 2번 사진
+h3video gen "1번 사진 사람 얼굴 그대로, 2번 사진 그림체로 바닷가를 걷는다" --image face.png --image style.png -s 8
+
+# 옷은 2번 사진
+h3video gen "1번 사진 사람이 2번 사진 옷을 입고 무대에서 노래한다" --image face.png --image outfit.png -s 8
+
+# 영상 속 동작을 이 사람이
+h3video gen "1번 영상 춤 동작 그대로 1번 사진 사람이 춘다" --video dance.mp4 --image face.png -s 8
+
+# 어떻게 지시될지 먼저 보기 (생성 안 함)
+h3video ir "1번 사진 사람 얼굴 그대로, 2번 사진 그림체로 바닷가를 걷는다" --image face.png --image style.png -s 8
+```
+
+- `<Subject 1>` 같은 표기는 안 써도 된다. 다듬는 모델이 사진을 직접 보고 얼굴·옷 특징을 공식 형식으로 적어 준다.
+- 기존 영상의 얼굴만 바꿔 끼우는 편집이 아니다. 참고해서 새로 만든다.
+- `--first`/`--last` 와 같이 못 쓴다.
+- 결과가 이상하면 결과 폴더의 `scene01.prompt.txt` 에서 실제로 어떻게 지시됐는지 본다.
 
 ## 프롬프트
 
