@@ -368,6 +368,27 @@ def pick_devices(spec: str | None) -> list[str]:
     return [f"cuda:{i}" for i in range(min(n, 2))]
 
 
+def check_free(devices: list[str]) -> None:
+    """올리기 전에 GPU 가 비어 있는지 본다. 다른 프로세스가 차지한 GPU 에서는 첫 요청 때 CUDA OOM 이 나므로 미리 멈춘다."""
+    import torch
+    need = float(os.environ.get("H3_DSERVER_MIN_FREE_GB", "70"))   # 텍스트 인코더·영상 모델 각 62GB + 활성값
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    phys = [x.strip() for x in visible.split(",")] if visible else []
+    bad = []
+    for d in devices:
+        if not d.startswith("cuda"):
+            continue
+        i = int(d.split(":")[1]) if ":" in d else 0
+        free, total = torch.cuda.mem_get_info(i)
+        name = f"{d}(nvidia-smi GPU {phys[i] if i < len(phys) else i})"
+        log(f"{name}: 여유 {free / 2**30:.1f}GB / {total / 2**30:.1f}GB")
+        if free / 2**30 < need:
+            bad.append(f"{name} 여유 {free / 2**30:.1f}GB < 필요 약 {need:.0f}GB")
+    if bad:
+        raise SystemExit("[dserver] GPU 를 다른 프로세스가 쓰고 있다 → " + "; ".join(bad)
+                         + ". 비어 있는 GPU 로: bash scripts/up.sh (--gpus 를 빼면 빈 GPU 를 고른다) 또는 --gpus A,B")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="h3video.dserver", description="MiniMax-H3 Diffusers 서버 (/v1/videos)")
     ap.add_argument("--model-dir", required=True, help="Diffusers 형식 폴더 (modular_model_index.json, transformer/ …)")
@@ -383,6 +404,7 @@ def main(argv=None) -> int:
     import torch
     log(f"torch {torch.__version__} (CUDA {torch.version.cuda}), 모델 {a.model_dir}, 결과 {out_dir}")
     devices = pick_devices(a.devices)
+    check_free(devices)
     engine = Engine(a.model_dir, a.variant, devices, a.dtype, a.attn)
     srv = Server(engine, out_dir, a.variant)
     threading.Thread(target=srv.worker, daemon=True).start()

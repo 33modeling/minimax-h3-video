@@ -100,7 +100,7 @@ cd /user-volume/<계정>/minimax-h3-video
 bash scripts/up.sh --check      # 점검만: 엔진·모델·패키지·메모리·GPU 장수·포트
 bash scripts/up.sh              # fl2va 서버(포트 30010). 웹 UI(8790)까지는 --web
 bash scripts/up.sh --ref        # ref2va 서버(포트 30011)도
-#   GPU 기본값: Diffusers 엔진 fl2va 0,1 · ref2va 2,3 (4장 노드에 둘 다) / sglang 엔진 0,1,2,3 · 4,5,6,7
+#   GPU: --gpus 를 안 주면 비어 있는 GPU 에서 고른다 (Diffusers 엔진 서버당 2장, sglang 4장)
 bash scripts/up.sh --cors https://33modeling.pages.dev   # 허브 '숏폼 제작'에서 웹 UI 를 부를 때
 bash scripts/down.sh            # 다른 창에서 끄기 (up.sh 화면에서는 Ctrl+C)
 ```
@@ -110,7 +110,9 @@ bash scripts/down.sh            # 다른 창에서 끄기 (up.sh 화면에서는
 - 서버가 죽으면(OOM 등) 바로 "서버가 끝났다"를 띄우고 남은 프로세스(워커 포함)를 꺼서 GPU 를 반환한 뒤 종료한다. sglang 본체만 죽고 워커가 남은 경우도 잡는다.
 - 준비되면 PC 에서 쓸 SSH 터널 명령을 출력하고 계속 돈다. 로딩에 제한을 걸고 싶으면 `H3_UP_TIMEOUT=초`.
 - **Ctrl+C** 하면 서버·워커·웹 UI 를 프로세스 묶음째 끄고(30초 안에 안 꺼지면 강제 종료) GPU 별 메모리 사용량을 보여 준다. 이 스크립트가 띄우지 않은 다른 GPU 작업은 건드리지 않는다.
-- 이미 떠 있는 서버는 다시 띄우지 않고 그대로 쓴다. 그 포트를 다른 프로그램이 쓰고 있으면 이유를 출력하고 멈춘다.
+- 시작할 때 **전에 띄운 H3 서버·워커가 GPU 를 잡고 남아 있으면 먼저 내린다**(내 계정이 이 레포로 띄운 것만. 컨테이너에서는 nvidia-smi 가 프로세스를 못 보여 줘서 `/proc` 으로 찾는다, `scripts/h3_leftovers.py`). `--check` 는 보여 주기만 한다.
+- GPU 는 비어 있는 것만 쓴다(2GB 넘게 쓰고 있으면 사용 중). `--gpus` 로 준 GPU 를 다른 프로세스가 쓰고 있으면 OOM 이 나기 전에 멈추고 비어 있는 GPU 를 알려 준다.
+- 포트를 다른 프로그램이 쓰고 있으면 이유를 출력하고 멈춘다.
 - `--gpus`, `--ref-gpus`, `--mode speed|memory`, `--no-web` 으로 바꿀 수 있다. 처음 한 번은 `bash scripts/provision.sh`(아래 2-2)가 먼저 필요하다.
 
 아래 2-1~2-5 는 같은 일을 단계별로 하는 방법이다.
@@ -516,6 +518,7 @@ non_diegetic_music: 배경음악 스타일·템포.
 | `The NVIDIA driver on your system is too old (found version 12020)` | sglang(CUDA 13 전용)을 드라이버 CUDA 12.2 노드에서 띄웠다. 코드를 올린 뒤 `bash scripts/provision.sh` → `bash scripts/up.sh` 하면 Diffusers 엔진으로 자동으로 바뀐다(2-6절) |
 | `OSError: Could not load this library: .../torchaudio/lib/_torchaudio.abi3.so` | (sglang 엔진) sglang 이 고정한 torchaudio(PyPI 기본판)와 torch(CUDA 13)의 CUDA 가 다르다. provision.sh 가 자동으로 맞춘다. 드라이버 CUDA 12.x 노드라면 위 줄처럼 Diffusers 엔진을 쓴다 |
 | `Diffusers 형식 가중치(fl2va)가 아직 없다` | `bash scripts/provision.sh` (`--ref` 면 ref2va 것도). 없는 것만 받고, 받다 끊기면 다시 실행해서 이어 받는다 |
+| `CUDA out of memory … GPU 1 has a total capacity of 79.11 GiB of which … is free` | 그 GPU 를 다른 프로세스가 이미 쓰고 있었다(전에 띄운 서버가 남은 경우 등). 지금 `up.sh` 는 시작할 때 남은 H3 서버를 내리고 비어 있는 GPU 만 쓴다. 남은 것만 끄려면 `python3 scripts/h3_leftovers.py --kill` |
 | `메모리 여유 …GB < 필요 약 140GB` / 서버가 로딩 중 `Killed` | Diffusers 엔진은 적재할 때 가중치를 CPU 메모리에 먼저 올린다(서버 하나에 약 140GB). 파드 메모리 한도를 늘리거나 `--ref` 를 빼고 띄운다 |
 | `up.sh` 가 `서버가 끝났다` | 바로 위 원본 로그가 원인(OOM 등). 남은 프로세스는 끄고 GPU 를 반환한 상태 |
 | health 가 `000` | 서버 로딩 중(몇 분) 또는 죽음. `up.sh` 화면의 로그 확인 |
