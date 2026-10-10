@@ -44,10 +44,12 @@ if port_busy; then echo "포트 $PORT 이미 사용 중 (이미 떠 있는 서�
 LOG="$H3_LOG_DIR/serve-$VARIANT-$(date +%Y%m%d-%H%M%S).log"
 PIDFILE="$H3_LOG_DIR/serve-$VARIANT.pid"
 echo $$ > "$PIDFILE"
+export H3_SERVE_ID="$VARIANT-$$"   # 이 serve.sh 가 띄운 서버·워커 표시 (h3_leftovers.py 가 남은 것을 이것으로 찾는다)
 if [[ "$H3_ENGINE" == diffusers ]]; then
   echo "[serve] engine=diffusers variant=$VARIANT gpus=${CUDA_VISIBLE_DEVICES:-all} port=$PORT model=$H3_DIFFUSERS_DIR log=$LOG"
   exec "$VENV/bin/python" -m h3video.dserver --model-dir "$H3_DIFFUSERS_DIR" --variant "$VARIANT" \
     --host "$H3_HOST" --port "$PORT" --out-dir "$STORAGE_ROOT/dserver/$VARIANT" "${EXTRA[@]}" 2>&1 | tee "$LOG"
+  exit "${PIPESTATUS[0]}"
 fi
 echo "[serve] engine=sglang variant=$VARIANT gpus=${CUDA_VISIBLE_DEVICES:-all}($NGPU) mode=$MODE port=$PORT model=$H3_MODEL_DIR log=$LOG"
 exec sglang serve \

@@ -1,7 +1,9 @@
 """이 계정이 전에 띄운 H3 서버·워커 중 GPU 를 잡고 남은 프로세스를 찾는다. --kill 이면 끄고 GPU 를 반환한다.
 
 '우리 것' = 내 계정 프로세스이면서 GPU 장치(/dev/nvidia*)를 열고 있고,
-  ① 환경에 cluster_env.sh 표시(H3_PORT_FL2VA)가 있거나 ② 명령줄에 sglang·h3video·MiniMax-H3 가 들어 있는 것.
+  ① serve.sh 가 띄운 표시(환경의 H3_SERVE_ID)가 있거나 — 서버·torchrun·워커가 모두 물려받는다
+  ② (예전에 띄운 것) cluster_env.sh 표시(H3_PORT_FL2VA)가 있으면서 명령줄이 H3 서버·워커(h3video.dserver/dworker, sglang serve)인 것.
+cluster_env.sh 를 source 한 셸에서 띄운 다른 GPU 작업(학습·노트북 등)은 건드리지 않는다.
 컨테이너에서는 nvidia-smi 가 프로세스를 못 보여 주므로 /proc 으로 찾는다. 다른 계정·다른 작업은 건드리지 않는다.
 
   python scripts/h3_leftovers.py            찾기만
@@ -15,7 +17,7 @@ import sys
 import time
 
 DEV = os.environ.get("H3_LEFTOVER_DEV_PREFIX", "/dev/nvidia")   # 테스트에서만 바꾼다
-NAME = re.compile(r"sglang|h3video|MiniMax-H3|minimax-h3-video", re.I)
+SERVER = re.compile(r"h3video\.d(server|worker)|sglang serve|sglang::|-m sglang\b")
 
 
 def read(pid, name):
@@ -62,7 +64,9 @@ def find(exclude=()):
                 continue
             cmd = read(pid, "cmdline").replace(b"\0", b" ").decode(errors="replace").strip()
             env = read(pid, "environ").split(b"\0")
-            if any(e.startswith(b"H3_PORT_FL2VA=") for e in env) or NAME.search(cmd):
+            mine = any(e.startswith(b"H3_SERVE_ID=") for e in env) or (
+                any(e.startswith(b"H3_PORT_FL2VA=") for e in env) and SERVER.search(cmd) is not None)
+            if mine:
                 gpus = sorted(x for x in devs if x.isdigit())
                 found.append((pid, gpus, cmd[:150]))
         except OSError:

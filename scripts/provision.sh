@@ -25,7 +25,11 @@ for arg in "$@"; do case "$arg" in
   *) log "알 수 없는 옵션: $arg"; exit 2 ;; esac; done
 
 make_venv() {
-  [[ -x "$VENV/bin/python" ]] && return 0
+  if [[ -x "$VENV/bin/python" ]]; then   # 예전에 pip 없이 끝난 venv 도 고친다
+    [[ -x "$VENV/bin/pip" ]] || "$VENV/bin/python" -m ensurepip --upgrade \
+      || curl -sS https://bootstrap.pypa.io/get-pip.py | "$VENV/bin/python" - || { log "pip 설치 실패 — PIP_INDEX_URL 지정"; exit 1; }
+    return 0
+  fi
   log "venv 생성: $VENV"
   "$PYTHON_BOOTSTRAP" -m venv "$VENV" || { "$PYTHON_BOOTSTRAP" -m venv --without-pip "$VENV";
     curl -sS https://bootstrap.pypa.io/get-pip.py | "$VENV/bin/python" - || { log "get-pip 실패 — PIP_INDEX_URL 지정"; exit 1; }; }
@@ -56,7 +60,7 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
       && cp "$G"/docs/VIDEO_PROMPT_WRITING_GUIDE_*_en.md "$H3_GUIDE_DIR"/ \
       || log "경고: 가이드를 못 받았다 → 서버는 프롬프트를 다듬지 않고 그대로 쓴다 (다시 실행하면 재시도)"
   fi
-  ls "$H3_GUIDE_DIR"/VIDEO_PROMPT_WRITING_GUIDE_*_en.md 2>/dev/null | sed 's/^/  가이드: /'
+  ls "$H3_GUIDE_DIR"/VIDEO_PROMPT_WRITING_GUIDE_*_en.md 2>/dev/null | sed 's/^/  가이드: /' || true
   if [[ "$SKIP_MODEL" == 1 ]]; then log "모델 단계 스킵"; log "완료. 다음: bash scripts/up.sh"; exit 0; fi
   D="$H3_DIFFUSERS_DIR"; VARS=(fl2va); [[ "$REF" == 1 ]] && VARS+=(ref2va)
   ok_all() { local v; for v in "${VARS[@]}"; do "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$D" --variant "$v" --quiet || return 1; done; }
@@ -67,7 +71,9 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
   PATTERNS=(modular_model_index.json "scheduler/*" "audio_scheduler/*" "transformer/*" "vae/*" "audio_vae/*")
   [[ "$REF" == 1 ]] && PATTERNS+=("transformer_ref/*")
   for c in text_encoder tokenizer processor; do
-    if [[ -e "$D/$c" ]]; then continue
+    if [[ -L "$D/$c" && ! -e "$D/$c" ]]; then rm -f "$D/$c"; log "끊긴 링크 지움: $D/$c"; fi   # 공유 폴더가 옮겨진 경우
+    if [[ -L "$D/$c" ]]; then continue   # FL2VA 것 재사용 중
+    elif [[ -d "$D/$c" ]]; then PATTERNS+=("$c/*")   # 직접 받은 폴더: 받다 끊긴 파일을 이어 받는다 (다 있으면 건너뜀)
     elif [[ -n "$SRC" && -d "$SRC/$c" ]]; then ln -s "$SRC/$c" "$D/$c"; log "재사용(링크): $D/$c → $SRC/$c"
     else PATTERNS+=("$c/*"); fi
   done
@@ -76,7 +82,7 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
   unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
   INC=(); for p in "${PATTERNS[@]}"; do INC+=(--include "$p"); done   # hf 1.x 는 --include 하나에 패턴 하나 (뒤 패턴은 파일 이름으로 처리된다)
   hf_get "${INC[@]}" --local-dir "$D" || { log "받기 실패 (위 오류). 다시 실행하면 이어서 받는다"; exit 1; }
-  if ! ok_all; then for v in "${VARS[@]}"; do "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$D" --variant "$v"; done; log "받은 뒤에도 빠진 것이 있다 (위 목록). 다시 실행하면 이어서 받는다"; exit 1; fi
+  if ! ok_all; then for v in "${VARS[@]}"; do "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$D" --variant "$v" || true; done; log "받은 뒤에도 빠진 것이 있다 (위 목록). 다시 실행하면 이어서 받는다"; exit 1; fi
   du -shL "$D" 2>/dev/null || true
   log "완료. 다음: bash scripts/up.sh$([[ $REF == 1 ]] && echo ' --ref')"
   exit 0

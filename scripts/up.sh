@@ -102,7 +102,7 @@ for w in "${TODO[@]}"; do
   p=${PORT[$w]}
   if in_use "$p"; then
     if [[ $w == web ]] || healthy "$p"; then yellow "· $w: 포트 $p 에서 이미 떠 있다 → 그대로 쓴다"
-    else fail "$w: 포트 $p 를 다른 프로그램이 쓰고 있다" "bash scripts/down.sh 또는 ss -ltnp 로 확인"; fi
+    else fail "$w: 포트 $p 를 다른 프로그램이 쓰고 있다" "bash scripts/down.sh 또는 bash scripts/status.sh 로 확인"; fi
   else START+=("$w"); fi
 done
 # GPU: 띄울 서버마다 **비어 있는** GPU 를 쓴다. 다른 프로세스가 차지한 GPU 에 올리면 CUDA OOM 이 난다 (그 프로세스는 건드리지 않는다)
@@ -116,6 +116,9 @@ gpu_table() { local i; for i in "${GALL[@]}"; do echo "     GPU $i: $(( ${GUSED[
 TAKEN=(); gpu_problems=$problems
 if [[ ${#GALL[@]} -eq 0 ]]; then fail "GPU 가 안 보인다 (nvidia-smi 실패)" "GPU 노드인지, nvidia-smi 가 되는지 확인"
 else
+  if [[ -n "$GPUS" && -n "$REF_GPUS" ]]; then   # 두 서버가 같은 GPU 를 쓰면 OOM
+    for i in ${GPUS//,/ }; do [[ ",$REF_GPUS," == *",$i,"* ]] && fail "--gpus($GPUS)와 --ref-gpus($REF_GPUS)가 GPU $i 에서 겹친다" "서로 다른 GPU 를 준다"; done
+  fi
   for w in "${START[@]}"; do   # 직접 준 GPU 먼저 확인
     [[ $w == fl2va ]] && want="$GPUS"; [[ $w == ref2va ]] && want="$REF_GPUS"; [[ $w == web || -z "${want:-}" ]] && continue
     for i in ${want//,/ }; do
@@ -132,7 +135,7 @@ else
   else PER=4; fi
   for w in "${AUTO[@]}"; do
     got=(); for i in "${FREE[@]}"; do [[ " ${TAKEN[*]} " == *" $i "* ]] && continue; got+=("$i"); [[ ${#got[@]} -ge $PER ]] && break; done
-    if [[ ${#got[@]} -lt $PER ]]; then fail "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "아래 '다른 프로세스가 쓰는 중' GPU 는 이 레포가 띄운 서버가 아니다(남은 서버는 위에서 이미 내렸다). 그 작업을 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --ref 빼기')"; continue; fi
+    if [[ ${#got[@]} -lt $PER ]]; then fail "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "$([[ $CHECK == 1 ]] && echo "--check 라 남은 H3 서버는 아직 안 내렸다(실제로 띄우면 먼저 내린다). 그래도 차 있으면 " || echo "아래 '다른 프로세스가 쓰는 중' GPU 는 이 레포가 띄운 서버가 아니다(남은 서버는 위에서 이미 내렸다). ")그 작업을 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --ref 빼기')"; continue; fi
     TAKEN+=("${got[@]}"); sel=$(IFS=,; echo "${got[*]}")
     [[ $w == fl2va ]] && GPUS=$sel; [[ $w == ref2va ]] && REF_GPUS=$sel
   done
@@ -153,7 +156,8 @@ fi
 # (sglang 엔진) 드라이버가 CUDA 12.x 인데 sglang 으로 고정했으면 CUDA 13 호환 라이브러리를 써 본다
 [[ "$H3_ENGINE" == sglang ]] && { h3_cuda_compat || fail "CUDA 13 호환 라이브러리를 준비하지 못했다 (위 [cuda-compat] 줄 참고)"; }
 # GPU 를 실제로 쓸 수 있는지 (안 되면 원래 오류가 그대로 나온다)
-if ! python3 -c "import torch; torch.zeros(1).cuda(); print('[up] torch', torch.__version__, 'CUDA', torch.version.cuda, '→', torch.cuda.get_device_name(0)); import torchaudio" ; then
+CHECK_GPU="${GPUS:-${REF_GPUS:-}}"; CHECK_GPU="${CHECK_GPU%%,*}"   # 점검은 고른 GPU 에서 (GPU 0 이 다른 작업으로 차 있을 수 있다)
+if ! CUDA_VISIBLE_DEVICES="${CHECK_GPU:-${CUDA_VISIBLE_DEVICES:-}}" python3 -c "import torch; torch.zeros(1).cuda(); print('[up] torch', torch.__version__, 'CUDA', torch.version.cuda, '→', torch.cuda.get_device_name(0)); import torchaudio" ; then
   drv="$(nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}')"
   fail "torch 가 GPU 를 못 쓴다 (바로 위 원래 오류 참고). 이 노드 드라이버는 CUDA ${drv:-?} 까지" \
        "$([[ $H3_ENGINE == diffusers ]] && echo "Diffusers venv 를 다시 맞춘다: bash scripts/provision.sh --skip-model" || echo "sglang(CUDA 13)이 이 드라이버에서 안 돈다 → H3_ENGINE=diffusers bash scripts/provision.sh 후 다시 실행")"
@@ -161,7 +165,7 @@ if ! python3 -c "import torch; torch.zeros(1).cuda(); print('[up] torch', torch.
 fi
 green "✓ torch GPU 사용 가능"
 VISION_ARGS=(); [[ $CHECK == 1 || $H3_ENGINE == diffusers ]] || VISION_ARGS=(--repair)   # diffusers venv 는 고정 버전이라 고치지 않고 확인만
-if ! "$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" "${VISION_ARGS[@]}"; then
+if ! CUDA_VISIBLE_DEVICES="${CHECK_GPU:-${CUDA_VISIBLE_DEVICES:-}}" "$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" "${VISION_ARGS[@]}"; then
   red "== torchvision 점검 실패. 로그: $UP_LOG"; exit 1
 fi
 green "✓ torchvision CPU·CUDA NMS 사용 가능"
@@ -169,15 +173,17 @@ green "== 점검 통과"; [[ $CHECK == 1 ]] && exit 0
 
 # 3) 이 화면에서 포그라운드로 실행. 각 서버의 출력(원본 로그·오류)이 그대로 이 화면에 나온다.
 PIDS=(); NAMES=()
-cleanup() {   # 서버·웹 UI 를 하위 프로세스까지 끄고 GPU 반환 확인
-  trap - INT TERM HUP EXIT
-  echo; yellow "== 끄는 중: ${NAMES[*]} (GPU 반환까지 확인)"
+cleanup() {   # 서버·웹 UI 를 하위 프로세스까지 끄고 GPU 반환 확인 (이 up.sh 가 띄운 것만)
+  trap - TERM HUP EXIT; trap '' INT PIPE   # 정리 중 Ctrl+C 를 또 눌러도, 화면(tee)이 없어도 끝까지 정리한다
+  echo; yellow "== 끄는 중: ${NAMES[*]} (GPU 반환까지 확인, 30초 안에 안 꺼지면 강제 종료)"
   h3_stop_tree "${PIDS[@]}"
-  python3 "$ROOT/scripts/h3_leftovers.py" --kill | grep -v "남은 H3 서버 프로세스 없음"   # 묶음 밖으로 빠진 워커까지
-  rm -f "$H3_LOG_DIR/web.pid" "$H3_LOG_DIR"/serve-*.pid
+  local f; for f in "$H3_LOG_DIR"/serve-*.pid "$H3_LOG_DIR/web.pid"; do   # 내 pid 파일만 (다른 up.sh 의 것은 두고)
+    [[ -f "$f" ]] && [[ " ${PIDS[*]} " == *" $(cat "$f" 2>/dev/null) "* ]] && rm -f "$f"
+  done
   green "== 종료"
 }
-trap 'cleanup; exit 130' INT TERM HUP
+trap 'cleanup; exit 130' INT TERM
+trap 'exec >>"$UP_LOG" 2>&1; cleanup; exit 129' HUP   # 창을 닫거나 SSH 가 끊기면 화면 대신 로그 파일로 쓰며 정리
 for w in "${START[@]}"; do
   case $w in
     fl2va) cmd=(bash scripts/serve.sh fl2va --gpus "$GPUS" "${MODE_ARGS[@]}") ;;
