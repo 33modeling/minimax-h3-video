@@ -47,6 +47,16 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
     "$VENV/bin/python" -c "import torch; torch.zeros(1).cuda(); print('GPU', torch.cuda.device_count(), '장:', torch.cuda.get_device_name(0))" \
       || { log "torch 가 GPU 를 못 쓴다 (위 오류)"; exit 1; }
   else log "GPU 가 안 보이는 노드라 GPU 확인은 건너뜀 (up.sh 가 GPU 노드에서 다시 확인한다)"; fi
+  # 프롬프트 다듬기에 쓰는 MiniMax 공식 작성 가이드 2개 (약 40KB, 모델 저장소의 docs/)
+  if [[ ! -s "$H3_GUIDE_DIR/VIDEO_PROMPT_WRITING_GUIDE_base_en.md" || ! -s "$H3_GUIDE_DIR/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md" ]]; then
+    log "공식 프롬프트 작성 가이드 받기 → $H3_GUIDE_DIR"
+    G="$STORAGE_ROOT/.guides-dl"; mkdir -p "$G" "$H3_GUIDE_DIR"
+    ( unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
+      hf_get --include "docs/VIDEO_PROMPT_WRITING_GUIDE_base_en.md" --include "docs/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md" --local-dir "$G" ) \
+      && cp "$G"/docs/VIDEO_PROMPT_WRITING_GUIDE_*_en.md "$H3_GUIDE_DIR"/ \
+      || log "경고: 가이드를 못 받았다 → 서버는 프롬프트를 다듬지 않고 그대로 쓴다 (다시 실행하면 재시도)"
+  fi
+  ls "$H3_GUIDE_DIR"/VIDEO_PROMPT_WRITING_GUIDE_*_en.md 2>/dev/null | sed 's/^/  가이드: /'
   if [[ "$SKIP_MODEL" == 1 ]]; then log "모델 단계 스킵"; log "완료. 다음: bash scripts/up.sh"; exit 0; fi
   D="$H3_DIFFUSERS_DIR"; VARS=(fl2va); [[ "$REF" == 1 ]] && VARS+=(ref2va)
   ok_all() { local v; for v in "${VARS[@]}"; do "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$D" --variant "$v" --quiet || return 1; done; }

@@ -24,14 +24,11 @@ def build_context_ir(description: str, soundscape: str | None = None, music: str
     return "\n".join(parts)
 
 
-def keyframe_note(first: bool = True, last: bool = False) -> str:
-    notes = []
-    if first:
-        notes.append("For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.")
-    if last:
-        idx = 2 if first else 1
-        notes.append(f"At the final frame of the target video, <Picture {idx}> is fully referenced.")
-    return "\n".join(notes)
+def keyframe_note(first: bool = True, last: bool = False, seconds: float = 8.0, shots: int = 1) -> str:
+    """키프레임 정렬 줄 — 공식 가이드 2.1 의 문구 그대로 (I2VA·FL2VA·L2VA). Diffusers 서버는 실제 길이로 다시 계산해 붙인다."""
+    from .rewrite import instruction
+    slots = (["image"] if first else []) + (["last_image"] if last else [])
+    return instruction(slots, float(seconds), shots) or ""
 
 
 def scene_prompts(description: str, n_scenes: int) -> list[str]:

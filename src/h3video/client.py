@@ -55,6 +55,7 @@ class VideoRequest:
     num_inference_steps: int | None = None
     negative_prompt: str | None = None
     num_outputs: int = 1
+    rewrite: bool = True                     # Diffusers 서버가 공식 형식으로 다듬는다 (False = 쓴 그대로)
 
     def validate(self) -> None:
         if self.task not in spec.TASKS:
@@ -95,6 +96,8 @@ class VideoRequest:
             body["negative_prompt"] = self.negative_prompt
         if self.num_outputs and self.num_outputs != 1:
             body["num_outputs_per_prompt"] = self.num_outputs
+        if not self.rewrite:
+            body["rewrite"] = False
         return body
 
 
@@ -164,6 +167,11 @@ class H3Client:
             raise H3Error(f"응답에 id 없음: {resp}")
         return str(vid)
 
+    def rewrite(self, req: VideoRequest, timeout: float = 3600.0) -> dict:
+        """Diffusers 서버에서 다듬은 프롬프트만 받는다 (생성 안 함). 생성 중이면 그 뒤에 처리된다."""
+        req.validate()
+        return self._request("POST", "/v1/prompts/rewrite", req.to_json(), timeout=timeout)
+
     def status(self, video_id: str) -> dict:
         return self._request("GET", f"/v1/videos/{video_id}")
 
@@ -201,7 +209,8 @@ class H3Client:
     def generate(self, req: VideoRequest, out_path: str | os.PathLike, poll: float = 3.0,
                  timeout: float = 3600.0, on_progress: Callable[[dict], None] | None = None) -> Path:
         vid = self.submit(req)
-        self.wait(vid, poll=poll, timeout=timeout, on_progress=on_progress)
+        st = self.wait(vid, poll=poll, timeout=timeout, on_progress=on_progress)
         out = self.download(vid, out_path)
-        Path(str(out) + ".json").write_text(json.dumps({"id": vid, "request": req.to_json()}, ensure_ascii=False, indent=2))
+        Path(str(out) + ".json").write_text(json.dumps({"id": vid, "request": req.to_json(), "prompt_used": st.get("prompt_used")},
+                                                       ensure_ascii=False, indent=2))
         return out

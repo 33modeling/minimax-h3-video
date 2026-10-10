@@ -56,6 +56,15 @@ def local_path(uri: str) -> str:
     return uri
 
 
+GUIDE_FILES = {"base": "VIDEO_PROMPT_WRITING_GUIDE_base_en.md", "ref": "VIDEO_PROMPT_WRITING_GUIDE_ref_en.md"}
+
+
+def load_guides(model_dir: str) -> dict:
+    """MiniMax 공식 프롬프트 작성 가이드 (provision.sh 가 모델 폴더 docs/ 에 받아 둔다). H3_GUIDE_DIR 로 바꿀 수 있다."""
+    d = Path(os.environ.get("H3_GUIDE_DIR") or Path(model_dir, "docs"))
+    return {k: (d / f).read_text(encoding="utf-8") for k, f in GUIDE_FILES.items() if (d / f).is_file()}
+
+
 def frames_for(seconds: float, per_chunk: int, keep: int, fps: int, lo: float, hi: float) -> tuple[int, float]:
     """길이(초) → VAE 가 다루는 `per_chunk*n + keep` 프레임 수. 올림이 상한을 넘으면 내린다 (15초 → 345프레임)."""
     want = min(max(float(seconds), lo), hi)
@@ -129,6 +138,10 @@ class Engine:
                 self.transformer.set_attention_backend(attn)
                 log(f"어텐션 백엔드: {attn}")
             self.transformer.register_forward_hook(self._count)
+        self._te_pipe = self.pipe if self.mode == "single" else self.cond   # 텍스트 인코더(= Qwen3-VL-32B-Instruct)가 있는 쪽
+        self.guides = load_guides(model_dir)
+        log("프롬프트 다듬기: " + ("켜짐 (공식 작성 가이드 base·ref, 텍스트 인코더 Qwen3-VL 로)" if len(self.guides) == 2 else
+                             f"꺼짐 — 공식 작성 가이드가 없다 ({model_dir}/docs). bash scripts/provision.sh 로 받는다"))
         cfg = self.geo.config
         self.short_edge = int(getattr(cfg, "canvas_short_edge", 768) or 768)
         self.max_pixels = int(getattr(cfg, "canvas_max_pixels", 768 * 1344) or 768 * 1344)
@@ -272,6 +285,7 @@ class Engine:
                 "aspect": str(target.get("aspect_ratio") or "16:9"),
                 "short_edge": int(target.get("short_edge") or self.short_edge),
                 "steps": int(steps) if steps else 50, "seed": int(body.get("seed") or 0),
+                "rewrite": body.get("rewrite", True) is not False,
                 "ignored": [k for k in ("negative_prompt",) if body.get(k)]}
 
     def _canvas(self, aspect: str, short_edge: int, image=None) -> tuple[int, int]:
@@ -283,12 +297,10 @@ class Engine:
         max_px = round(self.max_pixels * (short_edge / self.short_edge) ** 2)
         return resolve_canvas_size(aw, ah, self.geo.canvas_multiple, short_edge, max_px)
 
-    def run(self, plan: dict, out_path: Path, on_progress) -> None:
+    def _load_inputs(self, plan: dict) -> tuple[dict, object]:
         from diffusers.modular_pipelines.minimax_h3 import (MiniMaxH3AudioReference, MiniMaxH3ImageReference,
                                                             MiniMaxH3VideoReference)
         from diffusers.utils import load_image
-        from diffusers.utils.export_utils import encode_video
-        torch = self.torch
         inputs = {"prompt": plan["prompt"], "num_frames": plan["num_frames"], "num_inference_steps": plan["steps"]}
         first_image = None
         for slot, c in plan["keyframes"]:
@@ -308,6 +320,84 @@ class Engine:
                 else:
                     refs.append(MiniMaxH3AudioReference.from_file(src))
             inputs["references"] = refs
+        return inputs, first_image
+
+    # ── 프롬프트 다듬기 (H3-Context-IR 대신) ──
+    def _visuals(self, plan: dict, inputs: dict) -> tuple[list, list[str]]:
+        """다듬는 모델에게 보여 줄 그림과 라벨. 라벨 번호는 diffusers 가 생성 모델에 붙이는 규칙과 같다."""
+        import numpy as np
+        from PIL import Image
+        from .rewrite import small
+        visuals, labels = [], []
+        if plan["task"] != "ref2va":
+            slots = [s for s, _ in plan["keyframes"]]
+            for i, s in enumerate(slots, 1):
+                role = "the first frame" if s == "image" else "the last frame"
+                visuals.append((f"<Picture {i}> ({role} of the target video):", small(inputs[s])))
+                labels.append(f"<Picture {i}> = {role} (shown)")
+            return visuals, labels
+        counts = {"image": 0, "video": 0, "audio": 0}
+        for r in inputs.get("references", []):
+            if r.has_audio:
+                counts["audio"] += 1
+                labels.append(f"<Audio {counts['audio']}> = " + ("the soundtrack of the next video" if r.kind == "video"
+                                                                else "an audio clip (you cannot hear it; use the user's request)"))
+            if r.kind == "image":
+                counts["image"] += 1
+                img = r.image if isinstance(r.image, Image.Image) else Image.fromarray(np.asarray(r.image))
+                visuals.append((f"<Picture {counts['image']}>:", small(img)))
+                labels.append(f"<Picture {counts['image']}> = reference image (shown)")
+            elif r.kind == "video":
+                counts["video"] += 1
+                frames = r.frames
+                n = len(frames)
+                for j in sorted({0, n // 2, n - 1}):   # 처음·중간·끝 세 장
+                    f = frames[j]
+                    f = f if isinstance(f, Image.Image) else Image.fromarray(np.asarray(f.cpu() if hasattr(f, "cpu") else f).astype("uint8"))
+                    visuals.append((f"<Video {counts['video']}> frame {j + 1}/{n}:", small(f, 768)))
+                labels.append(f"<Video {counts['video']}> = reference video, {n} frames at {r.fps or 24:g} fps (3 frames shown)")
+        return visuals, labels
+
+    def _prepare_prompt(self, plan: dict, inputs: dict) -> str:
+        """다듬기가 켜져 있고 공식 형식이 아니면 공식 가이드대로 다시 쓰고, 키프레임 정렬 줄을 실제 길이로 붙인다."""
+        from . import rewrite as RW
+        task, slots = plan["task"], [s for s, _ in plan["keyframes"]]
+        raw = RW.strip_instruction(plan["prompt"])
+        secs = plan["num_frames"] / 24
+        body = raw
+        if plan["rewrite"] and not RW.already_written(raw, task):
+            guide = self.guides.get("ref" if task == "ref2va" else "base")
+            if not guide:
+                log("공식 작성 가이드가 없어 다듬지 않고 그대로 보낸다 → bash scripts/provision.sh (가이드 2개만 받는다)")
+            else:
+                visuals, labels = self._visuals(plan, inputs)
+                tp = self._te_pipe
+                mode = RW.mode_name(task, slots)
+                for attempt in range(2):
+                    t0 = time.time()
+                    log(f"프롬프트 다듬기 ({mode}, {secs:.2f}초, 그림 {len(visuals)}장){' 다시' if attempt else ''} …")
+                    text = RW.rewrite_with_model(tp.text_encoder, tp.processor, tp._execution_device, guide, mode, secs,
+                                                 raw, visuals, labels, seed=plan["seed"] + attempt)
+                    out = RW.extract(text, task)
+                    if out:
+                        body = out
+                        log(f"다듬은 프롬프트 ({time.time() - t0:.0f}초):\n{body}")
+                        break
+                    log(f"다듬은 결과가 형식에 안 맞는다 ({time.time() - t0:.0f}초). 앞부분: {text[:300]!r}")
+                else:
+                    log("두 번 다 형식이 안 맞아 원래 프롬프트를 그대로 쓴다")
+        line = RW.instruction(slots, secs, RW.max_shot(body)) if task == "fl2va" else None
+        return f"{line}\n\n{body}" if line else body
+
+    def rewrite_only(self, plan: dict) -> str:
+        inputs, _ = self._load_inputs(plan)
+        return self._prepare_prompt(dict(plan, rewrite=True), inputs)
+
+    def run(self, plan: dict, out_path: Path, on_progress) -> str:
+        from diffusers.utils.export_utils import encode_video
+        torch = self.torch
+        inputs, first_image = self._load_inputs(plan)
+        inputs["prompt"] = self._prepare_prompt(plan, inputs)
         h, w = self._canvas(plan["aspect"], plan["short_edge"], first_image)
         inputs.update(height=h, width=w)
         total = max(1, plan["steps"] - 1)   # num_inference_steps 는 끝점 0 을 포함해 센다 → 모델 호출은 하나 적다
@@ -344,6 +434,7 @@ class Engine:
         encode_video(r["videos"][0], fps=24, output_path=str(tmp), audio=r["audio"][0],
                      audio_sample_rate=r["sampling_rate"])
         tmp.replace(out_path)
+        return inputs["prompt"]
 
 
 class Server:
@@ -359,7 +450,7 @@ class Server:
 
     def save(self, job: dict) -> None:
         tmp = self.meta_path(job["id"]).with_suffix(".tmp")
-        tmp.write_text(json.dumps({k: v for k, v in job.items() if k != "plan"}, ensure_ascii=False, indent=2))
+        tmp.write_text(json.dumps({k: v for k, v in job.items() if k not in ("plan", "done")}, ensure_ascii=False, indent=2))
         tmp.replace(self.meta_path(job["id"]))
 
     def get(self, vid: str) -> dict | None:
@@ -373,6 +464,22 @@ class Server:
                 job.update(status="failed", error="서버가 생성 도중 꺼졌다")
             return job
         return None
+
+    def rewrite(self, body: dict) -> dict:
+        """다듬은 프롬프트만 돌려준다. 생성과 같은 줄에 서서(텍스트 인코더를 같이 쓰므로) 차례가 오면 처리한다."""
+        plan = self.engine.plan(body)
+        vid = "rewrite_" + uuid.uuid4().hex[:12]
+        job = {"id": vid, "kind": "rewrite", "status": "queued", "plan": plan, "done": threading.Event()}
+        with self.lock:
+            self.jobs[vid] = job
+        self.q.put(vid)
+        log(f"다듬기 미리보기 접수 {vid} ({plan['task']}, 대기 {self.q.qsize()})")
+        job["done"].wait()
+        with self.lock:
+            self.jobs.pop(vid, None)
+        if job["status"] != "completed":
+            raise RuntimeError(job.get("error") or "다듬기 실패")
+        return {"prompt": job["prompt_used"], "task": plan["task"], "num_frames": plan["num_frames"]}
 
     def submit(self, body: dict) -> dict:
         plan = self.engine.plan(body)
@@ -391,11 +498,18 @@ class Server:
             vid = self.q.get()
             job = self.jobs[vid]
             job["status"], job["started_at"] = "in_progress", int(time.time())
-            self.save(job)
+            if job.get("kind") != "rewrite":
+                self.save(job)
             out = self.out_dir / f"{vid}.mp4"
             try:
-                self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
-                job.update(status="completed", progress=1.0, file=str(out))
+                if job.get("kind") == "rewrite":   # 다듬기 미리보기: 생성 없이 프롬프트만
+                    job.update(status="completed", progress=1.0, prompt_used=self.engine.rewrite_only(job["plan"]))
+                    log(f"다듬기 미리보기 {vid} 완료")
+                    job["finished_at"] = int(time.time())
+                    job["done"].set()
+                    continue
+                used = self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
+                job.update(status="completed", progress=1.0, file=str(out), prompt_used=used)
             except WorkerDied as e:   # 워커 묶음이 죽으면 이후 요청도 못 한다 → 서버를 끝내 up.sh 가 정리하게
                 job.update(status="failed", error=str(e), finished_at=int(time.time()))
                 self.save(job)
@@ -406,6 +520,9 @@ class Server:
                 traceback.print_exc()
                 job.update(status="failed", error=f"{type(e).__name__}: {e}")
                 log(f"실패 {vid}: {job['error']}")
+                if job.get("kind") == "rewrite":
+                    job["done"].set()
+                    continue
             job["finished_at"] = int(time.time())
             self.save(job)
 
@@ -450,7 +567,7 @@ def make_handler(srv: Server):
                     return self._json(404, {"error": f"없는 id: {parts[3]}"})
                 if len(parts) == 4:
                     return self._json(200, {k: job.get(k) for k in ("id", "status", "progress", "error", "created_at",
-                                                                    "started_at", "finished_at", "task")})
+                                                                    "started_at", "finished_at", "task", "prompt_used")})
                 if parts[4] == "content":
                     f = Path(job.get("file") or "")
                     if job.get("status") != "completed" or not f.is_file():
@@ -466,16 +583,18 @@ def make_handler(srv: Server):
 
         def do_POST(self):
             path = urllib.parse.urlparse(self.path).path.rstrip("/")
-            if path != "/v1/videos":
+            if path not in ("/v1/videos", "/v1/prompts/rewrite"):
                 return self._json(404, {"error": f"없는 경로: {path}"})
             n = int(self.headers.get("Content-Length") or 0)
             if n <= 0 or n > 4 << 20:
                 return self._json(400, {"error": "본문이 없거나 너무 크다 (JSON, 4MB 이하)"})
             try:
                 body = json.loads(self.rfile.read(n))
-                return self._json(200, srv.submit(body))
+                return self._json(200, srv.rewrite(body) if path.endswith("/rewrite") else srv.submit(body))
             except (BadRequest, json.JSONDecodeError, TypeError, ValueError) as e:
                 return self._json(400, {"error": str(e)})
+            except RuntimeError as e:
+                return self._json(500, {"error": str(e)})
     return H
 
 

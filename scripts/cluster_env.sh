@@ -216,6 +216,7 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
     else H3_DIFFUSERS_DIR="$STORAGE_ROOT/models/MiniMax-H3-diffusers"; fi
   fi
   export H3_DIFFUSERS_DIR
+  export H3_GUIDE_DIR="${H3_GUIDE_DIR:-$STORAGE_ROOT/h3-guides}"   # MiniMax 공식 프롬프트 작성 가이드 (provision.sh 가 받는다)
 else
   export VENV="${H3_VENV:-$STORAGE_ROOT/.venv}"
 fi

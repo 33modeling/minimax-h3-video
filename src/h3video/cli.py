@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import prompt as P
 from . import spec
-from .client import DEFAULT_ENDPOINT, DEFAULT_REF_ENDPOINT, H3Client, H3Error
+from .client import DEFAULT_ENDPOINT, DEFAULT_REF_ENDPOINT, H3Client, H3Error, stage_input
 from .jobs import INBOX_DIR, OUTPUT_DIR, Job, JobStore, Worker, build_request, new_job, plan_job
 
 SERVER_DOWN = (
@@ -30,6 +30,8 @@ EXAMPLES = """예:
   h3video gen -f prompt.txt -s 40 -r 9:16 -o out/          40초(장면 4개 체인), 세로, out/ 에 저장
   echo "..." | h3video gen -s 6                         표준입력으로 프롬프트
   h3video gen "..." --first key.png --dry-run             보내기 전에 요청만 확인
+  h3video ir "비 오는 서울 밤거리" -s 8                  서버가 다듬은 공식 형식 프롬프트만 보기 (생성 안 함)
+  h3video gen -f my_ir.txt --raw -s 8                   직접 쓴 프롬프트를 다듬지 않고 그대로
   h3video ref "<Subject 1>이 손을 흔든다" --image me.png -s 6
   h3video batch prompts.txt -o out/                     여러 개를 차례로 (--- 로 구분)
   h3video jobs / h3video show last                     지난 작업, 마지막 작업 상세
@@ -206,7 +208,7 @@ def job_from_args(a, prompt: str, refs=None, base: Path | None = None) -> Job:
     check_inputs([first, last] + [r["path"] for r in refs])
     return new_job(prompt, seconds=a.seconds, aspect_ratio=a.ratio, seed=a.seed, first_image=first, last_image=last,
                    refs=refs, scene_seconds=a.scene_seconds, steps=a.steps, title=a.title or "", negative=a.negative,
-                   task="ref2va" if refs else None)
+                   task="ref2va" if refs else None, raw=getattr(a, "raw", False))
 
 
 # ---------- commands ----------
@@ -242,8 +244,24 @@ def cmd_ref(a):
     preview(job) if a.dry_run else run_jobs(a, [job], a.out)
 
 
+def cmd_ir(a):
+    """서버(Diffusers 엔진)가 다듬은 공식 형식 프롬프트만 본다. 생성은 하지 않는다 (장면이 여럿이면 첫 장면)."""
+    refs = [{"type": t, "path": p} for t in ("image", "video", "audio") for p in getattr(a, t)]
+    job = job_from_args(a, read_prompt(a), refs or None)
+    job.scenes = plan_job(job)
+    sc = job.scenes[0]
+    req = build_request(job, sc, None, lambda path: stage_input(path, a.inbox_dir))
+    ep = a.ref_endpoint if req.task == "ref2va" else a.endpoint
+    print(f"[ir] {req.task} {sc.duration}초 — 서버가 다듬는 중 (텍스트 인코더로 1분 안팎, 생성 중이면 그 뒤에)…", file=sys.stderr)
+    t0 = time.time()
+    res = H3Client(ep).rewrite(req)
+    print(res["prompt"])
+    print(f"[ir] {time.time() - t0:.0f}초. 이대로 만들려면 같은 옵션으로 gen/ref (서버가 같은 시드로 다시 다듬는다), "
+          f"고쳐서 쓰려면 파일로 저장해 --raw -f 파일", file=sys.stderr)
+
+
 BATCH_KEYS = {"seconds", "ratio", "seed", "title", "first", "last", "negative", "scene-seconds", "steps",
-              "soundscape", "music", "ir", "image", "video", "audio"}
+              "soundscape", "music", "ir", "raw", "image", "video", "audio"}
 
 
 def parse_batch(text: str) -> list[tuple[dict, str]]:
@@ -290,7 +308,7 @@ def cmd_batch(a):
                     v = int(v)
                 elif attr == "seed":
                     v = seed_arg(v)
-                elif attr == "ir":
+                elif attr in ("ir", "raw"):
                     v = v.lower() in ("1", "y", "yes", "true", "on", "예")
                 elif attr == "ratio" and v not in spec.ASPECT_RATIOS:
                     raise H3Error(f"ratio 는 {spec.ASPECT_RATIOS} 중 하나: {v}")
@@ -396,7 +414,9 @@ def add_video_opts(p) -> None:
     p.add_argument("-n", "--negative", help="넣지 않을 것 (네거티브 프롬프트)")
     p.add_argument("-o", "--out", help="결과를 여기로도 복사 (파일 경로, 또는 / 로 끝나는 폴더)")
     p.add_argument("--dry-run", action="store_true", help="서버에 보내지 않고 장면 분할과 요청 JSON 만 출력")
-    p.add_argument("--ir", action="store_true", help="Context-IR 3단 형식으로 감싸기 (품질 권장)")
+    p.add_argument("--raw", action="store_true",
+                   help="서버의 프롬프트 다듬기를 끄고 쓴 그대로 보낸다 (Diffusers 엔진은 기본으로 공식 형식으로 다듬는다)")
+    p.add_argument("--ir", action="store_true", help="3단 필드 이름만 붙여 감싸기 (다듬기 없이 직접 쓴 내용 그대로)")
     p.add_argument("--soundscape", help="--ir 일 때 환경음 설명")
     p.add_argument("--music", help="--ir 일 때 배경음악 설명")
 
@@ -430,6 +450,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--image", action="append", default=[], help=f"이미지 (최대 {spec.REF_LIMITS['image']}, 여러 번)")
     p.add_argument("--video", action="append", default=[], help=f"영상 (최대 {spec.REF_LIMITS['video']})")
     p.add_argument("--audio", action="append", default=[], help=f"오디오 (최대 {spec.REF_LIMITS['audio']})")
+    add_video_opts(p)
+
+    p = cmd("ir", cmd_ir, "다듬은 프롬프트만 보기 (Diffusers 엔진: 짧은 요청 → H3 공식 형식, 생성 안 함)")
+    p.add_argument("prompt", nargs="?", help="프롬프트. 생략하면 -f 파일이나 표준입력")
+    p.add_argument("-f", "--prompt-file", help="프롬프트 파일 (- 는 표준입력)")
+    p.add_argument("--first", help="첫 프레임 이미지"); p.add_argument("--last", help="끝 프레임 이미지")
+    p.add_argument("--image", action="append", default=[], help="레퍼런스 이미지 (ref2va)")
+    p.add_argument("--video", action="append", default=[], help="레퍼런스 영상 (ref2va)")
+    p.add_argument("--audio", action="append", default=[], help="레퍼런스 오디오 (ref2va)")
     add_video_opts(p)
 
     p = cmd("batch", cmd_batch, "파일의 여러 프롬프트를 차례로 (--- 줄로 구분, 블록 맨 위 'seconds: 10' 같은 줄은 그 영상 옵션)")

@@ -70,6 +70,7 @@ class Job:
     scene_seconds: int = 10
     steps: int | None = None
     negative: str | None = None
+    raw: bool = False            # True = 서버의 프롬프트 다듬기를 끈다
     host: str | None = None      # 처리하는 프로세스의 호스트·pid (죽은 프로세스의 작업을 '진행'으로 남기지 않으려고)
     pid: int | None = None
     created: float = field(default_factory=time.time)
@@ -240,8 +241,10 @@ class Worker(threading.Thread):
                 sc.progress = float(st.get("progress") or 0)
                 self.store.save(job)
 
-            client.wait(sc.video_id, poll=self.poll, timeout=WAIT_TIMEOUT, on_progress=on_progress)
+            st = client.wait(sc.video_id, poll=self.poll, timeout=WAIT_TIMEOUT, on_progress=on_progress)
             out = job_dir / f"scene{sc.index + 1:02d}.mp4"
+            if st.get("prompt_used"):   # 서버가 실제로 쓴 프롬프트 (Diffusers 엔진이 다듬은 것)
+                (job_dir / f"scene{sc.index + 1:02d}.prompt.txt").write_text(st["prompt_used"], encoding="utf-8")
             client.download(sc.video_id, out)
             (job_dir / f"scene{sc.index + 1:02d}.request.json").write_text(json.dumps(req.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
             sc.status, sc.progress, sc.output = "completed", 1.0, str(out)
@@ -285,19 +288,21 @@ def build_request(job: Job, sc: Scene, prev_frame, stage) -> VideoRequest:
         if not conds:
             task = "t2va"
         elif not P.is_context_ir(prompt_text):
-            prompt_text = P.keyframe_note(first=bool(first), last=bool(last)) + "\n\n" + prompt_text
+            prompt_text = P.keyframe_note(first=bool(first), last=bool(last), seconds=sc.duration) + "\n\n" + prompt_text
     elif task == "ref2va":
         for r in job.refs:
             conds.append(Condition(r["type"], stage(r["path"]), "reference"))
         if prev_frame:
             conds.append(Condition("image", stage(prev_frame), "reference"))
     return VideoRequest(prompt=prompt_text, task=task, duration_seconds=sc.duration, aspect_ratio=job.aspect_ratio,
-                        seed=job.seed + sc.index, conditions=conds, num_inference_steps=job.steps, negative_prompt=job.negative)
+                        seed=job.seed + sc.index, conditions=conds, num_inference_steps=job.steps, negative_prompt=job.negative,
+                        rewrite=not job.raw)
 
 
 def new_job(prompt: str, seconds: int = 8, aspect_ratio: str = "16:9", seed: int = 0, task: str | None = None,
             first_image: str | None = None, last_image: str | None = None, refs: list[dict] | None = None,
-            scene_seconds: int = 10, steps: int | None = None, title: str = "", negative: str | None = None) -> Job:
+            scene_seconds: int = 10, steps: int | None = None, title: str = "", negative: str | None = None,
+            raw: bool = False) -> Job:
     refs = refs or []
     if task is None:
         task = "ref2va" if refs else ("fl2va" if (first_image or last_image) else "t2va")
@@ -308,4 +313,4 @@ def new_job(prompt: str, seconds: int = 8, aspect_ratio: str = "16:9", seed: int
         raise H3Error(f"최소 {spec.DURATION_MIN}초")
     return Job(id=time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6], prompt=prompt, total_seconds=seconds,
                aspect_ratio=aspect_ratio, seed=seed, task=task, first_image=first_image, last_image=last_image,
-               refs=refs, scene_seconds=scene_seconds, steps=steps, title=title, negative=negative or None)
+               refs=refs, scene_seconds=scene_seconds, steps=steps, title=title, negative=negative or None, raw=raw)

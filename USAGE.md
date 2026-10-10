@@ -2,6 +2,8 @@
 
 ## 빠른 시작 (이것만 보면 된다)
 
+> 영상 만드는 법만 보려면 **[VIDEO.md](VIDEO.md)** (서버가 떠 있을 때의 명령·옵션·프롬프트 쓰는 법·결과 위치).
+
 **서버 띄우기·확인·끄기는 이 세 개다** (클러스터의 레포 폴더 `/user-volume/<계정>/minimax-h3-video` 에서):
 
 | 할 일 | 명령 | 보이는 것 |
@@ -382,7 +384,7 @@ h3video batch prompts.txt --dry-run            # 블록마다 요청만 확인
 ```
 
 - 영상마다 `---` 줄로 나눈다. 블록 맨 위의 `key: value` 줄은 그 영상만의 옵션이고, 나머지 줄(여러 줄 가능)이 프롬프트다. `#` 로 시작하는 줄은 주석.
-- 쓸 수 있는 key: `seconds` `ratio` `seed` `title` `first` `last` `negative` `scene-seconds` `steps` `ir` `soundscape` `music` `image` `video` `audio`. `image` 등은 쉼표로 여러 개.
+- 쓸 수 있는 key: `seconds` `ratio` `seed` `title` `first` `last` `negative` `scene-seconds` `steps` `ir` `raw` `soundscape` `music` `image` `video` `audio`. `image` 등은 쉼표로 여러 개.
 - 파일 경로(`first`, `image` 등)는 프롬프트 파일이 있는 폴더 기준이다.
 - 블록 하나라도 잘못되면(없는 파일, 4초 미만 등) 아무것도 보내기 전에 "N번째 블록" 오류로 멈춘다.
 
@@ -409,7 +411,8 @@ h3video fetch <video_id> --ref     # ref2va(30011) 영상은 --ref
 | `-n`, `--negative` | 없음 | 넣지 않을 것 |
 | `-o`, `--out` | 없음 | 결과를 여기로도 복사. 파일 경로(확장자 없으면 .mp4), 또는 `/` 로 끝나거나 이미 있는 폴더. `batch` 는 폴더 |
 | `--dry-run` | 끔 | 서버에 보내지 않고 장면 분할과 요청 JSON 만 출력 |
-| `--ir` | 끔 | Context-IR 3단 형식으로 감싸기. `--soundscape`, `--music` 으로 소리 설명 |
+| `--raw` | 끔 | 서버(Diffusers 엔진)의 프롬프트 다듬기를 끄고 쓴 그대로 보낸다 |
+| `--ir` | 끔 | 3단 필드 이름만 붙여 감싸기(다듬기 없이 그대로). `--soundscape`, `--music` 으로 소리 설명 |
 
 `gen` 만: 프롬프트(인자, `-f 파일`, `-f -` 표준입력, 생략 시 파이프 입력), `--first`, `--last`.
 `ref` 만: 프롬프트(같은 방식), `--image`, `--video`, `--audio`(여러 번).
@@ -495,7 +498,8 @@ rsync -avz user@host:/group-volume/minsoo3.kim/minimax-h3-video/outputs/<job_id>
 
 ## 6. 프롬프트 쓰는 법
 
-모델은 영상과 오디오(음성·효과음·음악)를 한 번에 만든다. 공식 파이프라인은 짧은 프롬프트를 아래 3단 형식(Context-IR)으로 확장해서 넣는다. 로컬에서는 직접 이 형식으로 쓰거나 `--ir` 옵션으로 감싼다.
+모델은 영상과 오디오(음성·효과음·음악)를 한 번에 만든다. 공식 파이프라인은 짧은 프롬프트를 아래 3단 형식(Context-IR)으로 확장해서 넣는다.
+**Diffusers 엔진은 서버가 이 확장을 직접 한다**: GPU 0 의 텍스트 인코더(= Qwen3-VL-32B-Instruct 원본과 같은 파일)로 MiniMax 공식 작성 가이드(`VIDEO_PROMPT_WRITING_GUIDE_base/ref_en.md`, provision.sh 가 `$STORAGE_ROOT/h3-guides` 에 받음)를 따라 다시 쓴다. 미리 보기는 `h3video ir "..."`, 끄기는 `--raw`, 자세한 것은 [VIDEO.md](VIDEO.md) 2절.
 
 ```
 integrated_multimodal_description: [Shot 1] 카메라·피사체·동작·조명을 시간 순서로. [Shot 2] ...
@@ -503,7 +507,7 @@ overall_soundscape: 환경음·효과음.
 non_diegetic_music: 배경음악 스타일·템포.
 ```
 
-- 대사는 `<d>[Korean] 안녕하세요, 반갑습니다.</d>` 처럼 언어 태그와 함께 넣는다. 한국어 포함 11개 언어.
+- 대사는 `The young woman (S1) says: <d>[Korean] 안녕하세요, 반갑습니다.</d>` 처럼 화자 번호와 언어 태그를 함께 넣는다(공식 가이드 4.4). 한국어 포함 11개 언어.
 - 카메라 움직임(드론, 팬, 줌), 시간대·조명, 피사체의 동작을 시간 순서로 구체적으로 쓸수록 안정적이다.
 - 장면 체인은 앞 장면의 마지막 프레임을 다음 장면의 첫 프레임으로 넘길 뿐, 프롬프트는 모든 장면에 같은 것이 들어간다. 장면마다 다른 내용을 원하면 작업을 따로 나눠 만들고 ffmpeg 로 잇는다.
 - ref2va 에서 레퍼런스 인물은 `<Subject 1>`, `<Subject 2>` 로 가리킨다(이미지 넣은 순서).

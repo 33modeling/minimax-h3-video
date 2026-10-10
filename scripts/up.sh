@@ -56,6 +56,9 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
     if python3 "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant "$v"; then green "✓ Diffusers 형식 가중치($v): $H3_DIFFUSERS_DIR"
     else fail "Diffusers 형식 가중치($v)가 아직 없다 (위 목록)" "bash scripts/provision.sh$([[ $REF == 1 ]] && echo ' --ref')  (없는 것만 받는다, 텍스트 인코더는 FL2VA 것 재사용)"; fi
   done
+  if [[ -s "$H3_GUIDE_DIR/VIDEO_PROMPT_WRITING_GUIDE_base_en.md" && -s "$H3_GUIDE_DIR/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md" ]]; then
+    green "✓ 프롬프트 다듬기: 공식 작성 가이드 있음 (짧은 요청을 H3 공식 형식으로 다시 써서 생성)"
+  else yellow "· 공식 작성 가이드가 없어 프롬프트를 다듬지 않는다 → bash scripts/provision.sh --skip-model (40KB 만 받는다)"; fi
   if "$VENV/bin/python" -c "from diffusers import MiniMaxH3ModularPipeline" 2>/dev/null; then green "✓ diffusers: $VENV"
   else fail "Diffusers venv 없음 또는 불완전: $VENV" "bash scripts/provision.sh"; fi
   # 컴포넌트를 CPU 메모리에 두고 GPU 로 옮겨 쓴다: 서버 하나에 약 140GB (텍스트 인코더 62 + 영상 모델 62 + VAE 10)
