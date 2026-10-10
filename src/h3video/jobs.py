@@ -52,6 +52,7 @@ class Scene:
     video_id: str | None = None
     status: str = "pending"      # pending | queued | in_progress | completed | failed
     progress: float = 0.0
+    stage: str | None = None     # 서버가 알려 주는 단계 (다듬는 중·생성 중·디코딩)
     output: str | None = None
     error: str | None = None
 
@@ -241,6 +242,7 @@ class Worker(threading.Thread):
             def on_progress(st, sc=sc, job=job):
                 sc.status = st.get("status", sc.status)
                 sc.progress = float(st.get("progress") or 0)
+                sc.stage = st.get("stage") or sc.stage
                 self.store.save(job)
 
             st = client.wait(sc.video_id, poll=self.poll, timeout=WAIT_TIMEOUT, on_progress=on_progress)

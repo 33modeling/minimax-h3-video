@@ -86,6 +86,7 @@ bash scripts/down.sh                 # 다른 창에서 끄기
 | `서버가 끝났다` | 바로 위 원본 로그가 원인. 남은 프로세스는 이미 끄고 GPU 를 반환했다 |
 | `The NVIDIA driver on your system is too old` | sglang 을 CUDA 12 노드에서 띄웠다. `bash scripts/provision.sh` → `bash scripts/up.sh` 하면 Diffusers 엔진으로 바뀐다 |
 | 남은 서버만 끄고 싶다 | `python3 scripts/h3_leftovers.py --kill` |
+| 느리다 | 요청마다 서버 로그에 `걸린 시간: 다듬기 … 조건 … 디노이징 …(스텝당 …초) · 디코딩 …` 이 찍힌다. 어느 단계인지 보고 줄인다 |
 
 ## 6. 바꿀 수 있는 것 (환경 변수)
 

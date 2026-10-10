@@ -56,10 +56,13 @@ class MemoryCheckTest(unittest.TestCase):
     def body(self, seconds, size=768):
         return {"task": "t2va", "prompt": "p", "target": {"short_edge": size, "aspect_ratio": "16:9", "duration_seconds": seconds}}
 
-    def test_one_gpu_15s_rejected_with_advice(self):
-        with self.assertRaises(dserver.BadRequest) as cm:
-            self.engine().plan(self.body(15))
-        msg = str(cm.exception)
+    def test_one_gpu_15s_warns_but_does_not_reject(self):
+        from unittest import mock
+        with mock.patch.object(dserver, "log") as lg:
+            plan = self.engine().plan(self.body(15))   # 추정치로는 거절하지 않는다 (실제 GPU 는 덜 쓸 수 있다)
+        self.assertEqual(plan["num_frames"], 345)
+        msg = " ".join(str(c.args[0]) for c in lg.call_args_list)
+        self.assertIn("[경고] 메모리가 모자랄 수 있다", msg)
         self.assertIn("-s 12 이하", msg)   # 13초는 프레임이 328(13.67초)로 올림돼 안 들어간다
         self.assertIn("--size 576", msg)
         self.assertIn("GPU 4장", msg)

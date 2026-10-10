@@ -134,7 +134,9 @@ def scene_line(jb: Job) -> str:
         elif s.status == "failed":
             marks.append(f"장면{s.index + 1} 실패")
         elif s.status == "in_progress":
-            marks.append(f"장면{s.index + 1} {round(s.progress * 100)}%")
+            stage = getattr(s, "stage", None)
+            marks.append(f"장면{s.index + 1} " + (f"{stage} " if stage and stage != "생성 중" else "")
+                         + (f"{round(s.progress * 100)}%" if stage in (None, "생성 중") else "").rstrip())
         elif s.status == "queued":
             marks.append(f"장면{s.index + 1} 서버 대기열")
     return f"{STATUS_KO.get(jb.status, jb.status)} " + (" · ".join(marks) if marks else "")

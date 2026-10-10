@@ -91,7 +91,7 @@ h3video batch prompts.txt -o ~/videos/
 | `bash scripts/up.sh` (GPU 4장을 영상 하나에) | 15초 |
 | `bash scripts/up.sh --ref` (2장씩 나눔) | 12초, `--size 576` 이면 15초 |
 
-- 모자라면 서버가 생성 전에 `GPU 메모리가 모자라 시작하지 않았다 … -s N 이하로` 를 바로 알려 준다.
+- 서버 로그의 `메모리 예상` 은 참고용이다. 모자랄 것 같으면 `[경고]` 만 남기고 그대로 만든다. 실제로 OOM 이 나면 그 작업만 실패하고 할 일(`-s` 줄이기·`--size 576`)을 알려 준다.
 - 길이와 상관없이 OOM 이 나면 다른 작업이 GPU 를 쓰는 것이다. `up.sh` 를 다시 띄우면 빈 GPU 만 쓴다.
 
 ## 7. 결과
@@ -116,6 +116,7 @@ h3video fetch <video_id> -o a.mp4     # 서버에 남은 완성본 받기 (참�
 | `서버가 응답하지 않는다` | `bash scripts/status.sh` → 꺼져 있으면 `bash scripts/up.sh` |
 | 참고 자료 요청이 안 된다 | `bash scripts/up.sh --ref` 로 띄운다 |
 | 프롬프트를 안 따른다 | `h3video ir` 로 바뀐 결과 확인 → 고쳐서 `--raw` |
-| `GPU 메모리가 모자라 시작하지 않았다` | 메시지대로 `-s` 줄이기 또는 `--size 576` (6절) |
+| `GPU 메모리 부족(OOM)` | 메시지대로 `-s` 줄이기 또는 `--size 576` (6절) |
+| 느리다 | 서버 로그의 `걸린 시간: 다듬기 … 디노이징 …(스텝당 …초)` 를 본다. 빠르게: `--steps 30`, `--size 576`, 다듬기 생략 `--raw` |
 | `out of memory` | 다른 작업이 GPU 사용 중 → `bash scripts/up.sh` 다시 |
 | 생성 중 서버가 끝났다 | `up.sh` 화면의 바로 위 오류를 확인한다 |

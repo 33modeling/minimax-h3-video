@@ -180,6 +180,11 @@ class Engine:
     def _count(self, *_):
         self._steps_done += 1
 
+    def _stage(self, name: str) -> None:
+        self.stage, self._stage_t0 = name, time.time()
+        if getattr(self, "on_stage", None):
+            self.on_stage(name)
+
     # ── 메모리 검사: 길이·해상도·조건이 영상 모델 장에 들어가는지 생성 전에 본다 ──
     def rows(self, plan: dict, h: int, w: int, state=None) -> dict:
         """영상 모델이 한 번에 보는 시퀀스 행 수 (영상·오디오·텍스트·조건). state 가 있으면 실제 조건 크기를 쓴다."""
@@ -201,6 +206,7 @@ class Engine:
         return r
 
     def check_memory(self, plan: dict, h: int, w: int, state=None, when: str = "") -> None:
+        """추정치는 참고용: 로그에 남기고, 모자랄 것 같으면 경고만 한다 (거절하지 않는다 — 실제 GPU 는 추정보다 덜 쓸 수 있다)."""
         if not getattr(self, "headroom", None):
             return
         r = self.rows(plan, h, w, state)
@@ -226,8 +232,8 @@ class Engine:
             tips.append(f"레퍼런스·키프레임을 줄이기 (조건이 {r['cond']:,}행)")
         if self.cp_world == 1:
             tips.append("GPU 4장으로 띄우기 (bash scripts/up.sh 를 --ref 없이 → 영상 모델 3장에 나눠 장마다 1/3)")
-        raise BadRequest(f"GPU 메모리가 모자라 시작하지 않았다: 영상 모델 장마다 약 {need / 2**30:.1f}GB 필요, "
-                         f"여유 {self.headroom / 2**30:.1f}GB. 할 일: " + " / ".join(tips))
+        log(f"[경고] 메모리가 모자랄 수 있다 (추정 약 {need / 2**30:.1f}GB / 여유 {self.headroom / 2**30:.1f}GB). 그래도 시도한다. "
+            f"OOM 이 나면: " + " / ".join(tips))
 
     # ── 영상 모델 워커 (GPU 3장 이상) ──
     def _start_workers(self, model_dir: str, variant: str, devs: list[str], dtype: str, attn: str | None) -> None:
@@ -311,7 +317,7 @@ class Engine:
             elif m.startswith(b"DONE"):
                 res = torch.load(io.BytesIO(m[4:]), weights_only=False)
                 if not res["ok"]:
-                    raise RuntimeError("영상 모델 워커: " + res["error"])
+                    raise RuntimeError("영상 모델 워커: " + res["error"])   # OOM 이면 run() 이 할 일을 붙인다
                 return res
 
     # ── 요청 → 파이프라인 입력 ──
@@ -491,8 +497,11 @@ class Engine:
     def run(self, plan: dict, out_path: Path, on_progress) -> str:
         from diffusers.utils.export_utils import encode_video
         torch = self.torch
+        t_all = time.time()
         inputs, first_image = self._load_inputs(plan)
+        self._stage("다듬는 중")
         inputs["prompt"] = self._prepare_prompt(plan, inputs)
+        t_rw = time.time() - self._stage_t0
         h, w = self._canvas(plan["aspect"], plan["short_edge"], first_image)
         inputs.update(height=h, width=w)
         total = max(1, plan["steps"] - 1)   # num_inference_steps 는 끝점 0 을 포함해 센다 → 모델 호출은 하나 적다
@@ -512,27 +521,53 @@ class Engine:
                 on_progress(min(0.99, self._steps_done / total))
         self._steps_done = 0
         threading.Thread(target=ticker, daemon=True).start()
+        times = {}
         try:
             gen = {k: inputs[k] for k in ("num_frames", "height", "width", "num_inference_steps")}
+            self._stage("생성 중")
+            t0 = time.time()
             if self.mode == "single":
                 self.check_memory(plan, h, w, when=" (생성 전)")
                 r = self.pipe(**inputs, generator=g, output=OUTPUTS)
             elif self.mode == "split":   # 조건(VAE 장) → 디노이징(영상 모델 장) → 디코딩(VAE 장)
                 state = self.cond(**inputs, generator=g)
+                times["조건"] = time.time() - t0
                 self.check_memory(plan, h, w, state, when=" (조건 포함)")
+                t0 = time.time()
                 res = self.pipe(state=state, generator=g, output=["latents", "audio_latents"], **gen)
+                times["디노이징"] = time.time() - t0
+                self._stage("디코딩")
+                t0 = time.time()
                 dev = torch.device(self._cond_dev)
                 r = self.dec(latents=res["latents"].to(dev), audio_latents=res["audio_latents"].to(dev), output=OUTPUTS)
+                times["디코딩"] = time.time() - t0
             else:   # cp: 조건(여기) → 디노이징(워커들) → 디코딩(여기)
                 state = self.cond(**inputs, generator=g)
+                times["조건"] = time.time() - t0
                 self.check_memory(plan, h, w, state, when=" (조건 포함)")
+                t0 = time.time()
                 res = self._denoise_remote(state, g, gen)
+                times["디노이징"] = time.time() - t0
+                self._stage("디코딩")
+                t0 = time.time()
                 dev = torch.device(self._cond_dev)   # 워커가 CPU 로 돌려준 latents → VAE 가 있는 첫 장으로
                 r = self.dec(latents=res["latents"].to(dev), audio_latents=res["audio_latents"].to(dev), output=OUTPUTS)
+                times["디코딩"] = time.time() - t0
+        except Exception as e:
+            if "out of memory" in str(e).lower() or type(e).__name__ == "OutOfMemoryError":
+                raise RuntimeError(f"GPU 메모리 부족(OOM): {str(e).splitlines()[0][:200]} — 할 일: -s 를 줄이기, --size 576, "
+                                   "또는 GPU 4장 방식(bash scripts/up.sh 를 --ref 없이)") from e
+            raise
         finally:
             stop.set()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()   # 다음 요청·메모리 검사가 실제 여유를 보게
+        if "디노이징" not in times:
+            times["조건+디노이징+디코딩"] = time.time() - t0
+        steps = max(1, plan["steps"] - 1)
+        log(f"걸린 시간: 다듬기 {t_rw:.0f}초 · " + " · ".join(f"{k} {v:.0f}초" for k, v in times.items())
+            + (f" (스텝당 {times['디노이징'] / steps:.1f}초 × {steps})" if "디노이징" in times else "")
+            + f" · 전체 {time.time() - t_all:.0f}초")
         tmp = out_path.with_suffix(".part.mp4")
         encode_video(r["videos"][0], fps=24, output_path=str(tmp), audio=r["audio"][0],
                      audio_sample_rate=r["sampling_rate"])
@@ -621,6 +656,7 @@ class Server:
                 job["finished_at"] = int(time.time())
                 job["done"].set()
                 return
+            self.engine.on_stage = lambda s, j=job: j.__setitem__("stage", s)
             used = self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
             job.update(status="completed", progress=1.0, file=str(out), prompt_used=used)
             log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
@@ -691,7 +727,7 @@ def make_handler(srv: Server):
                     return self._json(404, {"error": f"없는 id: {parts[3]}"})
                 if len(parts) == 4:
                     return self._json(200, {k: job.get(k) for k in ("id", "status", "progress", "error", "created_at",
-                                                                    "started_at", "finished_at", "task", "prompt_used")})
+                                                                    "started_at", "finished_at", "task", "prompt_used", "stage")})
                 if parts[4] == "content":
                     f = Path(job.get("file") or "")
                     if job.get("status") != "completed" or not f.is_file():
