@@ -3,8 +3,8 @@
 MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 SGLang 으로 서빙하고, 프롬프트만 넣으면 오디오 포함 영상을 만들어 주는 도구.
 로컬호스트 웹 UI 로 진행 상황을 보고 결과를 바로 재생한다. 클라이언트는 표준 라이브러리만 쓴다(의존성 0).
 
-**처음이면 [USAGE.md](USAGE.md)** — 코드 올리기부터 서버 실행, TUI 키, 결과 위치, 문제 해결까지 순서대로 적어 두었다.
-**영상 만드는 법만 보려면 [VIDEO.md](VIDEO.md)** — 명령·옵션·프롬프트 쓰는 법(서버가 공식 형식으로 다듬는 것 포함)·결과 위치.
+- **영상 만들기: [VIDEO.md](VIDEO.md)** — 명령·프롬프트(아무 형식이나, 서버가 공식 형식으로 바꿈)·옵션·결과 위치
+- **서버 준비·운영: [USAGE.md](USAGE.md)** — 처음 설치(provision), 띄우기·확인·끄기(up·status·down), 저장 위치, 문제 해결
 
 - **영상 한 편**: `h3video gen "..." -s 8` (이 레포의 기본 기능)
 - **숏폼 제작**: 장면 영상에 자막·제목·배경음악·템플릿을 얹어 9:16 숏폼으로 합성한다. [`shortform/`](shortform/) (예전 shortform-studio 레포를 2026-10-10 이 레포로 합침). `h3video shorts run job.json` 또는 `shorts run job.json`, 웹은 33modeling 허브의 "숏폼 제작". 자세한 것은 [shortform/USAGE.md](shortform/USAGE.md)
@@ -127,7 +127,7 @@ h3video jobs / h3video show last              # 지난 작업, 마지막 작업 
 h3video fetch <video_id> [--ref] -o x.mp4     # 서버에서 받기 (ref2va 는 --ref)
 ```
 
-결과 mp4 경로만 표준 출력으로 나오고, 종료 코드는 0 성공·1 실패·2 옵션 오류·130 Ctrl+C. 자세한 것은 [USAGE.md](USAGE.md) 4-2절.
+결과 mp4 경로만 표준 출력으로 나오고, 종료 코드는 0 성공·1 실패·2 옵션 오류·130 Ctrl+C. 자세한 것은 [VIDEO.md](VIDEO.md).
 
 ## 프롬프트 요령
 
