@@ -31,6 +31,19 @@ h3_find_models() {
     h3_model_ok "$d" && realpath -m -- "$d"
   done
 }
+# 포트를 누가 쓰고 있나 (0 = 쓰는 중). ss 가 없는 컨테이너에서도 되게 실제로 바인딩해 본다.
+h3_port_busy() {
+  python3 - "$1" <<'PY' 2>/dev/null
+import socket, sys
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(("0.0.0.0", int(sys.argv[1])))
+except OSError:
+    sys.exit(0)   # 누가 쓰고 있다
+sys.exit(1)
+PY
+}
+
 # 서버 끄기: 우리가 띄운 프로세스와 그 하위 프로세스(sglang 워커 등)만 정확히 끈다 (다른 GPU 실험은 건드리지 않는다).
 h3_tree() { local c; echo "$1"; for c in $(ps -o pid= --ppid "$1" 2>/dev/null); do h3_tree "$c"; done; }
 h3_stop_tree() {

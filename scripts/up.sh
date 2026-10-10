@@ -44,7 +44,7 @@ ngpu=0; command -v nvidia-smi >/dev/null && ngpu=$(nvidia-smi -L 2>/dev/null | g
 need=$(tr ',' '\n' <<<"$GPUS" | grep -c .); [[ $REF == 1 ]] && need=$((need + $(tr ',' '\n' <<<"$REF_GPUS" | grep -c .)))
 if [[ $ngpu -ge $need ]]; then green "✓ GPU ${ngpu}장 (필요 ${need}장)"; else fail "GPU ${ngpu}장, 필요 ${need}장" "--gpus 로 줄이거나 --ref 빼기"; fi
 healthy() { curl -fsS -m 5 "http://127.0.0.1:$1/health" >/dev/null 2>&1 || curl -fsS -m 5 "http://127.0.0.1:$1/v1/models" >/dev/null 2>&1; }
-in_use() { ss -ltn 2>/dev/null | grep -q ":$1 "; }
+in_use() { h3_port_busy "$1"; }   # ss 없이도 (실제 바인딩으로) 확인
 declare -A PORT=([fl2va]=$H3_PORT_FL2VA [ref2va]=$H3_PORT_REF2VA [web]=${H3_WEB_PORT:-8790})
 TODO=(fl2va); [[ $REF == 1 ]] && TODO+=(ref2va); [[ $WEB == 1 ]] && TODO+=(web)
 START=()

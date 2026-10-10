@@ -8,6 +8,6 @@ source "$ROOT/scripts/cluster_env.sh" >/dev/null || exit 1
 bash "$ROOT/scripts/stop.sh"
 if [[ -f "$H3_LOG_DIR/web.pid" ]]; then p=$(cat "$H3_LOG_DIR/web.pid"); rm -f "$H3_LOG_DIR/web.pid"; echo "[down] 웹 UI pid=$p 종료"; h3_stop_tree "$p" >/dev/null; fi
 for p in "$H3_PORT_FL2VA" "$H3_PORT_REF2VA" "${H3_WEB_PORT:-8790}"; do
-  ss -ltn 2>/dev/null | grep -q ":$p " && echo "[down] 주의: 포트 $p 가 아직 열려 있다 (ss -ltnp 로 확인)"
+  h3_port_busy "$p" && echo "[down] 주의: 포트 $p 가 아직 열려 있다"
 done
 exit 0

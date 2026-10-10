@@ -15,7 +15,18 @@ if [[ -n "$GPUS" ]]; then export CUDA_VISIBLE_DEVICES="$GPUS"; NGPU=$(tr ',' '\n
 PORT="$H3_PORT_FL2VA"; [[ "$VARIANT" == ref2va ]] && PORT="$H3_PORT_REF2VA"
 [[ -f "$H3_MODEL_DIR/model_index.json" ]] || { echo "모델 없음: $H3_MODEL_DIR (provision.sh 또는 H3_MODEL_DIR 확인)"; exit 1; }
 command -v sglang >/dev/null || { echo "sglang 없음 — provision.sh 실행 또는 docker 사용"; exit 1; }
-if ss -ltn 2>/dev/null | grep -q ":$PORT "; then echo "포트 $PORT 이미 사용 중 (stop.sh 로 정리)"; exit 1; fi
+port_busy() {
+  python3 - "$PORT" <<'PY' 2>/dev/null
+import socket, sys
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(("0.0.0.0", int(sys.argv[1])))
+except OSError:
+    sys.exit(0)   # 누가 쓰고 있다
+sys.exit(1)
+PY
+}
+if port_busy; then echo "포트 $PORT 이미 사용 중 (이미 떠 있는 서버를 쓰거나 bash scripts/down.sh)"; exit 1; fi
 
 LOG="$H3_LOG_DIR/serve-$VARIANT-$(date +%Y%m%d-%H%M%S).log"
 PIDFILE="$H3_LOG_DIR/serve-$VARIANT.pid"
