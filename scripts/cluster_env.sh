@@ -18,8 +18,12 @@ if [[ -f "$_REPO_ROOT/.cluster_env.local.sh" ]]; then _H3_IN_LOCAL_ENV=1; source
 export GROUP_VOLUME_ROOT="${GROUP_VOLUME_ROOT:-/group-volume}"
 export STORAGE_ROOT="${STORAGE_ROOT:-$GROUP_VOLUME_ROOT/minsoo3.kim/$REPO_NAME}"
 export MODELS_DIR="${MODELS_DIR:-$GROUP_VOLUME_ROOT/models}"
-# 모델 위치 (고정): /group-volume/models/MiniMax-H3
-export H3_MODEL_DIR="${H3_MODEL_DIR:-$GROUP_VOLUME_ROOT/models/MiniMax-H3}"
+# 모델 위치 (고정): /group-volume/models/MiniMax-H3 — 셸 환경변수나 .cluster_env.local.sh 의 H3_MODEL_DIR 는 쓰지 않는다
+H3_MODEL_DEFAULT="$GROUP_VOLUME_ROOT/models/MiniMax-H3"
+if [[ -n "${H3_MODEL_DIR:-}" && "${H3_MODEL_DIR%/}" != "$H3_MODEL_DEFAULT" ]]; then
+  echo "[cluster-env] H3_MODEL_DIR=$H3_MODEL_DIR 는 무시하고 고정 위치를 쓴다: $H3_MODEL_DEFAULT" >&2
+fi
+export H3_MODEL_DIR="$H3_MODEL_DEFAULT"
 h3_model_ok() { [[ -d "$1" ]] && { [[ -f "$1/model_index.json" ]] || compgen -G "$1/[Ff][Ll]2[Vv][Aa]" >/dev/null; }; }
 # 위치는 그대로 두고, 그 안의 구조만 맞춰 찾는다: 한 단계 더 들어간 폴더, HF 캐시(models--…/snapshots/<해시>) 등.
 # 폴더 이름의 대소문자가 다르면(minimax-h3 등) /group-volume/models 안에서 그 이름도 본다. 받기는 하지 않는다.
@@ -39,18 +43,7 @@ h3_resolve_model() {
   done < <(timeout 20 find -L "$base" -maxdepth 5 -iname model_index.json 2>/dev/null | sort)
   return 1
 }
-H3_MODEL_DEFAULT="$GROUP_VOLUME_ROOT/models/MiniMax-H3"
-if ! h3_model_ok "$H3_MODEL_DIR"; then
-  if _m="$(h3_resolve_model "$H3_MODEL_DIR")"; then
-    export H3_MODEL_DIR="$_m"
-  elif [[ "$H3_MODEL_DIR" != "$H3_MODEL_DEFAULT" ]] && _m="$(h3_resolve_model "$H3_MODEL_DEFAULT")"; then
-    # 다른 경로로 덮어써져 있는데 거기 가중치가 없으면 기본 위치를 쓴다
-    if [[ -n "$_h3_env_model" && "$_h3_env_model" == "$H3_MODEL_DIR" ]]; then _src="셸 환경변수 H3_MODEL_DIR (unset H3_MODEL_DIR, ~/.bashrc 확인)"
-    else _src="$_REPO_ROOT/.cluster_env.local.sh 의 H3_MODEL_DIR 줄 (지우면 됨)"; fi
-    echo "[cluster-env] $H3_MODEL_DIR 에 가중치가 없어 기본 위치를 쓴다: $_m  ← 덮어쓴 곳: $_src" >&2
-    export H3_MODEL_DIR="$_m"
-  fi
-fi
+if ! h3_model_ok "$H3_MODEL_DIR" && _m="$(h3_resolve_model "$H3_MODEL_DIR")"; then export H3_MODEL_DIR="$_m"; fi
 
 # 포트를 누가 쓰고 있나 (0 = 쓰는 중). ss 가 없는 컨테이너에서도 되게 실제로 바인딩해 본다.
 h3_port_busy() {

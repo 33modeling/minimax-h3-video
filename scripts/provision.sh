@@ -5,7 +5,9 @@
 # 정말 새로 받아야 할 때만 --download (수백 GB, 받을 위치는 H3_MODEL_DIR).
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"
-[[ -n "${STORAGE_ROOT:-}" ]] || { echo "cluster_env.sh 를 먼저 source 하라"; exit 1; }
+# 환경은 이 스크립트가 직접 읽는다: 셸에 남은 예전 값(H3_MODEL_DIR 등)이 아니라 고정 위치를 쓰게
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cluster_env.sh" >/dev/null || { echo "cluster_env.sh 실패"; exit 1; }
 unset HF_HUB_OFFLINE HF_DATASETS_OFFLINE TRANSFORMERS_OFFLINE || true
 log() { printf '[provision %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 

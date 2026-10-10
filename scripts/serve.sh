@@ -4,7 +4,9 @@
 #   fl2va : 텍스트→영상, 첫/끝 프레임→영상 (포트 $H3_PORT_FL2VA)
 #   ref2va: 이미지·영상·오디오 레퍼런스→영상 (포트 $H3_PORT_REF2VA)
 set -Eeuo pipefail
-[[ -n "${STORAGE_ROOT:-}" ]] || { echo "cluster_env.sh 를 먼저 source 하라"; exit 1; }
+# 환경은 이 스크립트가 직접 읽는다: 셸에 남은 예전 값(H3_MODEL_DIR 등)이 아니라 고정 위치를 쓰게
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cluster_env.sh" >/dev/null || { echo "cluster_env.sh 실패"; exit 1; }
 VARIANT="${1:-}"; shift || true
 [[ "$VARIANT" == fl2va || "$VARIANT" == ref2va ]] || { echo "usage: serve.sh fl2va|ref2va [--gpus LIST] [--mode speed|memory] [-- extra]"; exit 2; }
 GPUS="${CUDA_VISIBLE_DEVICES:-}"; MODE="${H3_PERF_MODE:-speed}"; EXTRA=()
