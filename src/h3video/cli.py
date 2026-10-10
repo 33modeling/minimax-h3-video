@@ -54,6 +54,26 @@ def fmt_secs(s: float) -> str:
     return f"{s // 60}분 {s % 60:02d}초" if s >= 60 else f"{s}초"
 
 
+PROMPT_EXTS = (".txt", ".md", ".json", ".prompt", ".text", ".yaml", ".yml")
+
+
+def looks_like_file(s: str) -> bool:
+    s = s.strip()
+    return bool(s) and not any(c.isspace() for c in s) and (s.lower().endswith(PROMPT_EXTS) or "/" in s)
+
+
+def similar_files(s: str) -> str:
+    import difflib
+    p = Path(s).expanduser()
+    folder = p.parent if str(p.parent) not in ("", ".") else Path.cwd()
+    try:
+        names = [f.name for f in folder.iterdir() if f.is_file()]
+    except OSError:
+        return ""
+    near = difflib.get_close_matches(p.name, names, n=3, cutoff=0.6)
+    return (" — 혹시: " + ", ".join(str(folder / n) if folder != Path.cwd() else n for n in near)) if near else ""
+
+
 def read_prompt(a) -> str:
     if a.prompt_file == "-" or a.prompt == "-":
         text = sys.stdin.read()
@@ -62,6 +82,8 @@ def read_prompt(a) -> str:
     elif a.prompt and "\n" not in a.prompt and len(a.prompt) < 4096 and Path(a.prompt).expanduser().is_file():
         text = Path(a.prompt).expanduser().read_text(encoding="utf-8")   # 파일 이름을 주면 그 내용 (-f 없이)
         print(f"[프롬프트] 파일 {a.prompt} 을 읽었다 ({len(text)}자)", file=sys.stderr)
+    elif a.prompt and looks_like_file(a.prompt):   # 파일 이름처럼 생겼는데 없다 → 오타일 것: 그 글자로 영상을 만들지 않는다
+        raise H3Error(f"프롬프트 파일이 없다: {a.prompt}" + similar_files(a.prompt))
     elif a.prompt:
         text = a.prompt
     elif not sys.stdin.isatty():

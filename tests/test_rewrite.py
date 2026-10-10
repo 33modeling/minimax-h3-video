@@ -210,3 +210,25 @@ class GenWithReferences(unittest.TestCase):
             code, out, err = self.run_cli("gen", "x", "--image", img, "--first", img, "-s", "6", "--dry-run")
             self.assertNotEqual(code, 0)
             self.assertIn("같이 쓸 수 없다", out + err + str(code))
+
+
+class PromptFileTypos(unittest.TestCase):
+    def test_missing_file_like_prompt_is_an_error_with_suggestion(self):
+        import tempfile, os
+        from h3video import cli
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "prompt.txt"), "w").write("여우")
+            old = os.getcwd(); os.chdir(d)
+            try:
+                code = None
+                try:
+                    cli.main(["gen", "proompt.txt", "-s", "10", "--dry-run"])
+                except SystemExit as e:
+                    code = e.code
+                self.assertIn("프롬프트 파일이 없다: proompt.txt", str(code))
+                self.assertIn("prompt.txt", str(code))
+                self.assertFalse(cli.looks_like_file("비 오는 밤"))          # 글은 그대로 프롬프트
+                self.assertFalse(cli.looks_like_file("A fox runs."))
+                self.assertTrue(cli.looks_like_file("prompts/a.md"))
+            finally:
+                os.chdir(old)
