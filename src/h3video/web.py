@@ -15,6 +15,7 @@ import email.policy
 import json
 import mimetypes
 import os
+import re
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,6 +38,14 @@ class App:
         self.worker = Worker(self.store, self.client, self.ref_client, inbox_dir=inbox_dir, poll=poll)
         self.worker.start()
         self.endpoint, self.ref_endpoint = endpoint, ref_endpoint
+        self.inbox_dir = inbox_dir
+
+    def allowed_input(self, path: str) -> bool:
+        if path.startswith(("http://", "https://")):
+            return True
+        p = Path(path[7:] if path.startswith("file://") else path).expanduser().resolve()
+        roots = [self.upload_dir.resolve()] + ([Path(self.inbox_dir).expanduser().resolve()] if self.inbox_dir else [])
+        return any(r == p or r in p.parents for r in roots)
 
     def save_upload(self, filename: str | None, data: bytes) -> str | None:
         if not filename or not data:
@@ -102,6 +111,43 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             self.end_headers()
             self.wfile.write(body)
 
+        def _send_file(self, f: Path):
+            """Range 요청을 받는다: 브라우저 <video> 가 구간 이동을 하고, Safari·iOS 는 Range 없이는 재생하지 않는다.
+            큰 mp4 를 메모리에 다 올리지 않고 나눠 보낸다."""
+            size = f.stat().st_size
+            start, end, code = 0, size - 1, 200
+            m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range", "").strip())
+            if m and (m.group(1) or m.group(2)):
+                if m.group(1):
+                    start = int(m.group(1)); end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+                else:  # bytes=-N : 마지막 N 바이트
+                    start = max(0, size - int(m.group(2)))
+                if start >= size or start > end:
+                    self.send_response(416); self._cors()
+                    self.send_header("Content-Range", f"bytes */{size}"); self.send_header("Content-Length", "0"); self.end_headers()
+                    return
+                code = 206
+            self.send_response(code)
+            self._cors()
+            self.send_header("Content-Type", mimetypes.guess_type(f.name)[0] or "application/octet-stream")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(end - start + 1))
+            if code == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            try:
+                with f.open("rb") as fh:
+                    fh.seek(start)
+                    left = end - start + 1
+                    while left > 0:
+                        chunk = fh.read(min(1 << 20, left))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        left -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # 재생 중 다른 구간으로 넘기면 브라우저가 연결을 끊는다
+
         def _json(self, obj, code=200):
             self._send(code, json.dumps(obj, ensure_ascii=False).encode())
 
@@ -128,9 +174,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 f = (app.store.root / rel).resolve()
                 if app.store.root.resolve() not in f.parents or not f.is_file():
                     return self._json({"error": "없음"}, 404)
-                data = f.read_bytes()
-                ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
-                return self._send(200, data, ctype)
+                return self._send_file(f)
             self._json({"error": "not found"}, 404)
 
         def do_POST(self):
@@ -158,7 +202,15 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                     body = json.loads(self.rfile.read(n) or b"{}")
                     g = lambda k, d=None: body.get(k, d)  # noqa: E731
                     refs = body.get("refs") or []
+                    if not isinstance(refs, list) or any(not isinstance(r, dict) or r.get("type") not in ("image", "video", "audio")
+                                                         or not isinstance(r.get("path"), str) for r in refs):
+                        raise H3Error('refs 는 [{"type": "image|video|audio", "path": "..."}] 형식')
                     first, last = body.get("first_image"), body.get("last_image")
+                    # 웹 요청이 이 컴퓨터의 아무 파일이나 가리켜 공유 inbox 로 복사되게 두지 않는다:
+                    # http(s) 주소, 또는 이 서버가 받은 업로드·inbox 안의 파일만.
+                    for path in [first, last] + [r["path"] for r in refs]:
+                        if path and not app.allowed_input(str(path)):
+                            raise H3Error(f"로컬 파일 경로는 업로드(multipart)로 보내라: {path}")
                 job = new_job(prompt=str(g("prompt", "")).strip(), seconds=int(g("seconds", 8)),
                               aspect_ratio=str(g("aspect_ratio", "16:9")), seed=int(g("seed", 0) or 0),
                               task=(g("task") or None), first_image=first, last_image=last, refs=refs,

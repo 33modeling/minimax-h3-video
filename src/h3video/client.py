@@ -8,6 +8,7 @@ conditions[].uri 의 file:// 경로는 *서버 프로세스*가 읽으므로 로
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import shutil
@@ -123,17 +124,20 @@ class H3Client:
         self.timeout = timeout
 
     # --- HTTP ---
-    def _request(self, method: str, path: str, body: dict | None = None, raw: bool = False):
+    def _request(self, method: str, path: str, body: dict | None = None, raw: bool = False, timeout: float | None = None):
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.endpoint + path, data=data, method=method,
                                      headers={"Content-Type": "application/json", "Accept": "*/*"})
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
                 payload = r.read()
         except urllib.error.HTTPError as e:
             raise H3Error(f"{method} {path} -> HTTP {e.code}: {e.read()[:500].decode(errors='replace')}") from e
         except urllib.error.URLError as e:
             raise H3Error(f"{method} {path} 연결 실패 ({self.endpoint}): {e.reason}") from e
+        except (OSError, http.client.HTTPException) as e:
+            # 연결 직후 끊김(SSH 터널은 살아 있는데 서버가 꺼짐), 응답 중 시간 초과 등: urlopen 이 URLError 로 감싸지 않는 경우
+            raise H3Error(f"{method} {path} 연결이 끊겼다 ({self.endpoint}): {type(e).__name__}: {e}") from e
         if raw:
             return payload
         try:
@@ -141,10 +145,11 @@ class H3Client:
         except json.JSONDecodeError as e:
             raise H3Error(f"{method} {path} JSON 아님: {payload[:200]!r}") from e
 
-    def healthy(self) -> bool:
+    def healthy(self, timeout: float = 5.0) -> bool:
+        """짧게 확인한다: 서버가 멈춰 있을 때 웹 /api/health 나 TUI 화면이 60초씩 굳지 않게."""
         for path in ("/health", "/v1/models"):
             try:
-                self._request("GET", path)
+                self._request("GET", path, timeout=timeout)
                 return True
             except H3Error:
                 continue
@@ -180,7 +185,8 @@ class H3Client:
             if s == "failed":
                 raise H3Error(f"생성 실패 {video_id}: {st.get('error')}")
             if time.monotonic() - t0 > timeout:
-                raise H3Error(f"대기 시간 초과 {video_id} ({timeout}s), 마지막 상태 {s}")
+                raise H3Error(f"대기 시간 초과 {video_id} ({int(timeout)}초, 마지막 상태 {s}). 서버에서는 계속될 수 있으니 "
+                              f"끝난 뒤 h3video fetch {video_id} 로 받는다. 한도는 H3_WAIT_TIMEOUT(초)")
             time.sleep(poll)
 
     def download(self, video_id: str, out_path: str | os.PathLike) -> Path:

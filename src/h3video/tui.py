@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -58,6 +59,7 @@ class Tui:
         self.sel = 0
         self.msg = "n: 새 작업(에디터)  p: 한 줄 프롬프트  f: 파일  Enter: 상세  q: 종료"
         self.health = {"fl2va": None, "ref2va": None, "t": 0}
+        self._health_busy = False
         self.defaults = {"seconds": "8", "ratio": "16:9", "seed": "0", "scene_seconds": "10", "first": "", "last": "", "title": ""}
 
     # ---------- 입력 ----------
@@ -129,8 +131,17 @@ class Tui:
 
     # ---------- 그리기 ----------
     def check_health(self):
-        if time.time() - self.health["t"] > 10:
-            self.health = {"fl2va": self.client.healthy(), "ref2va": self.ref_client.healthy(), "t": time.time()}
+        """10초마다(또는 r 키) 백그라운드에서 확인: 서버가 멈춰 있어도 화면은 굳지 않는다."""
+        if time.time() - self.health["t"] > 10 and not self._health_busy:
+            self._health_busy = True
+            self.health["t"] = time.time()
+
+            def work():
+                try:
+                    self.health = {"fl2va": self.client.healthy(), "ref2va": self.ref_client.healthy(), "t": time.time()}
+                finally:
+                    self._health_busy = False
+            threading.Thread(target=work, daemon=True).start()
 
     def draw(self, scr, jobs: list[dict]):
         scr.erase()

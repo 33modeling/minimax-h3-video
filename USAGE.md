@@ -318,6 +318,9 @@ job 20261010-142233-a1b2c3 등록: 40초, 16:9, 시드 0
 - 진행 상황은 표준 오류로, **결과 mp4 경로만 표준 출력**으로 나온다. 스크립트에서 `out=$(h3video gen "..." -s 8)` 로 경로를 받을 수 있다.
 - 종료 코드: `0` 성공, `1` 실패(생성 실패·서버 응답 없음·입력 오류), `2` 옵션 오류, `130` Ctrl+C.
 - **Ctrl+C**: 이 터미널의 처리를 멈추고 작업을 "중단됨"으로 기록한다. 서버에서 이미 만들던 장면은 끝까지 갈 수 있으니, 출력되는 `h3video fetch <video_id>` 로 나중에 받으면 된다.
+- 창이 닫히거나 프로세스가 강제로 죽어도, 다음에 `jobs`·`show`·TUI·웹을 열면 그 작업은 "처리하던 프로세스가 끝나 중단됨"으로 바뀐다(같은 노드에서 만든 작업만 판단하고, 다른 노드에서 돌고 있는 작업은 건드리지 않는다).
+- 장면 하나를 기다리는 최대 시간은 6시간이다(서버 대기열 포함). 바꾸려면 `H3_WAIT_TIMEOUT=초`. 넘기면 그 작업은 실패로 끝나지만 서버에서는 계속될 수 있어 `h3video fetch` 로 받는다.
+- `-o` 가 폴더면 같은 이름 파일을 덮어쓰지 않고 `이름-<작업id 끝 6자리>.mp4` 로 저장한다(batch 에서 제목이 같거나 지난 결과가 있을 때). 파일 경로를 직접 주면 그 파일을 덮어쓴다.
 
 ### 4-3. 웹 UI
 
@@ -338,9 +341,23 @@ h3video web --host 127.0.0.1 --port 8790 --cors-origin https://33modeling.pages.
 
 허브 페이지에서는 서버 주소를 `http://localhost:8790` 으로 넣는다(SSH 터널로 당겨온 주소). 브라우저가 "로컬 네트워크 접근"을 물으면 허용한다.
 
+- 결과 영상은 구간 요청(Range)을 지원해서 재생 중 앞뒤로 넘길 수 있고 Safari·iPhone 에서도 재생된다.
+- `/api/jobs` 에 JSON 으로 작업을 보낼 때 입력 파일은 `http(s)://` 주소나 이 서버가 받은 업로드·`$H3_INBOX_DIR` 안의 파일만 받는다. 이 컴퓨터의 다른 경로는 거절한다(웹 요청이 아무 파일이나 공유 inbox 로 복사하지 못하게). 파일은 화면처럼 업로드(multipart)로 보내면 된다.
+
 ---
 
 ## 5. 결과물은 어디에
+
+저장물은 전부 `/group-volume/minsoo3.kim/minimax-h3-video/`(= `$STORAGE_ROOT`) 아래에 모인다. 코드는 user-volume, 모델 가중치는 공용 `/group-volume/models/MiniMax-H3` 에 있다. 경로는 `scripts/cluster_env.sh` 가 정하고, 바꾸려면 부록 A.
+
+```
+/group-volume/minsoo3.kim/minimax-h3-video/
+  outputs/<job_id>/        결과 (아래)            $H3_OUTPUT_DIR
+  inbox/                   입력 이미지·영상 사본    $H3_INBOX_DIR  (서버가 file:// 로 읽는 곳)
+  logs/                    서버 로그·pid          $H3_LOG_DIR
+  .venv/                   파이썬 환경            $H3_VENV
+  runtime/<user>/<host>/   HOME·임시·캐시          $WORK_ROOT
+```
 
 `$H3_OUTPUT_DIR` (기본 `/group-volume/minsoo3.kim/minimax-h3-video/outputs`) 아래에 작업 id 별 폴더가 생긴다.
 
@@ -394,6 +411,8 @@ non_diegetic_music: 배경음악 스타일·템포.
 | 이미지 넣었는데 `file not found` 류 | PC 에서 띄웠기 때문. 클러스터 노드에서 tui/gen 실행 |
 | TUI 한글이 깨짐 | `n` 키(에디터) 로 입력. tmux 안에서 실행 |
 | 결과가 안 보임 | `$H3_OUTPUT_DIR` 확인. `h3video show last` 나 TUI `Enter` 로 출력 경로 표시 |
+| `대기 시간 초과 ... h3video fetch <id>` | 서버 대기열이 길었거나 생성이 느림. 출력된 `fetch` 로 나중에 받고, 한도는 `H3_WAIT_TIMEOUT`(초, 기본 6시간) |
+| 작업이 `처리하던 프로세스가 끝나 중단됨` | 그 작업을 돌리던 CLI·TUI·웹이 꺼졌다. 오류 메시지의 `h3video fetch <video_id>` 로 서버에서 만든 장면을 받거나 다시 실행 |
 | CLI 가 `서버가 응답하지 않는다` 로 멈춤 | 출력된 안내대로: 클러스터면 `scripts/health.sh`·`serve.sh`, PC 면 SSH 터널, 주소가 다르면 `--endpoint`. 요청만 보려면 `--dry-run` |
 | Ctrl+C 로 끊었는데 서버는 계속 만듦 | 정상. 출력된 `h3video fetch <video_id>` 로 끝난 장면을 받는다 (ref2va 는 `--ref`) |
 | `fetch` 가 404 | ref2va 영상이면 `--ref` 를 붙인다 |

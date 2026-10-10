@@ -103,13 +103,15 @@ def preflight(a, needs_ref: bool) -> None:
         raise H3Error(SERVER_DOWN.format(ep=ep))
 
 
-def copy_out(final: str, out: str | None, many: bool = False) -> str:
+def copy_out(final: str, out: str | None, many: bool = False, job_id: str = "") -> str:
     if not out:
         return final
     dest = Path(out).expanduser()
     if many or out.endswith(("/", os.sep)) or dest.is_dir():
         dest.mkdir(parents=True, exist_ok=True)
         dest = dest / Path(final).name
+        if dest.exists():  # 폴더에 모을 때는 덮어쓰지 않는다 (batch 의 같은 제목, 지난 결과)
+            dest = dest.with_name(f"{dest.stem}-{job_id[-6:] or int(time.time())}{dest.suffix}")
     else:
         if not dest.suffix:
             dest = dest.with_suffix(".mp4")
@@ -169,7 +171,7 @@ def run_jobs(a, jobs: list[Job], out: str | None = None) -> None:
     for job in jobs:
         jb = store.get(job.id)
         if jb.status == "completed":
-            print(copy_out(jb.output, out, many=len(jobs) > 1))
+            print(copy_out(jb.output, out, many=len(jobs) > 1, job_id=job.id))
         else:
             failed += 1
             print(f"실패 {job.id}: {jb.error}", file=sys.stderr)

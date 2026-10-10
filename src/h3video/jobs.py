@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -22,6 +23,19 @@ from .client import Condition, H3Client, H3Error, VideoRequest, stage_input
 
 OUTPUT_DIR = Path(os.environ.get("H3_OUTPUT_DIR", "outputs"))
 INBOX_DIR = os.environ.get("H3_INBOX_DIR")
+# 장면 하나를 기다리는 최대 시간(초). 서버 대기열에 다른 작업이 쌓여 있으면 1시간은 금방 지나간다.
+WAIT_TIMEOUT = float(os.environ.get("H3_WAIT_TIMEOUT", 6 * 3600))
+HOST = socket.gethostname()
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def slugify(text: str, n: int = 40) -> str:
@@ -56,6 +70,8 @@ class Job:
     scene_seconds: int = 10
     steps: int | None = None
     negative: str | None = None
+    host: str | None = None      # 처리하는 프로세스의 호스트·pid (죽은 프로세스의 작업을 '진행'으로 남기지 않으려고)
+    pid: int | None = None
     created: float = field(default_factory=time.time)
     started: float | None = None
     finished: float | None = None
@@ -88,14 +104,28 @@ class JobStore:
                 d = json.loads(f.read_text(encoding="utf-8"))
                 d.pop("elapsed", None)
                 d["scenes"] = [Scene(**s) for s in d.get("scenes", [])]
-                self.jobs[d["id"]] = Job(**d)
+                job = Job(**d)
             except Exception:
                 continue
+            self.jobs[job.id] = job
+            # 같은 호스트에서 처리하던 프로세스가 이미 없으면 중단된 작업이다. 다른 노드(group-volume 공유)의 작업은 판단하지 않는다.
+            if job.status in ("pending", "running") and job.host == HOST and job.pid and job.pid != os.getpid() and not pid_alive(job.pid):
+                ids = [s.video_id for s in job.scenes if s.video_id and s.status != "completed"]
+                job.status, job.finished = "failed", job.finished or time.time()
+                job.error = f"처리하던 프로세스(pid {job.pid})가 끝나 중단됨" + (
+                    f". 서버에서 만들던 장면은 h3video fetch {ids[-1]} 로 받을 수 있다" if ids else "")
+                try:
+                    self.save(job)
+                except OSError:
+                    pass
 
     def save(self, job: Job):
+        # 임시 파일에 쓰고 바꿔치기: 쓰는 도중 프로세스가 죽어도 job.json 이 반쪽으로 깨지지 않는다.
         p = self._path(job.id)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(job.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp = p.with_name(f".job.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(job.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, p)
 
     def add(self, job: Job):
         with self.lock:
@@ -164,6 +194,7 @@ class Worker(threading.Thread):
         self.current: str | None = None
 
     def enqueue(self, job: Job):
+        job.host, job.pid = HOST, os.getpid()
         self.store.add(job)
         with self.cv:
             self.queue.append(job.id)
@@ -209,7 +240,7 @@ class Worker(threading.Thread):
                 sc.progress = float(st.get("progress") or 0)
                 self.store.save(job)
 
-            client.wait(sc.video_id, poll=self.poll, on_progress=on_progress)
+            client.wait(sc.video_id, poll=self.poll, timeout=WAIT_TIMEOUT, on_progress=on_progress)
             out = job_dir / f"scene{sc.index + 1:02d}.mp4"
             client.download(sc.video_id, out)
             (job_dir / f"scene{sc.index + 1:02d}.request.json").write_text(json.dumps(req.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
