@@ -73,7 +73,7 @@ if [[ $problems -gt 0 ]]; then red "== 문제 ${problems}개: 위 → 를 처리
 # 드라이버가 CUDA 12.x 면 CUDA 13 호환 라이브러리를 준비해 쓴다 (서버도 이 설정을 물려받는다)
 h3_cuda_compat || fail "CUDA 13 호환 라이브러리를 준비하지 못했다 (위 [cuda-compat] 줄 참고)"
 # GPU 를 실제로 쓸 수 있는지 (안 되면 원래 오류가 그대로 나온다)
-if ! python3 -c "import torch; torch.zeros(1).cuda(); print('[up] torch', torch.__version__, 'CUDA', torch.version.cuda, '→', torch.cuda.get_device_name(0))" ; then
+if ! python3 -c "import torch; torch.zeros(1).cuda(); print('[up] torch', torch.__version__, 'CUDA', torch.version.cuda, '→', torch.cuda.get_device_name(0)); import torchaudio" ; then
   drv="$(nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}')"
   fail "torch 가 GPU 를 못 쓴다 (바로 위 원래 오류 참고). 이 노드 드라이버는 CUDA ${drv:-?} 까지" \
        "CUDA 13 호환 라이브러리(${LD_LIBRARY_PATH%%:*})를 썼는데도 안 되면 이 드라이버에서는 forward compatibility 가 막힌 것. H3_CUDA_COMPAT_PKG 로 다른 cuda-compat-13-* 버전을 지정해 볼 수 있다"

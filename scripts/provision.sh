@@ -34,6 +34,19 @@ log "패키지 설치 (h3video + sglang[diffusion])"
 "$VENV/bin/python" -c "import sglang, sys; print('sglang', sglang.__version__)" || log "경고: sglang import 실패"
 # Verify native torchvision operators too; importing torch alone misses ABI mismatches.
 "$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" --repair --cpu-only
+# sglang 이 고정한 torchaudio(PyPI 기본판)는 torch(CUDA 13 빌드)와 CUDA 가 달라 _torchaudio.abi3.so 를 못 읽는다
+#  → 같은 버전의 torch CUDA 빌드(예: 2.11.0+cu130)로 맞춘다
+if ! "$VENV/bin/python" -c "import torch, torchaudio" 2>/dev/null; then
+  tcu="$("$VENV/bin/python" -c "import torch; print('cu' + (torch.version.cuda or '').replace('.', '')[:3])" 2>/dev/null)"
+  tav="$("$VENV/bin/python" -m pip show torchaudio 2>/dev/null | awk '/^Version:/{print $2}' | cut -d+ -f1)"
+  if [[ -n "$tav" && "$tcu" == cu1* ]]; then
+    log "torchaudio $tav 를 torch 와 같은 CUDA 빌드($tcu)로 맞춘다"
+    "$VENV/bin/python" -m pip install --force-reinstall --no-deps "torchaudio==$tav+$tcu" --index-url "https://download.pytorch.org/whl/$tcu" \
+      || log "경고: torchaudio 맞추기 실패 — 직접: pip install --force-reinstall --no-deps torchaudio==$tav+$tcu --index-url https://download.pytorch.org/whl/$tcu"
+  fi
+fi
+"$VENV/bin/python" -c "import torch, torchaudio; print('torch', torch.__version__, '/ torchaudio', torchaudio.__version__)" || log "경고: torchaudio 를 불러오지 못한다 (위 오류)"
+
 # H3 를 지원하는 sglang(0.5.17+)은 CUDA 13 전용(torch 2.11+, flashinfer[cu13]) → 노드 드라이버가 580 이상이어야 한다
 drv="$(nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}')"
 if [[ -n "$drv" && "${drv%%.*}" -lt 13 ]]; then
