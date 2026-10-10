@@ -29,7 +29,10 @@ cd "$ROOT"
 
 # 2) 점검
 command -v tmux >/dev/null || fail "tmux 가 없다" "apt install tmux 또는 관리자에게 요청"
-if h3_model_ok "$H3_MODEL_DIR"; then green "✓ 모델: $H3_MODEL_DIR"
+model_ok=0
+if h3_model_ok "$H3_MODEL_DIR"; then model_ok=1
+elif h3_ask_model_dir; then model_ok=1; fi      # 못 찾으면 경로를 물어보고 .cluster_env.local.sh 에 저장
+if [[ $model_ok == 1 ]]; then green "✓ 모델: $H3_MODEL_DIR"
   if [[ $REF == 1 ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "--ref 빼고 실행 (fl2va 만)"; fi
 else
   cands="$(h3_find_models 2>/dev/null | awk '!seen[$0]++' | tr '\n' ' ')"

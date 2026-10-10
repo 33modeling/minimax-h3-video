@@ -1,4 +1,5 @@
 # 머신별 오버라이드 예시. .cluster_env.local.sh 로 복사해 쓴다 (비추적).
-# export H3_MODEL_DIR=/group-volume/minsoo3.kim/models/MiniMax-H3
+# 모델 기본 위치는 /group-volume/models/MiniMax-H3 (cluster_env.sh). 다른 곳에 있을 때만 바꾼다:
+# export H3_MODEL_DIR=/group-volume/models/MiniMax-H3
 # export H3_NUM_GPUS=4
 # export H3_PORT_FL2VA=30010

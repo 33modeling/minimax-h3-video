@@ -34,6 +34,8 @@ elif fl2va_ok; then
   log "모델 확인: $H3_MODEL_DIR (FL2VA 있음)"
   compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null && log "Ref2VA 있음" \
     || log "Ref2VA 없음 → ref2va(레퍼런스→영상) 서버는 못 띄운다. fl2va 는 그대로 쓴다 (받지 않음)"
+elif [[ "$DOWNLOAD" != 1 ]] && h3_ask_model_dir; then
+  log "모델 경로: $H3_MODEL_DIR (.cluster_env.local.sh 에 저장)"
 elif [[ "$DOWNLOAD" != 1 ]]; then
   log "가중치를 찾지 못했다: $H3_MODEL_DIR"
   cands="$(h3_find_models 2>/dev/null | awk '!seen[$0]++')"

@@ -15,27 +15,62 @@ _REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export GROUP_VOLUME_ROOT="${GROUP_VOLUME_ROOT:-/group-volume}"
 export STORAGE_ROOT="${STORAGE_ROOT:-$GROUP_VOLUME_ROOT/minsoo3.kim/$REPO_NAME}"
 export MODELS_DIR="${MODELS_DIR:-$GROUP_VOLUME_ROOT/models}"
+# 모델 기본 위치: /group-volume/models/MiniMax-H3  (여기에 받아 둔 가중치를 그대로 쓴다. 받지 않는다)
+H3_MODEL_DEFAULT="$GROUP_VOLUME_ROOT/models/MiniMax-H3"
 _h3_model_explicit="${H3_MODEL_DIR:-}"
-export H3_MODEL_DIR="${H3_MODEL_DIR:-$MODELS_DIR/MiniMax-H3}"
+export H3_MODEL_DIR="${H3_MODEL_DIR:-$H3_MODEL_DEFAULT}"
 
-# 이미 받아 둔 MiniMax-H3 가중치 찾기 (받기는 하지 않는다). 폴더 이름·대소문자·HF 캐시 구조가 달라도 찾는다:
-# model_index.json 이 있고 fl2va 폴더(대소문자 무관)가 있는 곳. FL2VA/ 안의 model_index.json 을 찾으면 그 위 폴더.
-h3_model_ok() { [[ -f "$1/model_index.json" ]] && compgen -G "$1/[Ff][Ll]2[Vv][Aa]" >/dev/null; }
+# 가중치가 있는 폴더인가: model_index.json 이나 fl2va 폴더(대소문자 무관) 중 하나라도 있으면 된다.
+h3_model_ok() { [[ -d "$1" ]] && { [[ -f "$1/model_index.json" ]] || compgen -G "$1/[Ff][Ll]2[Vv][Aa]" >/dev/null; }; }
+# 기본 위치에도 없을 때만 쓰는 검색 (받기는 하지 않는다)
 h3_find_models() {
   local f d
-  for d in "$MODELS_DIR/MiniMax-H3" "$GROUP_VOLUME_ROOT/models/MiniMax-H3"; do h3_model_ok "$d" && realpath -m -- "$d"; done
-  timeout 20 find -L "$MODELS_DIR" "$GROUP_VOLUME_ROOT/models" "$GROUP_VOLUME_ROOT/minsoo3.kim/models" "$STORAGE_ROOT/models" \
-      "${HF_HOME:-/nonexistent}/hub" -maxdepth 6 -iname model_index.json 2>/dev/null | while read -r f; do
+  timeout 20 find -L "$GROUP_VOLUME_ROOT/models" "$MODELS_DIR" -maxdepth 6 -iname model_index.json 2>/dev/null | while read -r f; do
     d="$(dirname "$f")"
     case "${d##*/}" in [Ff][Ll]2[Vv][Aa]|[Rr][Ee][Ff]2[Vv][Aa]) d="$(dirname "$d")" ;; esac
     h3_model_ok "$d" && realpath -m -- "$d"
   done
 }
-if [[ -z "$_h3_model_explicit" ]] && ! h3_model_ok "$H3_MODEL_DIR"; then
-  _found="$(h3_find_models | awk '!seen[$0]++' | head -1)"
-  if [[ -n "$_found" ]]; then
-    echo "[cluster-env] 기본 경로에 가중치가 없어 이미 받아 둔 곳을 쓴다: $_found (고정하려면 .cluster_env.local.sh 에 export H3_MODEL_DIR=...)" >&2
-    export H3_MODEL_DIR="$_found"
+# 그래도 못 찾았을 때 경로를 물어본다 (up.sh·provision.sh 가 부른다). 정한 경로는 .cluster_env.local.sh 에 저장해 다음부터 묻지 않는다.
+h3_ask_model_dir() {
+  local p a tries=0 local_file="$_REPO_ROOT/.cluster_env.local.sh" real_home
+  real_home="$(getent passwd "$(id -un)" | cut -d: -f6)"
+  if ! { : </dev/tty; } 2>/dev/null; then
+    echo "모델(MiniMax-H3 가중치)을 찾지 못했다: $H3_MODEL_DIR" >&2
+    echo "  → $local_file 에 export H3_MODEL_DIR=<가중치 폴더> 를 적고 다시 실행" >&2
+    return 1
+  fi
+  echo "모델(MiniMax-H3 가중치)을 찾지 못했다: $H3_MODEL_DIR"
+  echo "  $GROUP_VOLUME_ROOT/models 안에 있는 것:"; ls -1 "$GROUP_VOLUME_ROOT/models" 2>/dev/null | head -20 | sed 's/^/    /'
+  while (( tries < 3 )); do
+    read -r -e -p "가중치 폴더 경로를 입력하세요 (Tab 자동완성, 빈 값은 취소): " p </dev/tty || return 1
+    [[ -z "$p" ]] && return 1
+    p="${p/#\~/$real_home}"; p="$(realpath -m -- "$p")"
+    if h3_model_ok "$p"; then :
+    elif [[ -d "$p" ]]; then
+      echo "  이 폴더에는 model_index.json 이나 fl2va 폴더가 안 보인다. 들어 있는 것:"; ls -1 "$p" | head -15 | sed 's/^/    /'
+      read -r -p "  그래도 이 경로를 쓸까요? [y/N] " a </dev/tty; [[ "$a" =~ ^[Yy] ]] || { tries=$((tries + 1)); continue; }
+    else echo "  없는 경로: $p"; tries=$((tries + 1)); continue; fi
+    export H3_MODEL_DIR="$p"
+    touch "$local_file"
+    if grep -q '^export H3_MODEL_DIR=' "$local_file"; then sed -i "s|^export H3_MODEL_DIR=.*|export H3_MODEL_DIR=\"$p\"|" "$local_file"
+    else echo "export H3_MODEL_DIR=\"$p\"" >> "$local_file"; fi
+    echo "  저장함: $local_file (다음부터 묻지 않는다)"
+    return 0
+  done
+  return 1
+}
+
+if ! h3_model_ok "$H3_MODEL_DIR"; then
+  if [[ -n "$_h3_model_explicit" ]] && h3_model_ok "$H3_MODEL_DEFAULT"; then
+    echo "[cluster-env] H3_MODEL_DIR=$_h3_model_explicit 에 가중치가 없어 기본 위치를 쓴다: $H3_MODEL_DEFAULT (.cluster_env.local.sh 확인)" >&2
+    export H3_MODEL_DIR="$H3_MODEL_DEFAULT"
+  else
+    _found="$(h3_find_models | awk '!seen[$0]++' | head -1)"
+    if [[ -n "$_found" ]]; then
+      echo "[cluster-env] $H3_MODEL_DIR 에 가중치가 없어 찾은 곳을 쓴다: $_found" >&2
+      export H3_MODEL_DIR="$_found"
+    fi
   fi
 fi
 
