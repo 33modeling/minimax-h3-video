@@ -71,6 +71,7 @@ class Job:
     steps: int | None = None
     negative: str | None = None
     raw: bool = False            # True = 서버의 프롬프트 다듬기를 끈다
+    short_edge: int = spec.SHORT_EDGE_DEFAULT   # 짧은 변 (768 기본, 줄이면 메모리·시간이 준다)
     host: str | None = None      # 처리하는 프로세스의 호스트·pid (죽은 프로세스의 작업을 '진행'으로 남기지 않으려고)
     pid: int | None = None
     created: float = field(default_factory=time.time)
@@ -296,13 +297,13 @@ def build_request(job: Job, sc: Scene, prev_frame, stage) -> VideoRequest:
             conds.append(Condition("image", stage(prev_frame), "reference"))
     return VideoRequest(prompt=prompt_text, task=task, duration_seconds=sc.duration, aspect_ratio=job.aspect_ratio,
                         seed=job.seed + sc.index, conditions=conds, num_inference_steps=job.steps, negative_prompt=job.negative,
-                        rewrite=not job.raw)
+                        rewrite=not job.raw, short_edge=job.short_edge)
 
 
 def new_job(prompt: str, seconds: int = 8, aspect_ratio: str = "16:9", seed: int = 0, task: str | None = None,
             first_image: str | None = None, last_image: str | None = None, refs: list[dict] | None = None,
             scene_seconds: int = 10, steps: int | None = None, title: str = "", negative: str | None = None,
-            raw: bool = False) -> Job:
+            raw: bool = False, short_edge: int = spec.SHORT_EDGE_DEFAULT) -> Job:
     refs = refs or []
     if task is None:
         task = "ref2va" if refs else ("fl2va" if (first_image or last_image) else "t2va")
@@ -313,4 +314,5 @@ def new_job(prompt: str, seconds: int = 8, aspect_ratio: str = "16:9", seed: int
         raise H3Error(f"최소 {spec.DURATION_MIN}초")
     return Job(id=time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6], prompt=prompt, total_seconds=seconds,
                aspect_ratio=aspect_ratio, seed=seed, task=task, first_image=first_image, last_image=last_image,
-               refs=refs, scene_seconds=scene_seconds, steps=steps, title=title, negative=negative or None, raw=raw)
+               refs=refs, scene_seconds=scene_seconds, steps=steps, title=title, negative=negative or None, raw=raw,
+               short_edge=int(short_edge))

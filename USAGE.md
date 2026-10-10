@@ -411,6 +411,7 @@ h3video fetch <video_id> --ref     # ref2va(30011) 영상은 --ref
 | `-n`, `--negative` | 없음 | 넣지 않을 것 |
 | `-o`, `--out` | 없음 | 결과를 여기로도 복사. 파일 경로(확장자 없으면 .mp4), 또는 `/` 로 끝나거나 이미 있는 폴더. `batch` 는 폴더 |
 | `--dry-run` | 끔 | 서버에 보내지 않고 장면 분할과 요청 JSON 만 출력 |
+| `--size` | 768 | 짧은 변 픽셀(768·704·640·576·512). 줄이면 메모리·시간이 준다 |
 | `--raw` | 끔 | 서버(Diffusers 엔진)의 프롬프트 다듬기를 끄고 쓴 그대로 보낸다 |
 | `--ir` | 끔 | 3단 필드 이름만 붙여 감싸기(다듬기 없이 그대로). `--soundscape`, `--music` 으로 소리 설명 |
 
@@ -528,6 +529,7 @@ non_diegetic_music: 배경음악 스타일·템포.
 | `Diffusers 형식 가중치(fl2va)가 아직 없다` | `bash scripts/provision.sh` (`--ref` 면 ref2va 것도). 없는 것만 받고, 받다 끊기면 다시 실행해서 이어 받는다 |
 | `CUDA out of memory … GPU 1 has a total capacity of 79.11 GiB of which … is free` | 그 GPU 를 다른 프로세스가 이미 쓰고 있었다(전에 띄운 서버가 남은 경우 등). 지금 `up.sh` 는 시작할 때 남은 H3 서버를 내리고 비어 있는 GPU 만 쓴다. 남은 것만 끄려면 `python3 scripts/h3_leftovers.py --kill` |
 | `영상 모델 워커가 끝났다 (종료 코드 …)` | GPU 3장 이상 방식에서 워커(`[dworker]`)가 죽었다. 바로 위 `[dworker]`·`[rank…]` 줄이 원인(OOM 이면 그 GPU 를 다른 프로세스가 쓰는지 `nvidia-smi`). 서버는 같이 끝나고 `up.sh` 가 정리한다. 2장 방식으로 띄우려면 `H3_DSERVER_CP=0 bash scripts/up.sh` |
+| `GPU 메모리가 모자라 시작하지 않았다: 영상 모델 장마다 약 …GB 필요` | (Diffusers 엔진) 요청을 생성 전에 걸렀다. 영상 모델 활성 메모리는 시퀀스 행당 약 180KB(실측 165KB+여유)라 길이·해상도·레퍼런스에 비례한다. 메시지대로 `-s` 를 줄이거나 `--size 576`, 또는 `--ref` 없이 4장 방식으로 띄운다([VIDEO.md](VIDEO.md) 4절) |
 | `메모리 여유 …GB < 필요 약 140GB` / 서버가 로딩 중 `Killed` | Diffusers 엔진은 적재할 때 가중치를 CPU 메모리에 먼저 올린다(서버 하나에 약 140GB). 파드 메모리 한도를 늘리거나 `--ref` 를 빼고 띄운다 |
 | `up.sh` 가 `서버가 끝났다` | 바로 위 원본 로그가 원인(OOM 등). 남은 프로세스는 끄고 GPU 를 반환한 상태 |
 | health 가 `000` | 서버 로딩 중(몇 분) 또는 죽음. `up.sh` 화면의 로그 확인 |

@@ -208,7 +208,8 @@ def job_from_args(a, prompt: str, refs=None, base: Path | None = None) -> Job:
     check_inputs([first, last] + [r["path"] for r in refs])
     return new_job(prompt, seconds=a.seconds, aspect_ratio=a.ratio, seed=a.seed, first_image=first, last_image=last,
                    refs=refs, scene_seconds=a.scene_seconds, steps=a.steps, title=a.title or "", negative=a.negative,
-                   task="ref2va" if refs else None, raw=getattr(a, "raw", False))
+                   task="ref2va" if refs else None, raw=getattr(a, "raw", False),
+                   short_edge=getattr(a, "size", spec.SHORT_EDGE_DEFAULT))
 
 
 # ---------- commands ----------
@@ -261,7 +262,7 @@ def cmd_ir(a):
 
 
 BATCH_KEYS = {"seconds", "ratio", "seed", "title", "first", "last", "negative", "scene-seconds", "steps",
-              "soundscape", "music", "ir", "raw", "image", "video", "audio"}
+              "soundscape", "music", "ir", "raw", "size", "image", "video", "audio"}
 
 
 def parse_batch(text: str) -> list[tuple[dict, str]]:
@@ -304,7 +305,7 @@ def cmd_batch(a):
         try:
             for k, v in opts.items():
                 attr = k.replace("-", "_")
-                if attr in ("seconds", "scene_seconds", "steps"):
+                if attr in ("seconds", "scene_seconds", "steps", "size"):
                     v = int(v)
                 elif attr == "seed":
                     v = seed_arg(v)
@@ -414,6 +415,8 @@ def add_video_opts(p) -> None:
     p.add_argument("-n", "--negative", help="넣지 않을 것 (네거티브 프롬프트)")
     p.add_argument("-o", "--out", help="결과를 여기로도 복사 (파일 경로, 또는 / 로 끝나는 폴더)")
     p.add_argument("--dry-run", action="store_true", help="서버에 보내지 않고 장면 분할과 요청 JSON 만 출력")
+    p.add_argument("--size", type=int, default=spec.SHORT_EDGE_DEFAULT, choices=[512, 576, 640, 704, 768],
+                   help="짧은 변 픽셀 (기본 768 = 1344×768). 576 이면 1024×576 으로 메모리·시간이 약 40%% 준다")
     p.add_argument("--raw", action="store_true",
                    help="서버의 프롬프트 다듬기를 끄고 쓴 그대로 보낸다 (Diffusers 엔진은 기본으로 공식 형식으로 다듬는다)")
     p.add_argument("--ir", action="store_true", help="3단 필드 이름만 붙여 감싸기 (다듬기 없이 직접 쓴 내용 그대로)")

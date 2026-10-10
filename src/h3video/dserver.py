@@ -35,6 +35,9 @@ OUTPUTS = ["videos", "audio", "sampling_rate"]
 TASKS = {"fl2va": ("t2va", "fl2va"), "ref2va": ("ref2va",)}   # 서버 종류 → 받는 작업
 REF_LIMITS = {"image": 9, "video": 3, "audio": 3, "total": 12}
 MARGIN = os.environ.get("H3_DSERVER_MARGIN", "12GB")   # 활성값 여유 (diffusers 문서의 80GB 한 장 설정)
+# 영상 모델 블록 하나의 활성 메모리, 토큰(행)당. 실제 크기 블록(hidden 5376·FFN 14336·헤드 56)을 4k·8k 토큰으로 돌려
+# PyTorch 프로파일러로 잰 최고치 165.3KB(길이에 정비례) + 입력·회전 임베딩 등 → 180KB 로 잡는다 (2026-10-10)
+ACT_BYTES_PER_ROW = int(float(os.environ.get("H3_ACT_KB_PER_ROW", "180")) * 1024)
 
 
 def log(msg: str) -> None:
@@ -139,6 +142,11 @@ class Engine:
                 log(f"어텐션 백엔드: {attn}")
             self.transformer.register_forward_hook(self._count)
         self._te_pipe = self.pipe if self.mode == "single" else self.cond   # 텍스트 인코더(= Qwen3-VL-32B-Instruct)가 있는 쪽
+        if self.mode != "cp":   # 영상 모델이 올라갈 장: 전체 - 영상 모델 - CUDA 컨텍스트 등 1.5GB
+            self.cp_world, self.headroom = 1, None
+            if str(devices[0]).startswith("cuda"):
+                total = torch.cuda.mem_get_info(torch.device(devices[0]))[1]
+                self.headroom = int(total - self.transformer.get_memory_footprint() - 1.5 * 2**30)
         self.guides = load_guides(model_dir)
         log("프롬프트 다듬기: " + ("켜짐 (공식 작성 가이드 base·ref, 텍스트 인코더 Qwen3-VL 로)" if len(self.guides) == 2 else
                              f"꺼짐 — 공식 작성 가이드가 없다 ({model_dir}/docs). bash scripts/provision.sh 로 받는다"))
@@ -150,6 +158,55 @@ class Engine:
 
     def _count(self, *_):
         self._steps_done += 1
+
+    # ── 메모리 검사: 길이·해상도·조건이 영상 모델 장에 들어가는지 생성 전에 본다 ──
+    def rows(self, plan: dict, h: int, w: int, state=None) -> dict:
+        """영상 모델이 한 번에 보는 시퀀스 행 수 (영상·오디오·텍스트·조건). state 가 있으면 실제 조건 크기를 쓴다."""
+        from diffusers.modular_pipelines.minimax_h3.modular_pipeline import audio_latent_num_frames, video_latent_num_frames
+        g = self.geo
+        lf = video_latent_num_frames(plan["num_frames"], g.vae_frames_per_chunk, g.vae_latents_per_chunk)
+        grid = (h // g.canvas_multiple) * (w // g.canvas_multiple)
+        r = {"video": lf * grid, "audio": audio_latent_num_frames(plan["num_frames"]) * 2, "text": 2000, "cond": 0}
+        vals = getattr(state, "values", {}) if state is not None else {}
+        pe = vals.get("prompt_embeds")
+        if pe is not None and hasattr(pe, "shape"):
+            r["text"] = int(pe.shape[-2])
+        for t in vals.get("condition_latents") or []:
+            r["cond"] += int(t.shape[-3]) * (int(t.shape[-2]) // 2) * (int(t.shape[-1]) // 2)
+        for t in vals.get("audio_condition_latents") or []:
+            r["cond"] += int(t.shape[-1]) * (int(t.shape[0]) if t.dim() == 3 else 1)
+        if state is None:   # 조건을 아직 모르면 키프레임만 (한 장 = 잠재 프레임 1개)
+            r["cond"] = len(plan["keyframes"]) * grid
+        return r
+
+    def check_memory(self, plan: dict, h: int, w: int, state=None, when: str = "") -> None:
+        if not getattr(self, "headroom", None):
+            return
+        r = self.rows(plan, h, w, state)
+        total = sum(r.values())
+        per_gpu = total / self.cp_world
+        need = per_gpu * ACT_BYTES_PER_ROW
+        log(f"메모리 예상{when}: 시퀀스 {total:,}행 (영상 {r['video']:,}·오디오 {r['audio']:,}·텍스트 {r['text']:,}·조건 {r['cond']:,})"
+            f" → 영상 모델 장마다 약 {need / 2**30:.1f}GB / 여유 {self.headroom / 2**30:.1f}GB")
+        if need <= self.headroom:
+            return
+        g = self.geo   # 들어가는 가장 긴 초: 프레임 수가 VAE 단위로 올림되므로 한 초씩 실제로 넣어 본다
+        max_sec = 0
+        for s in range(15, 4, -1):
+            nf, _ = frames_for(s, g.vae_frames_per_chunk, g.vae_latents_per_chunk, g.fps, g.min_duration, g.max_duration)
+            rs = self.rows(dict(plan, num_frames=nf), h, w, state)
+            if sum(rs.values()) / self.cp_world * ACT_BYTES_PER_ROW <= self.headroom:
+                max_sec = s
+                break
+        tips = [f"-s {max(5, int(max_sec))} 이하로 (지금 {plan['num_frames'] / 24:.1f}초, 더 길면 장면을 이어 붙인다: -s 30 --scene-seconds {max(5, min(10, int(max_sec)))})"
+                if max_sec >= 5 else "길이를 줄여도 안 들어간다",
+                "--size 576 (해상도를 낮추면 영상 행이 약 44% 줄어든다)"]
+        if r["cond"] > r["video"] * 0.3:
+            tips.append(f"레퍼런스·키프레임을 줄이기 (조건이 {r['cond']:,}행)")
+        if self.cp_world == 1:
+            tips.append("GPU 4장으로 띄우기 (bash scripts/up.sh 를 --ref 없이 → 영상 모델 3장에 나눠 장마다 1/3)")
+        raise BadRequest(f"GPU 메모리가 모자라 시작하지 않았다: 영상 모델 장마다 약 {need / 2**30:.1f}GB 필요, "
+                         f"여유 {self.headroom / 2**30:.1f}GB. 할 일: " + " / ".join(tips))
 
     # ── 영상 모델 워커 (GPU 3장 이상) ──
     def _start_workers(self, model_dir: str, variant: str, devs: list[str], dtype: str, attn: str | None) -> None:
@@ -190,7 +247,10 @@ class Engine:
                 raise WorkerDied(f"영상 모델 워커가 준비 중에 끝났다 (종료 코드 {self._proc.returncode}). 바로 위 [dworker] 로그가 원인")
             th.join(1)
         self._conn = box["conn"]
-        log(f"영상 모델 워커 연결: {self._recv().decode()}")
+        msg = self._recv().decode().split()
+        self.headroom = int(msg[2]) if len(msg) > 2 and int(msg[2]) > 0 else None   # 영상 모델 장의 남는 자리
+        self.cp_world = int(msg[1])
+        log(f"영상 모델 워커 연결: {msg[1]}장" + (f", 영상 모델 올린 뒤 가장 빠듯한 장 여유 {self.headroom / 2**30:.1f}GB" if self.headroom else ""))
 
     def _recv(self) -> bytes:
         while True:
@@ -280,6 +340,13 @@ class Engine:
         nf, secs = frames_for(target.get("duration_seconds", 8), p.vae_frames_per_chunk, p.vae_latents_per_chunk,
                               p.fps, p.min_duration, p.max_duration)
         steps = body.get("num_inference_steps")
+        if getattr(self, "headroom", None):   # GPU 여유를 알면 접수할 때 바로 거른다 (다듬기·조건 만들기 전에)
+            aspect = str(target.get("aspect_ratio") or "16:9")
+            try:
+                eh, ew = self._canvas("16:9" if aspect == "auto" else aspect, int(target.get("short_edge") or self.short_edge))
+            except ValueError as e:
+                raise BadRequest(str(e)) from e
+            self.check_memory({"num_frames": nf, "keyframes": keyframes}, eh, ew, when=" (접수)")
         return {"task": task, "prompt": prompt, "keyframes": keyframes, "refs": refs, "num_frames": nf,
                 "seconds": secs, "asked_seconds": target.get("duration_seconds", 8),
                 "aspect": str(target.get("aspect_ratio") or "16:9"),
@@ -420,16 +487,21 @@ class Engine:
         try:
             gen = {k: inputs[k] for k in ("num_frames", "height", "width", "num_inference_steps")}
             if self.mode == "single":
+                self.check_memory(plan, h, w, when=" (생성 전)")
                 r = self.pipe(**inputs, generator=g, output=OUTPUTS)
             elif self.mode == "split":
                 state = self.cond(**inputs, generator=g)
+                self.check_memory(plan, h, w, state, when=" (조건 포함)")
                 r = self.pipe(state=state, generator=g, output=OUTPUTS, **gen)
             else:   # cp: 조건(여기) → 디노이징(워커들) → 디코딩(여기)
                 state = self.cond(**inputs, generator=g)
+                self.check_memory(plan, h, w, state, when=" (조건 포함)")
                 res = self._denoise_remote(state, g, gen)
                 r = self.dec(latents=res["latents"], audio_latents=res["audio_latents"], output=OUTPUTS)
         finally:
             stop.set()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()   # 다음 요청·메모리 검사가 실제 여유를 보게
         tmp = out_path.with_suffix(".part.mp4")
         encode_video(r["videos"][0], fps=24, output_path=str(tmp), audio=r["audio"][0],
                      audio_sample_rate=r["sampling_rate"])

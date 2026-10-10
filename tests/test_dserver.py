@@ -44,6 +44,37 @@ class WorkerHelpersTest(unittest.TestCase):
         self.assertEqual(dserver.pick_devices("cpu, cpu,cpu"), ["cpu", "cpu", "cpu"])
 
 
+@unittest.skipUnless(importlib.util.find_spec("diffusers"), "diffusers 없음")
+class MemoryCheckTest(unittest.TestCase):
+    """영상 모델 장의 여유(가중치 62GB 를 뺀 약 16.5GB)에 길이·해상도가 들어가는지 생성 전에 판정."""
+
+    def engine(self, world=1, headroom_gb=16.5):
+        e = fake_engine()
+        e.cp_world, e.headroom = world, int(headroom_gb * 2**30)
+        return e
+
+    def body(self, seconds, size=768):
+        return {"task": "t2va", "prompt": "p", "target": {"short_edge": size, "aspect_ratio": "16:9", "duration_seconds": seconds}}
+
+    def test_one_gpu_15s_rejected_with_advice(self):
+        with self.assertRaises(dserver.BadRequest) as cm:
+            self.engine().plan(self.body(15))
+        msg = str(cm.exception)
+        self.assertIn("-s 12 이하", msg)   # 13초는 프레임이 328(13.67초)로 올림돼 안 들어간다
+        self.assertIn("--size 576", msg)
+        self.assertIn("GPU 4장", msg)
+
+    def test_fits(self):
+        self.engine().plan(self.body(10))             # 1장, 10초
+        self.engine().plan(self.body(15, size=576))   # 1장, 15초라도 576 이면
+        self.engine(world=3).plan(self.body(15))      # 3장에 나누면 15초
+
+    def test_rows(self):
+        r = self.engine().rows({"num_frames": 345, "keyframes": []}, 768, 1344)
+        self.assertEqual(r["video"], 102 * 24 * 42)   # 잠재 프레임 102 × (768/32) × (1344/32)
+        self.assertEqual(r["audio"], 575 * 2)
+
+
 class FramesTest(unittest.TestCase):
     def test_frames(self):
         f = lambda s: dserver.frames_for(s, 17, 5, 24, 5.0, 15.0)

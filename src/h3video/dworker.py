@@ -5,7 +5,7 @@ dserver 본체(첫 GPU)가 텍스트 인코더·VAE 로 조건을 만들고 상�
 torchrun 으로 띄운다 (dserver 가 알아서 띄움):
   python -m torch.distributed.run --nproc_per_node N -m h3video.dworker --model-dir DIR --variant fl2va --address 127.0.0.1:PORT
 본체와는 multiprocessing.connection 으로 주고받는다 (rank 0 만). 메시지: 본체→워커 작업(torch.save 바이트) | b"STOP",
-워커→본체 b"READY <N>" | b"PROG <n>"(지금까지 끝난 스텝 수) | b"DONE" + 결과(torch.save 바이트: ok, latents, audio_latents 또는 error).
+워커→본체 b"READY <N> <영상 모델 올린 뒤 가장 작은 여유 바이트>" | b"PROG <n>"(지금까지 끝난 스텝 수) | b"DONE" + 결과(torch.save 바이트: ok, latents, audio_latents 또는 error).
 """
 from __future__ import annotations
 
@@ -97,8 +97,10 @@ def main(argv=None) -> int:
     log(rank, f"준비 ({time.time() - t0:.0f}초): {tname} 을 {world}장에 나눔 (Ulysses {world}, 헤드 {heads})")
 
     conn = Client(tuple_addr(a.address), authkey=os.environ["H3_CP_AUTHKEY"].encode()) if rank == 0 else None
+    free_min = torch.tensor([torch.cuda.mem_get_info(local)[0] if use_cuda else 0], dtype=torch.int64, device=device)
+    dist.all_reduce(free_min, op=dist.ReduceOp.MIN)   # 영상 모델을 올린 뒤 가장 빠듯한 장의 여유 (본체가 요청마다 메모리 검사에 쓴다)
     if rank == 0:
-        conn.send_bytes(f"READY {world}".encode())
+        conn.send_bytes(f"READY {world} {int(free_min.item())}".encode())
     bdev = device if use_cuda else None
     while True:
         box = [conn.recv_bytes() if rank == 0 else None]
@@ -130,6 +132,9 @@ def main(argv=None) -> int:
             stop.set()
             if th:
                 th.join()
+        del state, job
+        if use_cuda:
+            torch.cuda.empty_cache()
         if rank == 0:
             buf = io.BytesIO()
             torch.save(result, buf)
