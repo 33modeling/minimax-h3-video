@@ -10,7 +10,9 @@
 
 REPO_NAME=minimax-h3-video
 _REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-[[ -f "$_REPO_ROOT/.cluster_env.local.sh" ]] && source "$_REPO_ROOT/.cluster_env.local.sh"
+# .cluster_env.local.sh 안에서 이 파일을 다시 읽어도 되돌아가 반복하지 않게
+[[ -n "${_H3_IN_LOCAL_ENV:-}" ]] && { return 0 2>/dev/null || exit 0; }
+if [[ -f "$_REPO_ROOT/.cluster_env.local.sh" ]]; then _H3_IN_LOCAL_ENV=1; source "$_REPO_ROOT/.cluster_env.local.sh"; unset _H3_IN_LOCAL_ENV; fi
 
 export GROUP_VOLUME_ROOT="${GROUP_VOLUME_ROOT:-/group-volume}"
 export STORAGE_ROOT="${STORAGE_ROOT:-$GROUP_VOLUME_ROOT/minsoo3.kim/$REPO_NAME}"

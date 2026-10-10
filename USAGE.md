@@ -6,7 +6,7 @@
 
 | 할 일 | 명령 | 보이는 것 |
 |---|---|---|
-| 띄우기 | `bash scripts/up.sh` (레퍼런스도: `--ref`) | 이 화면에 서버 원본 로그. 다 뜨면 `✓ fl2va 준비됨`, `== 준비 완료` |
+| 띄우기 | `bash scripts/up.sh` (레퍼런스도: `--ref`, 웹 UI 도: `--web`) | 이 화면에 서버 원본 로그. 다 뜨면 `✓ fl2va 준비됨`, `== 준비 완료` |
 | 떴는지 확인 (다른 창) | `bash scripts/status.sh` | fl2va·ref2va·웹 UI 마다 `준비됨 ✓` / `로딩 중`(+로그 마지막 줄) / `꺼짐`, GPU 메모리 |
 | 끄기 | `up.sh` 화면에서 Ctrl+C, 다른 창에서는 `bash scripts/down.sh` | 서버·워커·웹 UI 종료, GPU 메모리 표시 |
 
@@ -18,7 +18,7 @@ CLUSTER_SSH=<계정>@<호스트> CLUSTER_CODE_DIR=/user-volume/<계정>/minimax-
 cd /user-volume/<계정>/minimax-h3-video
 source scripts/cluster_env.sh && bash scripts/provision.sh
 
-# ③ 서버 + 웹 UI 띄우기 — 이 화면에서 포그라운드, 서버 원본 로그가 그대로 나온다
+# ③ H3 서버 띄우기 — 이 화면에서 포그라운드, 서버 원본 로그가 그대로 나온다 (웹 UI 는 --web 일 때만)
 bash scripts/up.sh              # 레퍼런스(ref2va)도 쓰면 --ref (GPU 8장)
 #    끄기: 이 화면에서 Ctrl+C (서버·워커·웹 UI 전부 끄고 GPU 반환) / 다른 창에서는 bash scripts/down.sh
 
@@ -36,7 +36,7 @@ h3video jobs / h3video show last                                       # 지난 
 |---|---|
 | 결과 | `/group-volume/minsoo3.kim/minimax-h3-video/outputs/<작업id>/` (`-o` 를 주면 거기에도 복사) |
 | 모델 위치 | 기본 `/group-volume/models/MiniMax-H3`. 못 찾으면 `up.sh` 가 경로를 묻고 `.cluster_env.local.sh` 에 저장 |
-| PC 브라우저 | `up.sh` 가 마지막에 출력하는 `ssh -N -L ...` 를 PC 에서 실행 → `http://127.0.0.1:8790`. 허브 '숏폼 제작'의 서버 주소도 `http://localhost:8790` |
+| 웹 UI (선택) | CLI 만 쓰면 필요 없다. 쓰려면 `bash scripts/up.sh --web` 후 출력되는 `ssh -N -L ...` 를 PC 에서 실행 → `http://127.0.0.1:8790` |
 | 이미 떠 있으면 | `up.sh` 는 떠 있는 서버·웹 UI 를 다시 띄우지 않고 그대로 쓴다 |
 | 이미지·영상 입력 | 4-0절 표(H3), 숏폼은 [shortform/USAGE.md](shortform/USAGE.md) 3-1절 |
 | 막히면 | 7절 표. 오류는 `up.sh` 화면의 원본 로그에 그대로 나온다 |
@@ -93,7 +93,7 @@ bash scripts/sync_to_cluster.sh
 ```bash
 cd /user-volume/<계정>/minimax-h3-video
 bash scripts/up.sh --check      # 점검만: 모델·sglang·GPU 장수·포트
-bash scripts/up.sh              # fl2va 서버(GPU 0,1,2,3, 포트 30010) + 웹 UI(8790)
+bash scripts/up.sh              # fl2va 서버(GPU 0,1,2,3, 포트 30010). 웹 UI(8790)까지는 --web
 bash scripts/up.sh --ref        # ref2va 서버(GPU 4,5,6,7, 포트 30011)도. 8장 노드
 bash scripts/up.sh --cors https://33modeling.pages.dev   # 허브 '숏폼 제작'에서 웹 UI 를 부를 때
 bash scripts/down.sh            # 다른 창에서 끄기 (up.sh 화면에서는 Ctrl+C)
@@ -533,7 +533,7 @@ export H3_NUM_GPUS=4
 
 ```bash
 # 서버
-bash scripts/up.sh                  # 서버 + 웹 UI (이 화면, Ctrl+C 로 전부 끄기)
+bash scripts/up.sh                  # H3 서버 (이 화면, Ctrl+C 로 끄기). 웹 UI 도 띄우려면 --web
 bash scripts/up.sh --check          # 점검만
 bash scripts/status.sh              # 떴는지 확인
 bash scripts/down.sh                # 다른 창에서 끄기

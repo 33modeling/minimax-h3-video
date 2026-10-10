@@ -52,7 +52,7 @@ shortform/               # 숏폼 제작: shorts CLI(파이썬) + 웹(Vite, 허�
 
 ```bash
 cd /user-volume/<you>/minimax-h3-video
-bash scripts/up.sh             # fl2va(GPU 0-3) + 웹 UI 8790.  --ref 로 ref2va(GPU 4-7)도, --check 는 점검만
+bash scripts/up.sh             # fl2va 서버(GPU 0-3).  --ref 로 ref2va(GPU 4-7)도, --web 으로 웹 UI 8790 도, --check 는 점검만
 bash scripts/status.sh         # 떴는지 확인: 준비됨 / 로딩 중 / 꺼짐
 bash scripts/down.sh           # 전부 끄기
 ```

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# 클러스터 노드에서 명령 하나로: 환경 설정 → 점검 → 서버·웹 UI 를 이 화면에서 포그라운드로 실행.
+# 클러스터 노드에서 명령 하나로: 환경 설정 → 점검 → H3 서버를 이 화면에서 포그라운드로 실행 (웹 UI 는 --web 일 때만).
 # 서버 원본 로그와 오류가 이 화면에 그대로 나온다. 준비되면 PC 접속 방법을 출력하고 계속 돈다. Ctrl+C 로 전부 끈다.
 # (오래 띄워 둘 거면 직접 연 tmux 창 안에서 실행)
 #
-#   bash scripts/up.sh                 fl2va 서버(GPU 0,1,2,3) + 웹 UI(8790)
+#   bash scripts/up.sh                 fl2va 서버(GPU 0,1,2,3, 포트 30010) — CLI(h3video gen)는 이것만 있으면 된다
 #   bash scripts/up.sh --ref           ref2va 서버도 (GPU 4,5,6,7 — 8장 노드)
-#   bash scripts/up.sh --no-web        웹 UI 없이
+#   bash scripts/up.sh --web           웹 UI(8790)도 (브라우저·허브 숏폼 제작에서 쓸 때만)
 #   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7 --mode memory
 #   bash scripts/up.sh --cors https://33modeling.pages.dev    허브 '숏폼 제작'에서 웹 UI 를 부를 수 있게
 #   bash scripts/up.sh --check         점검만
@@ -13,9 +13,9 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"
-GPUS="0,1,2,3"; REF_GPUS="4,5,6,7"; REF=0; WEB=1; CHECK=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"
+GPUS="0,1,2,3"; REF_GPUS="4,5,6,7"; REF=0; WEB=0; CHECK=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"
 while [[ $# -gt 0 ]]; do case "$1" in
-  --ref) REF=1; shift ;; --no-web) WEB=0; shift ;; --check) CHECK=1; shift ;;
+  --ref) REF=1; shift ;; --web) WEB=1; shift ;; --no-web) WEB=0; shift ;; --check) CHECK=1; shift ;;
   --gpus) GPUS="$2"; shift 2 ;; --ref-gpus) REF_GPUS="$2"; shift 2 ;;
   --mode) MODE_ARGS=(--mode "$2"); shift 2 ;; --cors) CORS="$2"; shift 2 ;;
   -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -116,9 +116,11 @@ done
 host="$(hostname -f 2>/dev/null || hostname)"
 echo
 green "== 준비 완료. 로그는 계속 이 화면에 나온다. 끄기: Ctrl+C"
-echo "  영상:   다른 창에서 source scripts/cluster_env.sh && h3video gen \"...\" -s 8"
-echo "  PC 에서: ssh -N -L 8790:127.0.0.1:${PORT[web]} -L ${PORT[fl2va]}:127.0.0.1:${PORT[fl2va]} -L ${PORT[ref2va]}:127.0.0.1:${PORT[ref2va]} $(id -un)@$host"
-echo "           그다음 브라우저 http://127.0.0.1:8790 (허브 숏폼 제작의 서버 주소도 http://localhost:8790)"
+echo "  영상:   다른 창에서  cd $ROOT && source scripts/cluster_env.sh && h3video gen \"...\" -s 8"
+if [[ $WEB == 1 ]]; then
+  echo "  PC 에서: ssh -N -L 8790:127.0.0.1:${PORT[web]} -L ${PORT[fl2va]}:127.0.0.1:${PORT[fl2va]} -L ${PORT[ref2va]}:127.0.0.1:${PORT[ref2va]} $(id -un)@$host"
+  echo "           그다음 브라우저 http://127.0.0.1:8790 (허브 숏폼 제작의 서버 주소도 http://localhost:8790)"
+fi
 echo
 
 # 서버 하나라도 끝나면 알리고 전부 끈다
