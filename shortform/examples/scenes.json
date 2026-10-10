@@ -1,0 +1,13 @@
+{
+  "$schema": "../schema/job.schema.json",
+  "scenes": [
+    {"prompt": "Close-up of coffee being poured into a white cup, steam rising, morning light", "duration": 5},
+    {"prompt": "A person takes the first sip by a rainy window, cozy mood", "duration": 6},
+    {"prompt": "Top-down view of a notebook and the coffee cup, hand starts writing", "duration": 5}
+  ],
+  "ratio": "9:16",
+  "title": "아침 루틴 16초",
+  "captions": ["커피를 내리고", "첫 모금", "오늘 할 일을 적는다"],
+  "server": "http://localhost:30010",
+  "output": "morning.mp4"
+}

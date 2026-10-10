@@ -1,0 +1,9 @@
+{
+  "$schema": "../schema/job.schema.json",
+  "prompt": "Use <Video 1> as the motion reference: the same person dances on a neon-lit rooftop at night, handheld camera",
+  "duration": 6,
+  "title": "옥상 위 네온 댄스",
+  "captions": ["원본 동작 그대로", "배경만 네온 옥상으로"],
+  "bgm_volume": 0.2,
+  "output": "neon-dance.mp4"
+}

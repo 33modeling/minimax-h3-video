@@ -1,0 +1,244 @@
+{
+  "media": {
+    "base": {
+      "duration": 8,
+      "width": 1280,
+      "height": 720,
+      "hasAudio": true
+    },
+    "base_silent": {
+      "duration": 12.345,
+      "width": 1920,
+      "height": 1080,
+      "hasAudio": false
+    },
+    "land": {
+      "duration": 3,
+      "width": 1280,
+      "height": 720,
+      "hasAudio": true
+    },
+    "port": {
+      "duration": 2.5,
+      "width": 720,
+      "height": 1280,
+      "hasAudio": true
+    },
+    "sd": {
+      "duration": 3,
+      "width": 640,
+      "height": 480,
+      "hasAudio": true
+    },
+    "mute": {
+      "duration": 4.2,
+      "width": 1080,
+      "height": 1920,
+      "hasAudio": false
+    },
+    "bgm": {
+      "duration": 5,
+      "width": 0,
+      "height": 0,
+      "hasAudio": true
+    }
+  },
+  "cases": [
+    {
+      "name": "cutaway",
+      "spec": {
+        "base": "base.mp4",
+        "sources": [
+          "land.mp4",
+          "port.mp4",
+          "sd.mp4"
+        ],
+        "template": "cutaway",
+        "title": "컷어웨이 테스트 제목",
+        "captions": [
+          "첫 번째 자막입니다",
+          "두 번째 자막",
+          "세 번째 자막은 조금 더 길게 써 봅니다"
+        ]
+      }
+    },
+    {
+      "name": "split",
+      "spec": {
+        "base": "base.mp4",
+        "sources": [
+          "land.mp4",
+          "port.mp4",
+          "sd.mp4"
+        ],
+        "template": "split",
+        "fit": "crop",
+        "captions": [
+          "가운데 자막",
+          "Mixed English 자막 line"
+        ],
+        "bgm": "bgm.m4a"
+      }
+    },
+    {
+      "name": "pip-1080",
+      "spec": {
+        "base": "base_silent.mp4",
+        "sources": [
+          {
+            "path": "land.mp4",
+            "start": 0.5,
+            "end": 2.2
+          },
+          "mute.mp4"
+        ],
+        "template": "pip",
+        "resolution": "1080x1920",
+        "title": "아주 긴 제목이 두 줄로 넘어가는지 확인하기 위한 문장입니다 정말 길게",
+        "max_duration": 10
+      }
+    },
+    {
+      "name": "montage-base-audio",
+      "spec": {
+        "base": "base.mp4",
+        "sources": [
+          "land.mp4",
+          "port.mp4",
+          "sd.mp4"
+        ],
+        "template": "montage",
+        "max_duration": 7.5,
+        "captions": [
+          {
+            "text": "직접 시간",
+            "start": 1,
+            "end": 2.5
+          },
+          "자동 시간"
+        ]
+      }
+    },
+    {
+      "name": "montage-no-base",
+      "spec": {
+        "sources": [
+          "mute.mp4",
+          "port.mp4",
+          "land.mp4"
+        ],
+        "template": "split",
+        "original_volume": 0.6,
+        "bgm": "bgm.m4a",
+        "bgm_volume": 0.3
+      }
+    },
+    {
+      "name": "base-only",
+      "spec": {
+        "base": {
+          "path": "base_silent.mp4",
+          "start": 2,
+          "end": 9.9
+        },
+        "captions": [
+          "supercalifragilisticexpialidocious_word_that_is_very_long 한글"
+        ]
+      }
+    },
+    {
+      "name": "split-16x9",
+      "spec": {
+        "base": "base.mp4",
+        "sources": [
+          "port.mp4",
+          "sd.mp4"
+        ],
+        "template": "split",
+        "resolution": "1920x1080",
+        "fps": 24,
+        "quality": "high",
+        "title": "가로 화면 분할",
+        "captions": [
+          "왼쪽 기본, 오른쪽 소스"
+        ]
+      }
+    },
+    {
+      "name": "pip-1x1",
+      "spec": {
+        "base": "base.mp4",
+        "sources": [
+          "land.mp4"
+        ],
+        "template": "pip",
+        "resolution": "1080x1080",
+        "quality": "low",
+        "title": "정사각 PIP",
+        "captions": [
+          "정사각"
+        ]
+      }
+    },
+    {
+      "name": "split-1x1",
+      "spec": {
+        "base": "base.mp4",
+        "sources": [
+          "land.mp4"
+        ],
+        "template": "split",
+        "resolution": "1080x1080"
+      }
+    },
+    {
+      "name": "cutaway-4x5-odd",
+      "spec": {
+        "base": "base_silent.mp4",
+        "sources": [
+          "port.mp4"
+        ],
+        "template": "cutaway",
+        "resolution": "1080x1350",
+        "fps": 60,
+        "fit": "crop"
+      }
+    },
+    {
+      "name": "montage-min",
+      "spec": {
+        "sources": [
+          "land.mp4",
+          "port.mp4"
+        ],
+        "resolution": "240x240",
+        "captions": [
+          "최소 크기 자막이 들어가는지"
+        ]
+      }
+    },
+    {
+      "name": "pip-max",
+      "spec": {
+        "base": "base.mp4",
+        "sources": [
+          "sd.mp4"
+        ],
+        "template": "pip",
+        "resolution": "2160x2160"
+      }
+    },
+    {
+      "name": "montage-quarter-seconds",
+      "spec": {
+        "sources": [
+          {
+            "path": "land.mp4",
+            "end": 2.25
+          }
+        ],
+        "template": "montage"
+      }
+    }
+  ]
+}

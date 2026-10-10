@@ -1,0 +1,9 @@
+{
+  "$schema": "../schema/job.schema.json",
+  "prompt": "A tabby cat leaps over a wooden fence at golden hour, slow motion, shallow depth of field, warm cinematic light",
+  "duration": 8,
+  "ratio": "9:16",
+  "title": "고양이의 대점프",
+  "captions": ["노을 지는 골목", "담장 앞에 선 고양이", "숨을 고르고", "점프!"],
+  "output": "cat-jump.mp4"
+}
