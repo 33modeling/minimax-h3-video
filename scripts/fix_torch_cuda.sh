@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 주의: H3 용 sglang(0.5.17+)은 CUDA 13 전용이라 이 스크립트로는 H3 서버 문제가 풀리지 않는다(드라이버 580 이상 노드 필요).
+#       sglang 없이 torch 만 쓰는 venv 에서, 드라이버보다 새 CUDA 빌드가 깔렸을 때 같은 버전의 CUDA 12 빌드로 바꾸는 용도.
 # 노드 드라이버보다 새 CUDA 로 빌드된 PyTorch 를 같은 버전의 CUDA 12 빌드로 바꾼다.
 # ("The NVIDIA driver on your system is too old (found version 12020)" 오류: 드라이버는 CUDA 12.2 까지인데 torch 가 CUDA 13 용일 때)
 #   bash scripts/fix_torch_cuda.sh          확인하고 필요하면 바꾼다 (provision.sh 가 끝에 자동으로 부른다)

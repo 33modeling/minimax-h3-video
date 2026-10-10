@@ -72,7 +72,9 @@ done
 if [[ $problems -gt 0 ]]; then red "== 문제 ${problems}개: 위 → 를 처리한 뒤 다시 실행"; exit 1; fi
 # GPU 를 실제로 쓸 수 있는지 (드라이버보다 새 CUDA 로 빌드된 torch 면 여기서 원래 오류가 그대로 나온다)
 if ! python3 -c "import torch; torch.zeros(1).cuda()" ; then
-  fail "torch 가 GPU 를 못 쓴다 (바로 위 원래 오류 참고)" "bash scripts/fix_torch_cuda.sh  (드라이버에 맞는 CUDA 12 빌드로 다시 설치)"
+  drv="$(nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}')"
+  fail "torch 가 GPU 를 못 쓴다 (바로 위 원래 오류 참고). 이 노드 드라이버는 CUDA ${drv:-?} 까지" \
+       "H3 를 지원하는 sglang(0.5.17+)은 CUDA 13 전용이라 드라이버 580 이상 노드(B200·B300 등)가 필요하다. torch 재설치로는 해결되지 않는다"
   red "== 문제가 있어 서버를 띄우지 않는다. 로그: $UP_LOG"; exit 1
 fi
 green "✓ torch GPU 사용 가능"

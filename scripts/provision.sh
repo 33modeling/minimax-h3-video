@@ -32,8 +32,11 @@ log "패키지 설치 (h3video + sglang[diffusion])"
 "$VENV/bin/pip" install -e ".[serve,dev]" ${PIP_INDEX_URL:+-i "$PIP_INDEX_URL"} \
   || { log "pip 설치 실패 — sglang 은 docker lmsysorg/sglang:dev 로 대체 가능 (README 참조)"; exit 1; }
 "$VENV/bin/python" -c "import sglang, sys; print('sglang', sglang.__version__)" || log "경고: sglang import 실패"
-# 드라이버(예: CUDA 12.2)보다 새 CUDA 로 빌드된 torch 가 깔렸으면 같은 버전의 CUDA 12 빌드로 바꾼다
-bash "$ROOT/scripts/fix_torch_cuda.sh" || log "경고: torch 가 GPU 를 못 쓴다 (위 [torch-cuda] 줄 참고)"
+# H3 를 지원하는 sglang(0.5.17+)은 CUDA 13 전용(torch 2.11+, flashinfer[cu13]) → 노드 드라이버가 580 이상이어야 한다
+drv="$(nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}')"
+if [[ -n "$drv" && "${drv%%.*}" -lt 13 ]]; then
+  log "주의: 이 노드 드라이버는 CUDA $drv 까지다. H3 용 sglang(CUDA 13)은 드라이버 580 이상 노드에서만 돈다 (B200·B300 등, 또는 드라이버 업데이트)"
+fi
 
 # 2) 모델: 확인만. 받기는 --download 일 때만 (예전에는 경로만 달라도 전부 다시 받았다)
 fl2va_ok() { h3_model_ok "$H3_MODEL_DIR"; }   # cluster_env.sh: model_index.json + fl2va 폴더(대소문자 무관)
