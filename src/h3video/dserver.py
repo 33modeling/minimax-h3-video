@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import math
 import os
 import queue
 import re
@@ -234,6 +235,24 @@ class Engine:
             tips.append("GPU 4장으로 띄우기 (bash scripts/up.sh 를 --ref 없이 → 영상 모델 3장에 나눠 장마다 1/3)")
         log(f"[경고] 메모리가 모자랄 수 있다 (추정 약 {need / 2**30:.1f}GB / 여유 {self.headroom / 2**30:.1f}GB). 그래도 시도한다. "
             f"OOM 이 나면: " + " / ".join(tips))
+
+    def max_seconds(self, aspect: str, short_edge: int, keyframes: int = 1, images: int = 0, video_seconds: float = 0):
+        """이 GPU 구성에 들어가는 한 장면의 최대 초(5~15). 여유를 모르면 None, 5초도 안 들어가면 0.
+        CLI 가 이 값에 맞춰 긴 영상을 장면으로 나눈다 (OOM 이 나기 전에)."""
+        if not getattr(self, "headroom", None):
+            return None
+        g = self.geo
+        h, w = self._canvas("16:9" if aspect == "auto" else aspect, short_edge)
+        grid = (h // g.canvas_multiple) * (w // g.canvas_multiple)
+        cond = images * grid   # 참고 영상: 초당 잠재 프레임 약 24/17*5 개
+        if video_seconds:
+            cond += int(math.ceil(video_seconds * g.fps / g.vae_frames_per_chunk * g.vae_latents_per_chunk + 2)) * grid
+        for s in range(15, 4, -1):
+            nf, _ = frames_for(s, g.vae_frames_per_chunk, g.vae_latents_per_chunk, g.fps, g.min_duration, g.max_duration)
+            r = self.rows({"num_frames": nf, "keyframes": [None] * keyframes}, h, w)
+            if (sum(r.values()) + cond) / self.cp_world * ACT_BYTES_PER_ROW <= self.headroom:
+                return s
+        return 0
 
     # ── 영상 모델 워커 (GPU 3장 이상) ──
     def _start_workers(self, model_dir: str, variant: str, devs: list[str], dtype: str, attn: str | None) -> None:
@@ -715,6 +734,14 @@ def make_handler(srv: Server):
 
         def do_GET(self):
             path = urllib.parse.urlparse(self.path).path.rstrip("/")
+            if path == "/v1/limits":   # 한 장면 최대 초 (CLI 가 장면 나누기에 쓴다)
+                q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).items()}
+                try:
+                    m = srv.engine.max_seconds(q.get("aspect", "16:9"), int(q.get("short_edge") or srv.engine.short_edge),
+                                               int(q.get("keyframes", 1)), int(q.get("images", 0)), float(q.get("video_seconds", 0)))
+                except (ValueError, TypeError) as e:
+                    return self._json(400, {"error": str(e)})
+                return self._json(200, {"max_seconds": m, "gpus": getattr(srv.engine, "cp_world", 1)})
             if path == "/health":
                 return self._json(200, {"status": "ok", "engine": "diffusers", "variant": srv.variant})
             if path == "/v1/models":

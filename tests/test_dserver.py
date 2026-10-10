@@ -227,3 +227,51 @@ class HttpTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MaxSecondsTest(unittest.TestCase):
+    """서버가 '이 GPU 에 들어가는 한 장면 최대 초'를 알려 주고, CLI 는 그보다 길면 장면을 나눠 이어 붙인다."""
+
+    def engine(self, world=1, headroom_gb=16.5):
+        e = fake_engine()
+        e.cp_world, e.headroom = world, int(headroom_gb * 2**30)
+        return e
+
+    def test_max_seconds(self):
+        self.assertEqual(self.engine().max_seconds("16:9", 768, 1), 12)        # --ref 모드(영상 모델 1장)
+        self.assertEqual(self.engine().max_seconds("16:9", 576, 1), 15)
+        self.assertEqual(self.engine(world=3).max_seconds("16:9", 768, 1), 15)  # 4장 모드
+        self.assertEqual(self.engine(headroom_gb=1).max_seconds("16:9", 768, 1), 0)
+        e = fake_engine()
+        e.headroom = None
+        self.assertIsNone(e.max_seconds("16:9", 768, 1))                       # 여유를 모르면 나누지 않는다
+        self.assertLess(self.engine().max_seconds("16:9", 768, 0, images=3, video_seconds=10), 12)   # 참고 자료만큼 줄어든다
+
+    def test_http_and_split(self):
+        import tempfile
+        import threading
+        from http.server import ThreadingHTTPServer
+        from h3video import spec
+        from h3video.client import H3Client
+        from h3video.jobs import fit_to_server, new_job, plan_job
+        with tempfile.TemporaryDirectory() as d:
+            srv = dserver.Server(self.engine(), Path(d), "fl2va")
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), dserver.make_handler(srv))
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            try:
+                c = H3Client(f"http://127.0.0.1:{httpd.server_address[1]}")
+                self.assertEqual(c.max_seconds("16:9", 768), 12)
+                job = new_job("비 오는 거리", 15)
+                self.assertEqual(fit_to_server(job, c), 12)
+                self.assertEqual([s.duration for s in plan_job(job)], [8, 7])        # 15초 → 12초 넘으니 둘로
+                job = new_job("비 오는 거리", 40)
+                fit_to_server(job, c)
+                self.assertTrue(all(s.duration <= 12 for s in plan_job(job)))
+                self.assertEqual(sum(s.duration for s in plan_job(job)), 40)
+                self.assertIsNone(H3Client("http://127.0.0.1:9").max_seconds("16:9", 768))   # 서버 없으면 None
+            finally:
+                httpd.shutdown()
+        self.assertEqual(spec.plan_scenes(15), [15])                      # 모르면 그대로
+        self.assertEqual(spec.plan_scenes(12, 10, 12), [12])
+        self.assertEqual(spec.plan_scenes(30, 15, 12), [10, 10, 10])
+        self.assertEqual(spec.plan_scenes(15, 10, 3), [5, 5, 5])          # 상한은 5초 밑으로 내려가지 않는다

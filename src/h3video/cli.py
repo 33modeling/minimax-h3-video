@@ -14,7 +14,7 @@ from pathlib import Path
 from . import prompt as P
 from . import spec
 from .client import DEFAULT_ENDPOINT, DEFAULT_REF_ENDPOINT, H3Client, H3Error, stage_input
-from .jobs import INBOX_DIR, OUTPUT_DIR, Job, JobStore, Worker, build_request, new_job, plan_job
+from .jobs import INBOX_DIR, OUTPUT_DIR, Job, JobStore, Worker, build_request, fit_to_server, new_job, plan_job
 
 SERVER_DOWN = (
     "서버가 응답하지 않는다: {ep}\n"
@@ -174,6 +174,14 @@ def run_jobs(a, jobs: list[Job], out: str | None = None) -> None:
         preflight(a, False)
     store = JobStore(Path(a.output_dir))
     w = Worker(store, H3Client(a.endpoint), H3Client(a.ref_endpoint), inbox_dir=a.inbox_dir, poll=a.poll)
+    for job in jobs:   # 서버 GPU 에 한 번에 안 들어가는 길이는 장면으로 나눠 이어 붙인다 (OOM 전에)
+        before = len(job.scenes)
+        m = fit_to_server(job, w.ref_client if job.task == "ref2va" else w.client)
+        if m:
+            validate_job(job)
+            if len(job.scenes) != before or m < spec.DURATION_MAX:
+                print(f"  이 서버 GPU 에서 한 장면은 최대 {m}초 → {job.total_seconds}초를 장면 {len(job.scenes)}개"
+                      f" {[s.duration for s in job.scenes]}로 만들어 이어 붙인다", file=sys.stderr)
     for job in jobs:
         w.enqueue(job)
         print(f"job {job.id} 등록: {job.total_seconds}초, {job.aspect_ratio}, 시드 {job.seed}" + (f", {job.title}" if job.title else ""), file=sys.stderr)

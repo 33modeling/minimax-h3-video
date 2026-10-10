@@ -24,12 +24,14 @@ def clamp_duration(seconds) -> int:
     return max(DURATION_MIN, min(DURATION_MAX, s))
 
 
-def plan_scenes(total_seconds: float, scene_seconds: int = 10) -> list[int]:
-    """총 길이를 장면들로 균등 분할. 15초 이하면 한 장면. 체인의 장면은 5~15초 (4초 장면은 서버가 5초로 늘려 길이가 어긋난다)."""
+def plan_scenes(total_seconds: float, scene_seconds: int = 10, max_scene: int | None = None) -> list[int]:
+    """총 길이를 장면들로 균등 분할. 한 장면 상한(15초, 서버 GPU 가 알려 준 max_scene 이 더 작으면 그것) 이하면 한 장면.
+    체인의 장면은 5~15초 (4초 장면은 서버가 5초로 늘려 길이가 어긋난다)."""
     import math
-    scene_seconds = max(SCENE_MIN, clamp_duration(scene_seconds))
+    cap = DURATION_MAX if not max_scene else max(SCENE_MIN, min(DURATION_MAX, int(max_scene)))
+    scene_seconds = min(cap, max(SCENE_MIN, clamp_duration(scene_seconds)))
     total = max(DURATION_MIN, int(round(total_seconds)))
-    if total <= DURATION_MAX:
+    if total <= cap:
         return [total]
     n = min(math.ceil(total / scene_seconds), total // SCENE_MIN)
     base, rem = divmod(total, n)

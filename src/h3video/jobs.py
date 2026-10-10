@@ -73,6 +73,7 @@ class Job:
     negative: str | None = None
     raw: bool = False            # True = 서버의 프롬프트 다듬기를 끈다
     short_edge: int = spec.SHORT_EDGE_DEFAULT   # 짧은 변 (768 기본, 줄이면 메모리·시간이 준다)
+    max_scene: int | None = None   # 서버 GPU 에 들어가는 한 장면 최대 초 (fit_to_server 가 채운다, 넘으면 장면을 나눈다)
     host: str | None = None      # 처리하는 프로세스의 호스트·pid (죽은 프로세스의 작업을 '진행'으로 남기지 않으려고)
     pid: int | None = None
     created: float = field(default_factory=time.time)
@@ -161,10 +162,27 @@ def ffmpeg() -> str | None:
     return shutil.which("ffmpeg")
 
 
+def _need_av():
+    try:
+        import av  # noqa: F401  (Diffusers 엔진 venv 에 있다)
+        return av
+    except ImportError:
+        raise H3Error("ffmpeg 도 PyAV 도 없어 장면을 이을 수 없다: source scripts/cluster_env.sh 후 h3video 를 실행 "
+                      "(Diffusers venv 에 PyAV 가 있다), 또는 ffmpeg 설치") from None
+
+
 def extract_last_frame(video: Path, out_png: Path) -> Path:
     ff = ffmpeg()
-    if not ff:
-        raise H3Error("ffmpeg 가 없어 장면 체인을 이을 수 없다 (apt install ffmpeg / conda install ffmpeg)")
+    if not ff:   # ffmpeg 가 없으면 PyAV 로 마지막 프레임
+        av = _need_av()
+        last = None
+        with av.open(str(video)) as c:
+            for f in c.decode(video=0):
+                last = f
+        if last is None:
+            raise H3Error(f"영상에 프레임이 없다: {video}")
+        last.to_image().save(out_png)
+        return out_png
     subprocess.run([ff, "-y", "-loglevel", "error", "-sseof", "-0.05", "-i", str(video), "-frames:v", "1", "-update", "1", str(out_png)], check=True)
     if not out_png.exists():
         subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(video), "-vf", "select=eq(n\\,0)", "-frames:v", "1", str(out_png)], check=True)
@@ -173,8 +191,8 @@ def extract_last_frame(video: Path, out_png: Path) -> Path:
 
 def concat_videos(parts: list[Path], out: Path) -> Path:
     ff = ffmpeg()
-    if not ff:
-        raise H3Error("ffmpeg 가 없어 장면을 이어 붙일 수 없다")
+    if not ff:   # ffmpeg 가 없으면 PyAV 로 다시 인코딩해 잇는다 (h264 + AAC)
+        return _concat_av(parts, out)
     lst = out.with_suffix(".concat.txt")
     lst.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
     r = subprocess.run([ff, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)])
@@ -182,6 +200,48 @@ def concat_videos(parts: list[Path], out: Path) -> Path:
         subprocess.run([ff, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
                         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(out)], check=True)
     lst.unlink(missing_ok=True)
+    return out
+
+
+def _concat_av(parts: list[Path], out: Path) -> Path:
+    av = _need_av()
+    from fractions import Fraction
+    tmp = out.with_suffix(".part.mp4")
+    with av.open(str(parts[0])) as c0:
+        v0 = c0.streams.video[0]
+        rate = v0.average_rate or Fraction(24)
+        w, h = v0.codec_context.width, v0.codec_context.height
+        a0 = c0.streams.audio[0] if c0.streams.audio else None
+        sr, layout = (a0.codec_context.sample_rate, a0.codec_context.layout.name) if a0 else (None, None)
+    with av.open(str(tmp), "w") as o:
+        vs = o.add_stream("libx264", rate=rate)
+        vs.width, vs.height, vs.pix_fmt = w, h, "yuv420p"
+        as_ = o.add_stream("aac", rate=sr, layout=layout) if sr else None
+        vi = ai = 0
+        for p in parts:
+            with av.open(str(p)) as c:
+                for f in c.decode(video=0):
+                    f = f.reformat(width=w, height=h, format="yuv420p")
+                    f.pts, f.time_base = vi, Fraction(1, 1) / rate
+                    vi += 1
+                    for pk in vs.encode(f):
+                        o.mux(pk)
+            if as_ is not None:
+                with av.open(str(p)) as c:
+                    if c.streams.audio:
+                        rs = av.AudioResampler(format=as_.codec_context.format.name, layout=layout, rate=sr)
+                        for f in c.decode(audio=0):
+                            for g in rs.resample(f):
+                                g.pts, g.time_base = ai, Fraction(1, sr)
+                                ai += g.samples
+                                for pk in as_.encode(g):
+                                    o.mux(pk)
+        for pk in vs.encode():
+            o.mux(pk)
+        if as_ is not None:
+            for pk in as_.encode():
+                o.mux(pk)
+    tmp.replace(out)
     return out
 
 
@@ -222,6 +282,8 @@ class Worker(threading.Thread):
                     self.current = None
 
     def plan(self, job: Job):
+        if job.max_scene is None:
+            fit_to_server(job, self.ref_client if job.task == "ref2va" else self.client)
         job.scenes = plan_job(job)
         self.store.save(job)
 
@@ -265,9 +327,34 @@ class Worker(threading.Thread):
         self.store.save(job)
 
 
+def media_seconds(path: str) -> float:
+    """참고 영상 길이 (PyAV 가 없거나 못 읽으면 넉넉히 15초로 본다)."""
+    try:
+        import av
+        with av.open(str(Path(path).expanduser())) as c:
+            return float(c.duration / av.time_base) if c.duration else 15.0
+    except Exception:  # noqa: BLE001
+        return 15.0
+
+
+def fit_to_server(job: Job, client) -> int | None:
+    """서버에 '이 GPU 에 들어가는 한 장면 최대 초'를 물어 job.max_scene 에 둔다. 길면 그 길이 이하 장면으로 나눠 이어 붙인다."""
+    if client is None or not hasattr(client, "max_seconds"):
+        return None
+    if job.task == "ref2va":
+        imgs = sum(r.get("type") == "image" for r in job.refs)
+        vsec = sum(media_seconds(r["path"]) for r in job.refs if r.get("type") in ("video", "video_audio"))
+        m = client.max_seconds(job.aspect_ratio, job.short_edge, 0, imgs, vsec)
+    else:
+        m = client.max_seconds(job.aspect_ratio, job.short_edge, 2 if job.last_image else 1)
+    if m:   # 0(5초도 안 들어감)·None(모름)은 나누지 않는다 — 서버가 경고하고 시도한다
+        job.max_scene = m
+    return job.max_scene
+
+
 def plan_job(job: Job) -> list[Scene]:
     """총 길이를 장면으로 나누고 장면마다 task 를 정한다 (워커와 CLI --dry-run 공용)."""
-    durations = spec.plan_scenes(job.total_seconds, job.scene_seconds)
+    durations = spec.plan_scenes(job.total_seconds, job.scene_seconds, job.max_scene)
     prompts = P.scene_prompts(job.prompt, durations, rewrite=not job.raw) if len(durations) > 1 else [job.prompt]
     scenes = []
     for i, (d, pr) in enumerate(zip(durations, prompts)):

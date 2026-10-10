@@ -14,6 +14,7 @@ import os
 import shutil
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,6 +158,16 @@ class H3Client:
             except H3Error:
                 continue
         return False
+
+    def max_seconds(self, aspect: str, short_edge: int, keyframes: int = 1, images: int = 0, video_seconds: float = 0):
+        """서버 GPU 에 들어가는 한 장면의 최대 초. 모르면 None (옛 서버·sglang·여유 모름)."""
+        q = urllib.parse.urlencode({"aspect": aspect, "short_edge": short_edge, "keyframes": keyframes,
+                                    "images": images, "video_seconds": round(video_seconds, 2)})
+        try:
+            m = self._request("GET", f"/v1/limits?{q}", timeout=10).get("max_seconds")
+        except H3Error:
+            return None
+        return int(m) if m is not None else None
 
     # --- API ---
     def submit(self, req: VideoRequest) -> str:
