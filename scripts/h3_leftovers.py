@@ -33,13 +33,17 @@ def is_server(argv) -> bool:
             or (exe == "sglang" and argv[1:2] == ["serve"]) or (argv[0] if argv else "").startswith("sglang::"))
 
 
+def is_web(argv) -> bool:
+    return _module(argv) == "h3video.cli" and "web" in argv
+
+
 def is_stack(argv) -> bool:
     """--all: GPU 를 안 잡은 것까지 — 서버를 띄운 serve.sh·torchrun·웹 UI."""
     m = _module(argv)
     exe = os.path.basename(argv[0]) if argv else ""
     return (is_server(argv)
             or (m == "torch.distributed.run" and "h3video.dworker" in argv)
-            or (m == "h3video.cli" and "web" in argv)
+            or is_web(argv)
             or (exe in ("bash", "sh") and len(argv) > 1 and argv[1].endswith("scripts/serve.sh")))
 
 
@@ -64,6 +68,13 @@ def ancestors():
         except (OSError, ValueError, IndexError):
             break
     return out
+
+
+def argv_of(pid):
+    try:
+        return [x.decode(errors="replace") for x in read(pid, "cmdline").split(b"\0") if x]
+    except OSError:
+        return []
 
 
 def gpu_holders(exclude=()):
@@ -140,6 +151,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kill", action="store_true")
     ap.add_argument("--all", action="store_true", help="GPU 를 안 잡은 serve.sh·torchrun·웹 UI 까지 (다시 띄우기 전에)")
+    ap.add_argument("--keep-web", action="store_true", help="웹 UI 는 빼고 (H3 서버만 — up.sh·down.sh)")
+    ap.add_argument("--web-only", action="store_true", help="웹 UI 만 (web.sh)")
     ap.add_argument("--gpu-users", action="store_true", help="이 계정에서 GPU 를 잡은 프로세스 전부 보여 주기만")
     ap.add_argument("--exclude", type=int, nargs="*", default=[])
     a = ap.parse_args()
@@ -151,13 +164,17 @@ def main():
             print(f"     pid {pid}  GPU 장치 {','.join(gpus) or '-'}  {cmd}")
         return 0
     procs = find(a.exclude)
-    if a.all:
+    if a.all or a.web_only:
         seen = {p for p, _, _ in procs}
         procs += [x for x in stack_procs(a.exclude) if x[0] not in seen]
+    if a.keep_web:
+        procs = [x for x in procs if not is_web(argv_of(x[0]))]
+    if a.web_only:
+        procs = [x for x in procs if is_web(argv_of(x[0]))]
     if not procs:
-        print("[leftover] 남은 H3 서버 프로세스 없음")
+        print("[leftover] 남은 " + ("웹 UI" if a.web_only else "H3 서버") + " 프로세스 없음")
         return 0
-    print(f"[leftover] 남아 있는 H3 서버 프로세스 {len(procs)}개:")
+    print(f"[leftover] 남아 있는 " + ("웹 UI" if a.web_only else "H3 서버") + f" 프로세스 {len(procs)}개:")
     for pid, gpus, cmd in procs:
         print(f"   pid {pid}  GPU 장치 {','.join(gpus) or '-'}  {cmd}")
     if not a.kill:

@@ -6,9 +6,11 @@
 |---|---|
 | 코드를 고쳤을 때 (내 PC) | `CLUSTER_SSH=<계정>@<호스트> CLUSTER_CODE_DIR=/user-volume/minimax-h3-video bash scripts/sync_to_cluster.sh` |
 | 처음 한 번 | `bash scripts/provision.sh` (참고 자료도 쓰면 `--ref`) |
-| 서버 띄우기 | `bash scripts/up.sh` (참고 자료도 쓰면 `--ref`) |
-| 떴는지 확인 (다른 창) | `bash scripts/status.sh` |
-| 끄기 | `up.sh` 화면에서 Ctrl+C, 다른 창에서는 `bash scripts/down.sh` |
+| H3 서버 띄우기 | `bash scripts/up.sh` (참고 자료도 쓰면 `--ref`) — 끄기: 그 화면에서 Ctrl+C, 다른 창에서는 `bash scripts/down.sh` |
+| 웹 UI 띄우기 (필요할 때만) | 다른 창에서 `bash scripts/web.sh` — 끄기: 그 화면에서 Ctrl+C, 다른 창에서는 `bash scripts/web.sh --stop` |
+| 떴는지 확인 | `bash scripts/status.sh` |
+
+H3 서버와 웹 UI 는 따로 띄우고 끈다. 하나를 다시 띄우거나 꺼도 다른 하나는 그대로다. CLI(`h3video gen`)만 쓰면 웹 UI 는 필요 없다. `serve.sh` 는 `up.sh` 가 안에서 쓰는 것이라 직접 쓰지 않는다.
 
 ## 1. 처음 한 번: provision.sh
 
@@ -30,14 +32,13 @@ bash scripts/provision.sh --skip-model   # 패키지·가이드만 다시
 bash scripts/up.sh                   # fl2va 서버 (포트 30010)
 bash scripts/up.sh --ref             # ref2va 서버도 (포트 30011)
 bash scripts/up.sh --check           # 점검만 하고 띄우지 않는다
-bash scripts/up.sh --web             # 웹 UI(8790)도
 bash scripts/status.sh               # 다른 창에서: 서버마다 준비됨 ✓ / 로딩 중 / 꺼짐, GPU 메모리
-bash scripts/down.sh                 # 다른 창에서 끄기
+bash scripts/down.sh                 # 다른 창에서 H3 서버 끄기 (웹 UI 는 그대로)
 ```
 
 `up.sh` 가 하는 일:
 
-1. **전에 띄운 H3 서버 묶음을 전부 내린다**: 서버·워커·torchrun·serve.sh·웹 UI(GPU 를 잡았든 아니든). 포트가 풀릴 때까지 기다린 뒤 시작한다. 같은 셸에서 띄운 다른 GPU 작업과 `h3video gen` 은 건드리지 않는다.
+1. **전에 띄운 H3 서버 묶음을 전부 내린다**: 서버·워커·torchrun·serve.sh(GPU 를 잡았든 아니든). 포트가 풀릴 때까지 기다린 뒤 시작한다. 웹 UI·같은 셸에서 띄운 다른 GPU 작업·`h3video gen` 은 건드리지 않는다.
 2. **비어 있는 GPU 만 쓴다**. 다른 작업이 쓰는 GPU 는 피한다.
    - `--ref` 없이: 빈 GPU 전부를 fl2va 에 (4장이면 텍스트 인코더·VAE 1장 + 영상 모델 3장에 나눠 영상 하나를 함께 만든다)
    - `--ref`: 빈 GPU 를 fl2va·ref2va 가 반씩 (4장이면 2장씩)
@@ -66,7 +67,7 @@ bash scripts/down.sh                 # 다른 창에서 끄기
 
 ## 4. 웹 UI·숏폼
 
-- 웹 UI: `bash scripts/up.sh --web` 후 화면에 나오는 `ssh -N -L …` 를 PC 에서 실행 → 브라우저 `http://127.0.0.1:8790`
+- 웹 UI: 다른 창에서 `bash scripts/web.sh` (허브 숏폼 제작에서 부르면 `--cors https://33modeling.pages.dev`). 화면에 나오는 `ssh -N -L …` 를 PC 에서 실행 → 브라우저 `http://127.0.0.1:8790`. 영상은 H3 서버(`up.sh`)가 떠 있어야 만들어진다
 - 터미널 UI: `source scripts/cluster_env.sh && h3video tui`
 - 숏폼(자막·음악·템플릿 합성): [shortform/USAGE.md](shortform/USAGE.md)
 

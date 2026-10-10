@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# 클러스터 노드에서 명령 하나로: 환경 설정 → 점검 → H3 서버를 이 화면에서 포그라운드로 실행 (웹 UI 는 --web 일 때만).
+# 클러스터 노드에서 명령 하나로: 환경 설정 → 점검 → H3 서버를 이 화면에서 포그라운드로 실행. 웹 UI 는 따로(bash scripts/web.sh).
 # 서버 원본 로그와 오류가 이 화면에 그대로 나온다. 준비되면 PC 접속 방법을 출력하고 계속 돈다. Ctrl+C 로 전부 끈다.
 # (오래 띄워 둘 거면 직접 연 tmux 창 안에서 실행)
 #
 #   bash scripts/up.sh                 fl2va 서버(포트 30010) — CLI(h3video gen)는 이것만 있으면 된다
 #   bash scripts/up.sh --ref           ref2va 서버도 (포트 30011)
 #     GPU: --gpus 를 안 주면 비어 있는 GPU 를 쓴다. diffusers 엔진은 빈 GPU 전부(--ref 면 반씩), sglang 은 4장씩. 다른 프로세스가 쓰는 GPU 는 피한다
-#   bash scripts/up.sh --web           웹 UI(8790)도 (브라우저·허브 숏폼 제작에서 쓸 때만)
 #   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7 --mode memory
-#   bash scripts/up.sh --cors https://33modeling.pages.dev    허브 '숏폼 제작'에서 웹 UI 를 부를 수 있게
 #   bash scripts/up.sh --check         점검만
 # 끄기: 이 화면에서 Ctrl+C (다른 창에서는 bash scripts/down.sh)
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
@@ -17,9 +15,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"
 GPUS=""; REF_GPUS=""; REF=0; WEB=0; CHECK=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"
 while [[ $# -gt 0 ]]; do case "$1" in
-  --ref) REF=1; shift ;; --web) WEB=1; shift ;; --no-web) WEB=0; shift ;; --check) CHECK=1; shift ;;
+  --ref) REF=1; shift ;; --check) CHECK=1; shift ;;
+  --web|--no-web) echo "웹 UI 는 이제 따로 띄운다: 다른 창에서 bash scripts/web.sh (H3 서버와 서로 안 건드린다)"; shift ;;
   --gpus) GPUS="$2"; shift 2 ;; --ref-gpus) REF_GPUS="$2"; shift 2 ;;
-  --mode) MODE_ARGS=(--mode "$2"); shift 2 ;; --cors) CORS="$2"; shift 2 ;;
+  --mode) MODE_ARGS=(--mode "$2"); shift 2 ;; --cors) echo "--cors 는 웹 UI 옵션이다: bash scripts/web.sh --cors $2"; shift 2 ;;
   -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "알 수 없는 옵션: $1 (--help)"; exit 2 ;; esac; done
 
@@ -40,14 +39,14 @@ echo "[up] 엔진: $H3_ENGINE (드라이버 CUDA $(h3_driver_cuda || true); 12.x
 # 전에 띄운 H3 서버·워커가 GPU 를 잡고 남아 있으면 먼저 내린다 (내 계정이 이 레포로 띄운 것만, 다른 작업은 그대로)
 # 다시 띄우면 전에 띄운 H3 서버 묶음(서버·워커·torchrun·serve.sh·웹 UI)을 전부 내리고 시작한다
 if [[ $CHECK == 1 ]]; then
-  python3 "$ROOT/scripts/h3_leftovers.py" --all | grep -v "남은 H3 서버 프로세스 없음" | sed 's/^\[leftover\]/· (--check 라 내리지 않음)/'
+  python3 "$ROOT/scripts/h3_leftovers.py" --all --keep-web | grep -v "남은 H3 서버 프로세스 없음" | sed 's/^\[leftover\]/· (--check 라 내리지 않음)/'
 else
-  if ! python3 "$ROOT/scripts/h3_leftovers.py" --all >/dev/null 2>&1; then
-    yellow "· 전에 띄운 H3 서버를 전부 내리고 시작한다"
-    python3 "$ROOT/scripts/h3_leftovers.py" --kill --all
+  if ! python3 "$ROOT/scripts/h3_leftovers.py" --all --keep-web >/dev/null 2>&1; then
+    yellow "· 전에 띄운 H3 서버를 전부 내리고 시작한다 (웹 UI 는 그대로)"
+    python3 "$ROOT/scripts/h3_leftovers.py" --kill --all --keep-web
   fi
   for _ in $(seq 1 30); do   # 포트가 풀릴 때까지 (최대 30초)
-    busy=0; for p in "$H3_PORT_FL2VA" "$H3_PORT_REF2VA" "${H3_WEB_PORT:-8790}"; do h3_port_busy "$p" && busy=1; done
+    busy=0; for p in "$H3_PORT_FL2VA" "$H3_PORT_REF2VA"; do h3_port_busy "$p" && busy=1; done
     [[ $busy == 0 ]] && break; sleep 1
   done
 fi
@@ -187,7 +186,7 @@ cleanup() {   # 서버·웹 UI 를 하위 프로세스까지 끄고 GPU 반환 �
   trap - TERM HUP EXIT; trap '' INT PIPE   # 정리 중 Ctrl+C 를 또 눌러도, 화면(tee)이 없어도 끝까지 정리한다
   echo; yellow "== 끄는 중: ${NAMES[*]} (GPU 반환까지 확인, 30초 안에 안 꺼지면 강제 종료)"
   h3_stop_tree "${PIDS[@]}"
-  local f; for f in "$H3_LOG_DIR"/serve-*.pid "$H3_LOG_DIR/web.pid"; do   # 내 pid 파일만 (다른 up.sh 의 것은 두고)
+  local f; for f in "$H3_LOG_DIR"/serve-*.pid; do   # 내 pid 파일만 (다른 up.sh 의 것은 두고)
     [[ -f "$f" ]] && [[ " ${PIDS[*]} " == *" $(cat "$f" 2>/dev/null) "* ]] && rm -f "$f"
   done
   green "== 종료"
@@ -233,6 +232,7 @@ host="$(hostname -f 2>/dev/null || hostname)"
 echo
 green "== 준비 완료. 로그는 계속 이 화면에 나온다. 끄기: Ctrl+C"
 echo "  영상:   다른 창에서  cd $ROOT && source scripts/cluster_env.sh && h3video gen \"...\" -s 8"
+echo "  웹 UI:  다른 창에서  bash scripts/web.sh   (H3 서버와 따로 띄우고 끈다)"
 if [[ $WEB == 1 ]]; then
   echo "  PC 에서: ssh -N -L 8790:127.0.0.1:${PORT[web]} -L ${PORT[fl2va]}:127.0.0.1:${PORT[fl2va]} -L ${PORT[ref2va]}:127.0.0.1:${PORT[ref2va]} $(id -un)@$host"
   echo "           그다음 브라우저 http://127.0.0.1:8790 (허브 숏폼 제작의 서버 주소도 http://localhost:8790)"

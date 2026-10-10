@@ -7,8 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/cluster_env.sh" >/dev/null || exit 1
 bash "$ROOT/scripts/stop.sh"
-python3 "$ROOT/scripts/h3_leftovers.py" --kill --all   # pid 파일 밖으로 남은 서버·워커·torchrun·웹 UI 까지
-if [[ -f "$H3_LOG_DIR/web.pid" ]]; then p=$(cat "$H3_LOG_DIR/web.pid"); rm -f "$H3_LOG_DIR/web.pid"; echo "[down] 웹 UI pid=$p 종료"; h3_stop_tree "$p" >/dev/null; fi
+python3 "$ROOT/scripts/h3_leftovers.py" --kill --all --keep-web   # pid 파일 밖으로 남은 서버·워커·torchrun 까지 (웹 UI 는 web.sh 창에서 Ctrl+C 또는 bash scripts/web.sh --stop)
 for p in "$H3_PORT_FL2VA" "$H3_PORT_REF2VA" "${H3_WEB_PORT:-8790}"; do
   h3_port_busy "$p" && echo "[down] 주의: 포트 $p 가 아직 열려 있다"
 done

@@ -4,10 +4,11 @@
 
 ```bash
 cd /user-volume/minimax-h3-video
-bash scripts/up.sh            # 서버 띄우기 (이 화면에 로그, 끄기는 Ctrl+C)
+bash scripts/up.sh            # H3 서버 띄우기 (이 화면에 로그, 끄기는 Ctrl+C)
 bash scripts/up.sh --ref      # 참고 자료(--image/--video/--audio)도 쓸 때
 bash scripts/status.sh        # 다른 창에서 확인: "준비됨 ✓"
-bash scripts/down.sh          # 다른 창에서 끄기
+bash scripts/down.sh          # 다른 창에서 H3 서버 끄기
+bash scripts/web.sh           # (웹 UI 가 필요할 때만) 따로 띄운다 — H3 서버와 서로 안 건드린다
 ```
 
 영상은 다른 창에서 만든다. 새 창마다 먼저:
