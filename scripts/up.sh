@@ -38,9 +38,18 @@ echo "[up] 로그 파일: $UP_LOG"
 # 2) 점검
 echo "[up] 엔진: $H3_ENGINE (드라이버 CUDA $(h3_driver_cuda || true); 12.x → diffusers, 13 이상 → sglang)"
 # 전에 띄운 H3 서버·워커가 GPU 를 잡고 남아 있으면 먼저 내린다 (내 계정이 이 레포로 띄운 것만, 다른 작업은 그대로)
-if ! python3 "$ROOT/scripts/h3_leftovers.py" >/dev/null 2>&1; then
-  if [[ $CHECK == 1 ]]; then yellow "· 전에 띄운 H3 서버가 GPU 를 잡고 남아 있다 (up.sh 로 띄우면 먼저 내린다)"; python3 "$ROOT/scripts/h3_leftovers.py"
-  else yellow "· 전에 띄운 H3 서버가 GPU 를 잡고 남아 있다 → 내리고 시작한다"; python3 "$ROOT/scripts/h3_leftovers.py" --kill; sleep 3; fi
+# 다시 띄우면 전에 띄운 H3 서버 묶음(서버·워커·torchrun·serve.sh·웹 UI)을 전부 내리고 시작한다
+if [[ $CHECK == 1 ]]; then
+  python3 "$ROOT/scripts/h3_leftovers.py" --all | grep -v "남은 H3 서버 프로세스 없음" | sed 's/^\[leftover\]/· (--check 라 내리지 않음)/'
+else
+  if ! python3 "$ROOT/scripts/h3_leftovers.py" --all >/dev/null 2>&1; then
+    yellow "· 전에 띄운 H3 서버를 전부 내리고 시작한다"
+    python3 "$ROOT/scripts/h3_leftovers.py" --kill --all
+  fi
+  for _ in $(seq 1 30); do   # 포트가 풀릴 때까지 (최대 30초)
+    busy=0; for p in "$H3_PORT_FL2VA" "$H3_PORT_REF2VA" "${H3_WEB_PORT:-8790}"; do h3_port_busy "$p" && busy=1; done
+    [[ $busy == 0 ]] && break; sleep 1
+  done
 fi
 h3_model_ok "$H3_MODEL_DIR" || h3_ask_model_dir || true    # 기본·저장·검색으로도 없으면 경로를 묻는다
 if h3_model_ok "$H3_MODEL_DIR" || grep -qs "^export H3_MODEL_DIR=\"$H3_MODEL_DIR\"" "$ROOT/.cluster_env.local.sh"; then green "✓ 모델: $H3_MODEL_DIR"
@@ -111,8 +120,9 @@ GALL=(); declare -A GUSED=() GTOT=()
 while IFS=, read -r i u tt; do i=${i// /}; [[ -n "$i" ]] || continue; GALL+=("$i"); GUSED[$i]=${u// /}; GTOT[$i]=${tt// /}; done \
   < <(nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null)
 FREE=(); for i in "${GALL[@]}"; do [[ ${GUSED[$i]} -le $FREE_MIB ]] && FREE+=("$i"); done
-gpu_table() { local i; for i in "${GALL[@]}"; do echo "     GPU $i: $(( ${GUSED[$i]} / 1024 ))GB / $(( ${GTOT[$i]} / 1024 ))GB 사용$([[ ${GUSED[$i]} -gt $FREE_MIB ]] && echo '  ← 다른 프로세스가 쓰는 중')"; done
-  nvidia-smi --query-compute-apps=gpu_bus_id,pid,process_name,used_memory --format=csv,noheader 2>/dev/null | sed 's/^/     프로세스: /' | head -8; }
+gpu_table() { local i; for i in "${GALL[@]}"; do echo "     GPU $i: $(( ${GUSED[$i]} / 1024 ))GB / $(( ${GTOT[$i]} / 1024 ))GB 사용$([[ ${GUSED[$i]} -gt $FREE_MIB ]] && echo '  ← 사용 중')"; done
+  echo "   이 계정에서 GPU 를 잡은 프로세스 (컨테이너라 nvidia-smi 로는 안 보여 /proc 으로 찾음):"
+  python3 "$ROOT/scripts/h3_leftovers.py" --gpu-users; }
 TAKEN=(); gpu_problems=$problems
 if [[ ${#GALL[@]} -eq 0 ]]; then fail "GPU 가 안 보인다 (nvidia-smi 실패)" "GPU 노드인지, nvidia-smi 가 되는지 확인"
 else
@@ -135,7 +145,7 @@ else
   else PER=4; fi
   for w in "${AUTO[@]}"; do
     got=(); for i in "${FREE[@]}"; do [[ " ${TAKEN[*]} " == *" $i "* ]] && continue; got+=("$i"); [[ ${#got[@]} -ge $PER ]] && break; done
-    if [[ ${#got[@]} -lt $PER ]]; then fail "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "$([[ $CHECK == 1 ]] && echo "--check 라 남은 H3 서버는 아직 안 내렸다(실제로 띄우면 먼저 내린다). 그래도 차 있으면 " || echo "아래 '다른 프로세스가 쓰는 중' GPU 는 이 레포가 띄운 서버가 아니다(남은 서버는 위에서 이미 내렸다). ")그 작업을 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --ref 빼기')"; continue; fi
+    if [[ ${#got[@]} -lt $PER ]]; then fail "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "$([[ $CHECK == 1 ]] && echo "--check 라 남은 H3 서버는 아직 안 내렸다(실제로 띄우면 먼저 내린다). " || echo "전에 띄운 H3 서버는 위에서 모두 내렸다. ")아래에 GPU 를 잡은 프로세스를 보여 준다: 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --ref 빼기')"; continue; fi
     TAKEN+=("${got[@]}"); sel=$(IFS=,; echo "${got[*]}")
     [[ $w == fl2va ]] && GPUS=$sel; [[ $w == ref2va ]] && REF_GPUS=$sel
   done

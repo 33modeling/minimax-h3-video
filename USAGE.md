@@ -37,7 +37,7 @@ bash scripts/down.sh                 # 다른 창에서 끄기
 
 `up.sh` 가 하는 일:
 
-1. **전에 띄운 H3 서버가 남아 있으면 먼저 내린다**(이 레포가 띄운 것만, 다른 GPU 작업은 그대로).
+1. **전에 띄운 H3 서버 묶음을 전부 내린다**: 서버·워커·torchrun·serve.sh·웹 UI(GPU 를 잡았든 아니든). 포트가 풀릴 때까지 기다린 뒤 시작한다. 같은 셸에서 띄운 다른 GPU 작업과 `h3video gen` 은 건드리지 않는다.
 2. **비어 있는 GPU 만 쓴다**. 다른 작업이 쓰는 GPU 는 피한다.
    - `--ref` 없이: 빈 GPU 전부를 fl2va 에 (4장이면 텍스트 인코더·VAE 1장 + 영상 모델 3장에 나눠 영상 하나를 함께 만든다)
    - `--ref`: 빈 GPU 를 fl2va·ref2va 가 반씩 (4장이면 2장씩)
@@ -78,7 +78,7 @@ bash scripts/down.sh                 # 다른 창에서 끄기
 |---|---|
 | `모델 없음` / `Diffusers 형식 가중치가 아직 없다` | `bash scripts/provision.sh` (`--ref` 면 ref2va 것도). 없는 것만 받는다 |
 | `Diffusers venv 없음` | `bash scripts/provision.sh --skip-model` |
-| `비어 있는 GPU 가 N장뿐이다` | 다른 작업이 GPU 를 쓰는 중. 끝나길 기다리거나 `--ref` 를 뺀다 |
+| `비어 있는 GPU 가 N장뿐이다` | H3 서버는 이미 다 내린 뒤다. 바로 아래에 이 계정에서 GPU 를 잡은 프로세스(pid·명령)가 나온다. 그것을 끄거나 끝나길 기다리거나 `--ref` 를 뺀다. 목록이 비어 있으면 다른 계정·파드가 쓰는 것 |
 | `--gpus 와 --ref-gpus 가 GPU N 에서 겹친다` | 서로 다른 GPU 를 준다 |
 | `포트 30010 을 다른 프로그램이 쓰고 있다` | `bash scripts/down.sh` 후 다시 |
 | `메모리 여유 …GB < 필요 약 140GB` / 로딩 중 `Killed` | 적재할 때 가중치를 CPU 메모리에 먼저 올린다(서버 하나에 약 140GB). 파드 메모리를 늘리거나 `--ref` 를 뺀다 |

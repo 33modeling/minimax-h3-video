@@ -17,7 +17,30 @@ import sys
 import time
 
 DEV = os.environ.get("H3_LEFTOVER_DEV_PREFIX", "/dev/nvidia")   # 테스트에서만 바꾼다
-SERVER = re.compile(r"h3video\.d(server|worker)|sglang serve|sglang::|-m sglang\b")
+def _module(argv):
+    """python … -m <모듈> 의 모듈 이름 (없으면 None)."""
+    for i, a in enumerate(argv[:-1]):
+        if a == "-m":
+            return argv[i + 1]
+    return None
+
+
+def is_server(argv) -> bool:
+    """실제로 돌고 있는 것이 H3 서버·워커인가 (명령줄 글자가 아니라 실행 중인 모듈·프로그램으로 판단)."""
+    m = _module(argv)
+    exe = os.path.basename(argv[0]) if argv else ""
+    return (m in ("h3video.dserver", "h3video.dworker") or (m or "").startswith("sglang")
+            or (exe == "sglang" and argv[1:2] == ["serve"]) or (argv[0] if argv else "").startswith("sglang::"))
+
+
+def is_stack(argv) -> bool:
+    """--all: GPU 를 안 잡은 것까지 — 서버를 띄운 serve.sh·torchrun·웹 UI."""
+    m = _module(argv)
+    exe = os.path.basename(argv[0]) if argv else ""
+    return (is_server(argv)
+            or (m == "torch.distributed.run" and "h3video.dworker" in argv)
+            or (m == "h3video.cli" and "web" in argv)
+            or (exe in ("bash", "sh") and len(argv) > 1 and argv[1].endswith("scripts/serve.sh")))
 
 
 def read(pid, name):
@@ -43,6 +66,45 @@ def ancestors():
     return out
 
 
+def gpu_holders(exclude=()):
+    """이 계정에서 GPU 장치를 연 프로세스 전부 (진단용: 무엇이 GPU 를 잡고 있나). [(pid, gpu 번호들, 명령줄)]"""
+    me, skip, out = os.getuid(), ancestors() | set(exclude), []
+    for d in os.listdir("/proc"):
+        if not d.isdigit() or int(d) in skip:
+            continue
+        pid = int(d)
+        try:
+            if os.stat(f"/proc/{pid}").st_uid != me:
+                continue
+            devs = {os.readlink(f"/proc/{pid}/fd/{fd}") for fd in os.listdir(f"/proc/{pid}/fd")
+                    if os.path.islink(f"/proc/{pid}/fd/{fd}")}
+            devs = {x[len(DEV):] for x in devs if x.startswith(DEV)}
+            if devs:
+                cmd = read(pid, "cmdline").replace(b"\0", b" ").decode(errors="replace").strip()
+                out.append((pid, sorted(x for x in devs if x.isdigit()), cmd[:150]))
+        except OSError:
+            continue
+    return out
+
+
+def stack_procs(exclude=()):
+    """GPU 를 잡지 않은 것까지 이 레포의 서버 묶음 (serve.sh·torchrun·웹 UI·서버·워커)."""
+    me, skip, out = os.getuid(), ancestors() | set(exclude), []
+    for d in os.listdir("/proc"):
+        if not d.isdigit() or int(d) in skip:
+            continue
+        pid = int(d)
+        try:
+            if os.stat(f"/proc/{pid}").st_uid != me:
+                continue
+            argv = [x.decode(errors="replace") for x in read(pid, "cmdline").split(b"\0") if x]
+            if is_stack(argv) and is_alive(pid):
+                out.append((pid, [], " ".join(argv)[:150]))
+        except OSError:
+            continue
+    return out
+
+
 def find(exclude=()):
     me, skip, found = os.getuid(), ancestors() | set(exclude), []
     for d in os.listdir("/proc"):
@@ -64,8 +126,8 @@ def find(exclude=()):
                 continue
             cmd = read(pid, "cmdline").replace(b"\0", b" ").decode(errors="replace").strip()
             env = read(pid, "environ").split(b"\0")
-            mine = any(e.startswith(b"H3_SERVE_ID=") for e in env) or (
-                any(e.startswith(b"H3_PORT_FL2VA=") for e in env) and SERVER.search(cmd) is not None)
+            argv = [x.decode(errors="replace") for x in read(pid, "cmdline").split(b"\0") if x]
+            mine = any(e.startswith(b"H3_SERVE_ID=") for e in env) or is_server(argv)
             if mine:
                 gpus = sorted(x for x in devs if x.isdigit())
                 found.append((pid, gpus, cmd[:150]))
@@ -77,13 +139,25 @@ def find(exclude=()):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kill", action="store_true")
+    ap.add_argument("--all", action="store_true", help="GPU 를 안 잡은 serve.sh·torchrun·웹 UI 까지 (다시 띄우기 전에)")
+    ap.add_argument("--gpu-users", action="store_true", help="이 계정에서 GPU 를 잡은 프로세스 전부 보여 주기만")
     ap.add_argument("--exclude", type=int, nargs="*", default=[])
     a = ap.parse_args()
+    if a.gpu_users:
+        users = gpu_holders(a.exclude)
+        if not users:
+            print("     이 계정 프로세스 중 GPU 를 잡은 것은 없다 → 다른 계정·다른 파드가 쓰거나, 비정상 종료로 남은 메모리다")
+        for pid, gpus, cmd in users:
+            print(f"     pid {pid}  GPU 장치 {','.join(gpus) or '-'}  {cmd}")
+        return 0
     procs = find(a.exclude)
+    if a.all:
+        seen = {p for p, _, _ in procs}
+        procs += [x for x in stack_procs(a.exclude) if x[0] not in seen]
     if not procs:
         print("[leftover] 남은 H3 서버 프로세스 없음")
         return 0
-    print(f"[leftover] GPU 를 잡고 남은 H3 서버 프로세스 {len(procs)}개:")
+    print(f"[leftover] 남아 있는 H3 서버 프로세스 {len(procs)}개:")
     for pid, gpus, cmd in procs:
         print(f"   pid {pid}  GPU 장치 {','.join(gpus) or '-'}  {cmd}")
     if not a.kill:
