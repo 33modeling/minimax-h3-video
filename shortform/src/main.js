@@ -80,7 +80,7 @@ function renderFileList(match) {
     const role = match ? match.roles[baseName(f.name)] : null;
     items.push({ name: f.name, meta: fmtSize(f.size), role: role || (match ? '쓰지 않음' : ''), cls: role ? 'ok' : 'idle' });
   }
-  for (const m of match ? match.missing : []) items.push({ name: m, meta: '', role: '파일 칸 2에 없음', cls: 'missing' });
+  for (const m of match ? match.missing : []) items.push({ name: m, meta: '', role: '파일 칸에 없음', cls: 'missing' });
   el.fileList.replaceChildren(
     ...items.map((it) => {
       const li = document.createElement('li');
@@ -477,7 +477,7 @@ const ext = () => (engine && engine.container) || 'mp4';
 
 function setBusy(b) {
   state.busy = b;
-  for (const id of ['jsonFile', 'mediaFiles', 'jsonText', 'importFile', 'planBtn']) el[id].disabled = b;
+  for (const id of ['jsonFile', 'mediaFiles', 'firstImage', 'refFiles', 'jsonText', 'importFile', 'planBtn']) el[id].disabled = b;
   document.querySelectorAll('#settingsPanel select, #settingsPanel input, #aiPanel input, #aiPanel select').forEach((x) => (x.disabled = b));
   el.makeBtn.disabled = b || !state.job;
   el.makeBtn.textContent = b ? '만드는 중…' : '만들기';
@@ -655,10 +655,38 @@ el.jsonText.addEventListener('input', () => {
   }, 400);
 });
 
+// 파일 칸: 2 소스(이름으로 JSON 과 짝), 3 첫 프레임 이미지, 4 참조 이미지·영상. 칸마다 따로 두고 합쳐서 쓴다.
+const slotFiles = { media: [], image: [], refs: [] };
+function syncFiles() {
+  const seen = new Set();
+  state.files = [...slotFiles.media, ...slotFiles.image, ...slotFiles.refs].filter((f) => !seen.has(f.name) && seen.add(f.name));
+}
 el.mediaFiles.addEventListener('change', () => {
-  state.files = [...el.mediaFiles.files];
+  slotFiles.media = [...el.mediaFiles.files];
+  syncFiles();
   el.mediaName.textContent = '';
   analyze();
+});
+// 칸 3·4 는 CLI 의 --image / --ref 와 같다: 고른 파일 이름을 JSON 의 image / sources 에 써 넣는다.
+el.firstImage.addEventListener('change', () => {
+  const f = el.firstImage.files[0];
+  if (!f) return;
+  slotFiles.image = [f];
+  syncFiles();
+  el.firstImageName.textContent = f.name;
+  writeFields({ image: f.name });
+});
+el.refFiles.addEventListener('change', () => {
+  const picked = [...el.refFiles.files];
+  if (!picked.length) return;
+  slotFiles.refs = picked;
+  syncFiles();
+  el.refFilesName.textContent = picked.map((f) => f.name).join(', ');
+  let obj = {};
+  try { obj = parseJsonText(); } catch { /* writeFields 가 문법 오류를 알려 준다 */ }
+  const cur = Array.isArray(obj.sources) ? obj.sources : [];
+  const names = new Set(cur.map((s) => (typeof s === 'string' ? s : s && s.path)));
+  writeFields({ sources: [...cur, ...picked.map((f) => f.name).filter((n) => !names.has(n))] });
 });
 
 el.setTemplate.addEventListener('change', () => writeFields({ template: el.setTemplate.value || undefined }));

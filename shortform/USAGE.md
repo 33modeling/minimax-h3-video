@@ -192,6 +192,30 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
 | `bgm` `bgm_volume` `original_volume` | 배경음과 볼륨(0~1) | —, 0.25, 1 |
 | `output` | 출력 파일 | short.mp4 |
 
+### 3-1. 입력 정리 — 이미지·영상을 어디에 넣나 (CLI·웹 같음)
+
+| 넣는 것 | 뜻 | CLI (`shorts run` = `h3video shorts run`) | 웹(숏폼 제작) | JSON |
+|---|---|---|---|---|
+| 첫 프레임 이미지 | AI 영상이 이 그림에서 시작 (fl2va) | `--image first.png` | 칸 3 | `image` |
+| 참조 이미지 | 인물·물건 생김새 참고 (ref2va, 최대 9) | `--ref face.png` (여러 개) | 칸 4 | `sources` |
+| 참조 영상 | 동작·카메라 참고 (최대 3, 2~15초) | `--ref dance.mp4` | 칸 4 | `sources` |
+| 참조 오디오 | 목소리·소리 참고 (최대 3) | `--ref voice.mp3` | 칸 4 | `sources` |
+| 기본 영상 | 템플릿의 주 화면(내 영상, AI 영상을 그 위에 얹음) | `--base base.mp4` | 칸 2 + JSON `base` | `base` |
+| 합성 재료 영상 | AI 없이 이어 붙일 내 클립 | `--source clip.mp4` (여러 개) | 칸 2 | `sources` |
+| 배경음 | | JSON `bgm` 또는 두 번째 파일 | 칸 2 | `bgm` |
+
+```bash
+h3video shorts run job.json --image first.png                    # 이 그림에서 시작하는 AI 영상 + 자막·음악 합성
+h3video shorts run job.json --ref face.png --ref dance.mp4       # 내 얼굴·동작을 참고한 AI 영상
+h3video shorts run job.json --base talk.mp4 --source b-roll.mp4  # AI 없이 내 영상 합성 (job.json 에 prompt 없음)
+```
+
+- 참조(칸 4·`--ref`)가 있으면 ref2va 로 만든다. 이때 첫 프레임 이미지(칸 3·`--image`)는 참조로 함께 보낸다(ref2va 는 시작 프레임을 고정하지 않는다).
+- `--ref` 는 JSON 에 `prompt` 가 있을 때만 쓴다(AI 생성 참조). 내 영상을 그대로 합성 재료로 쓰려면 `--source`.
+- 웹에서 칸 3·4 에 파일을 고르면 JSON 의 `image`·`sources` 에 이름이 자동으로 들어간다. 칸 2 는 JSON 에 이미 적힌 이름과 짝을 맞춘다.
+- 경로: CLI 옵션은 지금 폴더 기준, JSON 안 경로는 JSON 파일 폴더 기준. 장면이 여러 개(`scenes`)면 장면마다 JSON 의 `image`·`sources` 에 적는다.
+- 서버까지: h3video 웹 서버(8790)면 업로드되고, SGLang(30010) 직접이면 `$H3_INBOX_DIR`(클러스터 공유 폴더)로 복사해 넘긴다.
+
 **예시 1 — 프롬프트만** (`examples/prompt-only.json`)
 
 ```json

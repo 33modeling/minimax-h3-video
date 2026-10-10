@@ -391,6 +391,29 @@ def _q(s: str) -> str:
     return s if all(c.isalnum() or c in "-_=./:,[]" for c in s) else "'" + s.replace("'", "'\\''") + "'"
 
 
+def attach_role_inputs(spec: dict, a) -> dict:
+    """역할을 정해 넣는 입력 (웹의 입력 칸과 같다):
+    --image 첫 프레임 이미지(fl2va) · --ref 참조 이미지·영상·오디오(ref2va, AI 명세일 때) · --base 기본 영상 · --source 합성 재료 영상.
+    경로는 지금 폴더 기준이라 절대경로로 바꿔 넣는다(JSON 안 경로는 JSON 폴더 기준)."""
+    absp = lambda p: str(Path(p).expanduser().resolve())  # noqa: E731
+    image, refs = getattr(a, "image", None), list(getattr(a, "ref", None) or [])
+    srcs, base = list(getattr(a, "source", None) or []), getattr(a, "base", None)
+    if not (image or refs or srcs or base):
+        return spec
+    if spec.get("scenes") and (image or refs):
+        input_error("장면이 여러 개인 명세(scenes)는 --image/--ref 대신 JSON 의 장면마다 image·sources 에 적으세요")
+    if refs and not (spec.get("prompt") or spec.get("scenes")):
+        input_error("--ref 는 AI 생성 명세(prompt)일 때 쓰는 참조입니다. 내 영상을 합성 재료로 넣으려면 --source")
+    spec = dict(spec)
+    if image:
+        spec["image"] = absp(image)
+    if refs or srcs:
+        spec["sources"] = list(spec.get("sources") or []) + [absp(p) for p in refs + srcs]
+    if base:
+        spec["base"] = absp(base)
+    return spec
+
+
 def cmd_run(a) -> int:
     out = Out(a.json)
     if a.idea:
@@ -409,6 +432,7 @@ def cmd_run(a) -> int:
     out.plan_stages(["검증", "서버 연결", "생성", "다운로드", "합성"] if uses_ai else ["검증", "합성"])
     out.stage("검증", f"{a.files[0] if a.files and not a.idea else '기획 결과'}" + (f" + 소스 {len(extra)}개" if extra else ""))
     spec = apply_overrides(spec, a)
+    spec = attach_role_inputs(spec, a)
     # 두 번째 파일: 명세가 같은 이름으로 가리키면 그 자리, 남는 영상은 sources, 음악은 빈 bgm — 검증 전에 붙인다(웹과 같은 규칙)
     spec, unused = S.match_files(spec, [str(Path(f).resolve()) for f in extra])
     for f in unused:
@@ -705,6 +729,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--claude-model", dest="model_claude", help="기획 모델 (기본 claude-opus-5-5)")
     r.add_argument("--plan-output", dest="plan_output", help="--idea 로 만든 명세를 저장할 경로")
     r.add_argument("-o", "--output", help="출력 MP4 (기본: JSON 의 output 또는 short.mp4)")
+    r.add_argument("--image", help="첫 프레임 이미지 (AI 영상이 이 이미지에서 시작, fl2va). JSON 의 image 대신")
+    r.add_argument("--ref", action="extend", nargs="+", metavar="FILE",
+                   help="참조 이미지·영상·오디오 (인물·동작·목소리 참고, ref2va). 여러 개 가능. JSON 의 sources 에 더함")
+    r.add_argument("--base", help="기본 영상 (템플릿의 주 화면). JSON 의 base 대신")
+    r.add_argument("--source", action="extend", nargs="+", metavar="FILE", help="합성 재료 영상 (AI 없이 합성할 때). JSON 의 sources 에 더함")
     r.add_argument("--template", choices=P.TEMPLATES)
     r.add_argument("--resolution", help="출력 해상도 WxH (프리셋: " + ", ".join(S.RESOLUTION_PRESETS) + ", 짝수·240~2160)")
     r.add_argument("--gen-size", dest="gen_size", help="AI 생성 크기: 짧은 변(예: 768) 또는 WxH. H3 상한 768")

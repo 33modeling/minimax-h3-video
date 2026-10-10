@@ -38,6 +38,18 @@
           <input id="mediaFiles" type="file" accept="video/*,audio/*,image/*" multiple>
           <span class="slot-file" id="mediaName"></span>
         </label>
+        <label class="slot" id="slotImage" for="firstImage">
+          <span class="slot-num">3</span>
+          <span class="slot-text"><strong>첫 프레임 이미지 <em class="optional">선택</em> <button type="button" class="tip" data-tip="AI 영상이 이 이미지에서 시작합니다(fl2va). 고르면 JSON의 image에 이름이 들어갑니다. 참조(칸 4)를 함께 넣으면 이 이미지도 참조로 보냅니다.">ⓘ</button></strong><small>AI 영상의 시작 장면 · JSON의 image</small></span>
+          <input id="firstImage" type="file" accept="image/*">
+          <span class="slot-file" id="firstImageName"></span>
+        </label>
+        <label class="slot" id="slotRefs" for="refFiles">
+          <span class="slot-num">4</span>
+          <span class="slot-text"><strong>참조 이미지·영상 <em class="optional">선택 · 여러 개</em> <button type="button" class="tip" data-tip="인물·동작·목소리를 참고해 AI 영상을 만듭니다(ref2va). 이미지 최대 9·영상 3·오디오 3. 고르면 JSON의 sources에 이름이 들어갑니다. JSON에 prompt가 있을 때 씁니다.">ⓘ</button></strong><small>인물·동작·목소리 참고 · JSON의 sources</small></span>
+          <input id="refFiles" type="file" accept="image/*,video/*,audio/*" multiple>
+          <span class="slot-file" id="refFilesName"></span>
+        </label>
       </div>
       <div class="row-links">
         <button type="button" class="link" id="exampleBtn">예시 JSON 받기</button>

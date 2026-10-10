@@ -199,6 +199,20 @@ docker run --rm -it --gpus '"device=0,1,2,3"' --ipc=host --network host \
 - **이미지·영상·오디오를 입력**한다면 클러스터 노드에서 띄운다. 서버가 `file://` 경로를 직접 읽기 때문이다.
   클라이언트는 입력 파일을 `$H3_INBOX_DIR`(group-volume) 로 복사한 뒤 그 경로를 서버에 넘긴다. PC 에서 띄우면 PC 의 파일이 서버에 보이지 않아 실패한다.
 
+### 4-0. 입력 정리 — 이미지·영상·오디오를 어디에 넣나
+
+| 넣는 것 | 뜻 | CLI | 웹 UI (8790) |
+|---|---|---|---|
+| 첫 프레임 이미지 | 영상이 이 그림에서 시작 (fl2va) | `h3video gen "..." --first a.png` | 첫 프레임 |
+| 끝 프레임 이미지 | 영상이 이 그림으로 끝남 (한 장면일 때만) | `--last b.png` | 끝 프레임 |
+| 참조 이미지 | 인물·물건 생김새 참고 (ref2va, 최대 9) | `h3video ref "..." --image me.png` (여러 번) | 레퍼런스 → 이미지 |
+| 참조 영상 | 동작·카메라 참고 (최대 3, 2~15초) | `--video move.mp4` | 레퍼런스 → 영상 |
+| 참조 오디오 | 목소리·소리 참고 (최대 3, 2~15초) | `--audio voice.mp3` | 레퍼런스 → 오디오 |
+
+- 참조(ref2va)는 ref2va 서버(30011, `up.sh --ref`)가 있어야 한다. 프롬프트에서 `<Subject 1>`, `<Video 1>` 처럼 순서로 가리킨다.
+- CLI 의 파일 경로는 지금 폴더 기준. 클러스터에서는 파일을 `$H3_INBOX_DIR` 로 자동 복사해 서버에 넘긴다. 웹 UI 는 업로드라 어디에 있어도 된다.
+- 숏폼(자막·음악·템플릿 합성)의 입력은 [shortform/USAGE.md](shortform/USAGE.md) 3-1절: `h3video shorts run job.json --image a.png --ref face.png`.
+
 ### 4-1. 터미널 UI
 
 ```bash

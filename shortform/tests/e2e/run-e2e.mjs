@@ -415,6 +415,25 @@ const scenarios = {
     fake.close();
   },
 
+  // 입력 칸 3·4: 첫 프레임 이미지 → JSON image, 참조 이미지·영상 → JSON sources (CLI --image / --ref 와 같음)
+  async slots() {
+    const { page, done } = await newPage('slots');
+    await page.click('#jsonDetails summary');
+    await page.fill('#jsonText', JSON.stringify({ prompt: 'a cat jumps over a fence', duration: 6 }));
+    await page.dispatchEvent('#jsonText', 'input');
+    await page.waitForTimeout(600);
+    const [img] = media('first.png');
+    await page.setInputFiles('#firstImage', img);
+    await page.setInputFiles('#refFiles', media('src1.mp4', 'src2.mp4'));
+    await page.waitForTimeout(400);
+    const j = JSON.parse(await page.inputValue('#jsonText'));
+    check(j.image === 'first.png', `slots: JSON image ${j.image}`);
+    check(JSON.stringify(j.sources) === JSON.stringify(['src1.mp4', 'src2.mp4']), `slots: JSON sources ${JSON.stringify(j.sources)}`);
+    const roles = await page.$$eval('#fileList li', (ls) => ls.map((l) => l.textContent));
+    check(roles.some((r) => /src1\.mp4.*AI 참조/.test(r)), `slots: 파일 목록 역할 ${roles.join(' / ')}`);
+    await done();
+  },
+
   // 둘러보기(320 폭): 말풍선이 화면 안, 키보드 조작, Esc, 다시 안 뜸 + 도움말 예시 불러오기
   async tour() {
     const { page, done } = await newPage('tour', { vp: 'narrow', tour: true });

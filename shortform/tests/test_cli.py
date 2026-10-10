@@ -904,3 +904,22 @@ class ConnectionDropHintTest(unittest.TestCase):
             self.assertIn("서버가 꺼졌거나 SSH 터널이 끊겼습니다", backends.explain_error(msg))
         finally:
             stop.set(); s.close()
+
+
+class RoleInputOptionsTest(unittest.TestCase):
+    """run 의 --image / --ref / --base / --source: 웹 입력 칸과 같은 자리에 들어간다."""
+
+    def test_role_options(self):
+        from types import SimpleNamespace as NS
+        from shorts import cli as C
+        base = {"prompt": "a cat jumps", "duration": 6}
+        spec = C.attach_role_inputs(base, NS(image="first.png", ref=["face.png", "dance.mp4"], source=None, base=None))
+        self.assertTrue(spec["image"].endswith("/first.png") and Path(spec["image"]).is_absolute())
+        self.assertEqual([Path(s).name for s in spec["sources"]], ["face.png", "dance.mp4"])
+        comp = C.attach_role_inputs({"template": "cutaway"}, NS(image=None, ref=None, source=["c1.mp4"], base="b.mp4"))
+        self.assertEqual((Path(comp["base"]).name, [Path(s).name for s in comp["sources"]]), ("b.mp4", ["c1.mp4"]))
+        self.assertIs(C.attach_role_inputs(base, NS(image=None, ref=None, source=None, base=None)), base)
+        with self.assertRaises(C.InputError):
+            C.attach_role_inputs({"scenes": [{"prompt": "x"}]}, NS(image="a.png", ref=None, source=None, base=None))
+        with self.assertRaises(C.InputError):
+            C.attach_role_inputs({"base": "b.mp4"}, NS(image=None, ref=["x.mp4"], source=None, base=None))
