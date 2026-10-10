@@ -160,7 +160,7 @@ def scene_request(sc: dict, norm: dict) -> dict:
 
 
 def stager_from(a) -> B.Stager:
-    return B.Stager(inbox_dir=getattr(a, "inbox_dir", None) or os.environ.get("SHORTS_INBOX"),
+    return B.Stager(inbox_dir=getattr(a, "inbox_dir", None) or os.environ.get("SHORTS_INBOX") or os.environ.get("H3_INBOX_DIR"),
                     inbox_uri=getattr(a, "inbox_uri", None) or os.environ.get("SHORTS_INBOX_URI"),
                     inline=bool(getattr(a, "inline", False)))
 
