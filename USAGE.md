@@ -39,7 +39,8 @@ h3video jobs / h3video show last                                       # 지난 
 |---|---|
 | 결과 | `/group-volume/minsoo3.kim/minimax-h3-video/outputs/<작업id>/` (`-o` 를 주면 거기에도 복사) |
 | 모델 위치 | `/group-volume/models/MiniMax-H3` (기본, 노드가 바뀌어도 그대로). Diffusers 엔진은 `/group-volume/minsoo3.kim/minimax-h3-video/models/MiniMax-H3-diffusers` (provision.sh 가 만든다) |
-| 엔진 | 드라이버 CUDA 12.x 노드 → Diffusers(`h3video.dserver`, GPU 2장: 텍스트 인코더 1 + 영상 모델 1), CUDA 13 이상 → sglang(GPU 4장). 자동으로 고르고 `up.sh` 첫 줄에 나온다. 쓰는 법은 같다 |
+| 엔진 | 드라이버 CUDA 12.x 노드 → Diffusers(`h3video.dserver`, 빈 GPU 전부: 4장이면 텍스트 인코더·VAE 1장 + 영상 모델 3장에 나눠 함께), CUDA 13 이상 → sglang(GPU 4장). 자동으로 고르고 `up.sh` 첫 줄에 나온다. 쓰는 법은 같다 |
+| fl2va / ref2va | 둘 다 H3 영상 모델, 가중치(62GB)가 달라 서버가 따로다. **fl2va**: 글만, 또는 첫·끝 장면 그림 → 그 그림이 실제 첫·끝 프레임이 된다 (`h3video gen`, `--first/--last`). **ref2va**: 사진·영상·소리를 참고 자료로 → 얼굴·옷·화풍·움직임·목소리를 참고해 새 장면 (`h3video ref --image/--video/--audio`, `up.sh --ref` 로 띄웠을 때) |
 | 웹 UI (선택) | CLI 만 쓰면 필요 없다. 쓰려면 `bash scripts/up.sh --web` 후 출력되는 `ssh -N -L ...` 를 PC 에서 실행 → `http://127.0.0.1:8790` |
 | 이미 떠 있으면 | `up.sh` 는 떠 있는 서버·웹 UI 를 다시 띄우지 않고 그대로 쓴다 |
 | 이미지·영상 입력 | 4-0절 표(H3), 숏폼은 [shortform/USAGE.md](shortform/USAGE.md) 3-1절 |
@@ -100,7 +101,7 @@ cd /user-volume/<계정>/minimax-h3-video
 bash scripts/up.sh --check      # 점검만: 엔진·모델·패키지·메모리·GPU 장수·포트
 bash scripts/up.sh              # fl2va 서버(포트 30010). 웹 UI(8790)까지는 --web
 bash scripts/up.sh --ref        # ref2va 서버(포트 30011)도
-#   GPU: --gpus 를 안 주면 비어 있는 GPU 에서 고른다 (Diffusers 엔진 서버당 2장, sglang 4장)
+#   GPU: --gpus 를 안 주면 비어 있는 GPU 를 쓴다 (Diffusers 엔진은 빈 GPU 전부, --ref 면 반씩 / sglang 4장씩)
 bash scripts/up.sh --cors https://33modeling.pages.dev   # 허브 '숏폼 제작'에서 웹 UI 를 부를 때
 bash scripts/down.sh            # 다른 창에서 끄기 (up.sh 화면에서는 Ctrl+C)
 ```
@@ -218,14 +219,17 @@ H3 를 지원하는 sglang(0.5.17 이상)은 CUDA 13 전용이라(torch 2.11+, f
 - 패키지: `constraints/h100-cu126-diffusers.txt` 로 고정(torch 2.7.1·torchvision 0.22.1·torchaudio 2.7.1·diffusers 0.41.0·transformers 5.14.1 등). venv 는 `.venv-diffusers`, sglang venv 와 따로.
 - 가중치: Diffusers 형식(`modular_model_index.json`, `transformer/`, `vae/`, `audio_vae/` …)이 필요하다. 공유 폴더의 `FL2VA/`·`Ref2VA/` 는 sglang 형식이라 영상 모델·VAE 는 파일이 다르다.
   텍스트 인코더·토크나이저·프로세서는 파일이 같아서(HF 해시 일치) 링크로 재사용하고, 나머지만 받는다: fl2va 약 72GB, `--ref` 면 transformer_ref 62GB 더.
-- GPU: 서버 하나에 2장. 텍스트 인코더(Qwen3-VL 32B, 62GB) → 두 번째 장, 영상 모델(62GB)·VAE → 첫 번째 장(diffusers 문서의 2장 방식). 1장만 주면 한 장에서 번갈아 올리고 내린다.
+- GPU: `up.sh` 가 빈 GPU 를 전부 준다(`--ref` 면 fl2va·ref2va 가 반씩). 장수에 따라:
+  - **3장 이상**(H100 4장이면 이것): 첫 장에 텍스트 인코더(Qwen3-VL 32B, 62GB)·VAE, 나머지 장에 영상 모델(62GB)을 한 벌씩 올려 **한 영상을 함께** 디노이징한다(context parallel, diffusers Ulysses). 4장이면 영상 모델 3장이라 1장보다 디노이징이 여러 배 빠르다. 워커는 `h3video.dworker` 를 torchrun 으로 띄우고, 로그는 `[dworker]` 로 같은 화면에 나온다.
+  - **2장**: 텍스트 인코더 1장 + 영상 모델·VAE 1장(diffusers 문서의 2장 방식).
+  - **1장**: 한 장에서 번갈아 올리고 내린다(느림).
 - 같은 API(`/v1/videos`)라 `h3video gen/ref/batch`, 웹 UI, 숏폼이 그대로 쓴다. 다른 점:
   - 길이는 5~15초(4초를 달라고 하면 5초로 만든다). 프레임 수는 VAE 단위(17n+5)로 맞춘다: 5초 124프레임, 8초 192프레임, 15초 345프레임(14.4초).
   - `--negative` 는 쓰지 않는다(H3 는 guidance 가 가중치에 들어 있다). 한 요청에 한 편.
   - 레퍼런스 `video` 는 움직임·카메라만, `video_audio` 는 소리까지.
   - 결과 원본은 `/group-volume/minsoo3.kim/minimax-h3-video/dserver/<fl2va|ref2va>/<id>.mp4`(+ `.json`). CLI 는 평소처럼 `outputs/` 에 받는다.
-- 속도: 영상 모델을 GPU 1장으로 돌리므로 sglang 4장보다 느리다.
-- 검증(2026-10-10, 로컬): 이 조합으로 diffusers 공식 H3 테스트 75개 통과·실패 0, 작은 H3 모델로 세 작업 생성, GPU 2장 분할과 1장 결과 프레임 동일, provision.sh 의 PyPI 설치(torch 2.7.1+cu126)와 가중치 준비, serve.sh → `h3video gen/ref` → status.sh → down.sh 전 구간. 실제 H100·진짜 가중치로는 클러스터에서 처음 돈다.
+- 워커 하나가 죽으면(OOM 등) 서버도 같이 끝나고 `up.sh` 가 남은 프로세스를 정리해 GPU 를 반환한다.
+- 검증(2026-10-10, 로컬): 이 조합으로 diffusers 공식 H3 테스트 75개 통과·실패 0, 작은 H3 모델로 세 작업 생성, GPU 2장 분할과 1장 결과 프레임 동일, 여러 장 방식(워커 2·3개, 헤드가 안 나누어떨어지는 경우 포함)도 한 프로세스 결과와 같음(프레임 차 최대 1/255, CPU gloo 로 흉내), provision.sh 의 PyPI 설치(torch 2.7.1+cu126)와 가중치 준비, serve.sh → `h3video gen/ref` → status.sh → down.sh 전 구간. 실제 H100·진짜 가중치로는 클러스터에서 처음 돈다.
 
 ## 3. pip 설치가 막힐 때: 도커로 서빙
 
@@ -519,6 +523,7 @@ non_diegetic_music: 배경음악 스타일·템포.
 | `OSError: Could not load this library: .../torchaudio/lib/_torchaudio.abi3.so` | (sglang 엔진) sglang 이 고정한 torchaudio(PyPI 기본판)와 torch(CUDA 13)의 CUDA 가 다르다. provision.sh 가 자동으로 맞춘다. 드라이버 CUDA 12.x 노드라면 위 줄처럼 Diffusers 엔진을 쓴다 |
 | `Diffusers 형식 가중치(fl2va)가 아직 없다` | `bash scripts/provision.sh` (`--ref` 면 ref2va 것도). 없는 것만 받고, 받다 끊기면 다시 실행해서 이어 받는다 |
 | `CUDA out of memory … GPU 1 has a total capacity of 79.11 GiB of which … is free` | 그 GPU 를 다른 프로세스가 이미 쓰고 있었다(전에 띄운 서버가 남은 경우 등). 지금 `up.sh` 는 시작할 때 남은 H3 서버를 내리고 비어 있는 GPU 만 쓴다. 남은 것만 끄려면 `python3 scripts/h3_leftovers.py --kill` |
+| `영상 모델 워커가 끝났다 (종료 코드 …)` | GPU 3장 이상 방식에서 워커(`[dworker]`)가 죽었다. 바로 위 `[dworker]`·`[rank…]` 줄이 원인(OOM 이면 그 GPU 를 다른 프로세스가 쓰는지 `nvidia-smi`). 서버는 같이 끝나고 `up.sh` 가 정리한다. 2장 방식으로 띄우려면 `H3_DSERVER_CP=0 bash scripts/up.sh` |
 | `메모리 여유 …GB < 필요 약 140GB` / 서버가 로딩 중 `Killed` | Diffusers 엔진은 적재할 때 가중치를 CPU 메모리에 먼저 올린다(서버 하나에 약 140GB). 파드 메모리 한도를 늘리거나 `--ref` 를 빼고 띄운다 |
 | `up.sh` 가 `서버가 끝났다` | 바로 위 원본 로그가 원인(OOM 등). 남은 프로세스는 끄고 GPU 를 반환한 상태 |
 | health 가 `000` | 서버 로딩 중(몇 분) 또는 죽음. `up.sh` 화면의 로그 확인 |

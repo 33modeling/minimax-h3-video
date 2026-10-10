@@ -3,6 +3,7 @@
 실제 파이프라인(diffusers 0.41 MiniMaxH3)과의 연결은 작은 H3 모델로 따로 확인했다 (2026-10-10, torch 2.7.1 CPU):
 세 작업 생성·두 GPU 분할과 한 GPU 결과 프레임 동일·mp4(h264 24fps + AAC 스테레오).
 """
+import importlib.util
 import sys
 import tempfile
 import threading
@@ -23,8 +24,24 @@ FAKE_PIPE = SimpleNamespace(vae_frames_per_chunk=17, vae_latents_per_chunk=5, fp
 
 def fake_engine(variant="fl2va"):
     e = dserver.Engine.__new__(dserver.Engine)
-    e.variant, e.pipe, e.short_edge, e.max_pixels = variant, FAKE_PIPE, 768, 768 * 1344
+    e.variant, e.pipe, e.geo, e.short_edge, e.max_pixels = variant, FAKE_PIPE, FAKE_PIPE, 768, 768 * 1344
     return e
+
+
+class WorkerHelpersTest(unittest.TestCase):
+    def test_addr(self):
+        from h3video import dworker
+        self.assertEqual(dworker.tuple_addr("127.0.0.1:4567"), ("127.0.0.1", 4567))
+
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "torch 없음")
+    def test_to_cpu(self):
+        import torch
+        out = dserver._to_cpu({"a": [torch.ones(2), (2, "x")], "b": None})
+        self.assertEqual(out["a"][1], (2, "x"))
+        self.assertEqual(out["a"][0].device.type, "cpu")
+
+    def test_pick_devices_spec(self):
+        self.assertEqual(dserver.pick_devices("cpu, cpu,cpu"), ["cpu", "cpu", "cpu"])
 
 
 class FramesTest(unittest.TestCase):

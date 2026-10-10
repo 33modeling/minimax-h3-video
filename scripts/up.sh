@@ -5,7 +5,7 @@
 #
 #   bash scripts/up.sh                 fl2va 서버(포트 30010) — CLI(h3video gen)는 이것만 있으면 된다
 #   bash scripts/up.sh --ref           ref2va 서버도 (포트 30011)
-#     GPU: --gpus 를 안 주면 비어 있는 GPU 에서 고른다 (diffusers 엔진 서버당 2장, sglang 4장). 다른 프로세스가 쓰는 GPU 는 피한다
+#     GPU: --gpus 를 안 주면 비어 있는 GPU 를 쓴다. diffusers 엔진은 빈 GPU 전부(--ref 면 반씩), sglang 은 4장씩. 다른 프로세스가 쓰는 GPU 는 피한다
 #   bash scripts/up.sh --web           웹 UI(8790)도 (브라우저·허브 숏폼 제작에서 쓸 때만)
 #   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7 --mode memory
 #   bash scripts/up.sh --cors https://33modeling.pages.dev    허브 '숏폼 제작'에서 웹 UI 를 부를 수 있게
@@ -36,7 +36,6 @@ exec > >(trap '' INT; tee -a "$UP_LOG") 2>&1
 echo "[up] 로그 파일: $UP_LOG"
 
 # 2) 점검
-PER=$([[ "$H3_ENGINE" == diffusers ]] && echo 2 || echo 4)   # 서버 하나가 쓰는 GPU 장수 (--gpus 를 안 주면 비어 있는 GPU 에서 고른다)
 echo "[up] 엔진: $H3_ENGINE (드라이버 CUDA $(h3_driver_cuda || true); 12.x → diffusers, 13 이상 → sglang)"
 # 전에 띄운 H3 서버·워커가 GPU 를 잡고 남아 있으면 먼저 내린다 (내 계정이 이 레포로 띄운 것만, 다른 작업은 그대로)
 if ! python3 "$ROOT/scripts/h3_leftovers.py" >/dev/null 2>&1; then
@@ -122,16 +121,26 @@ else
       fi; TAKEN+=("$i")
     done
   done
-  for w in "${START[@]}"; do   # 안 준 것은 비어 있는 GPU 에서 PER 장씩
-    [[ $w == web ]] && continue
-    [[ $w == fl2va && -n "$GPUS" ]] && continue; [[ $w == ref2va && -n "$REF_GPUS" ]] && continue
+  # 안 준 것은 비어 있는 GPU 에서: diffusers 는 남은 빈 GPU 를 서버 수로 나눠 전부(서버당 최대 8장), sglang 은 4장씩
+  AUTO=(); for w in "${START[@]}"; do [[ $w == fl2va && -z "$GPUS" ]] && AUTO+=(fl2va); [[ $w == ref2va && -z "$REF_GPUS" ]] && AUTO+=(ref2va); done
+  left=0; for i in "${FREE[@]}"; do [[ " ${TAKEN[*]} " == *" $i "* ]] || left=$((left + 1)); done
+  if [[ "$H3_ENGINE" == diffusers ]]; then PER=$(( ${#AUTO[@]} > 0 ? left / ${#AUTO[@]} : 0 )); [[ $PER -gt 8 ]] && PER=8; [[ $PER -lt 1 ]] && PER=1
+    [[ "${H3_DSERVER_CP:-1}" == 0 && $PER -gt 2 ]] && PER=2   # 여러 장 방식을 끄면 서버당 2장
+  else PER=4; fi
+  for w in "${AUTO[@]}"; do
     got=(); for i in "${FREE[@]}"; do [[ " ${TAKEN[*]} " == *" $i "* ]] && continue; got+=("$i"); [[ ${#got[@]} -ge $PER ]] && break; done
     if [[ ${#got[@]} -lt $PER ]]; then fail "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "아래 '다른 프로세스가 쓰는 중' GPU 는 이 레포가 띄운 서버가 아니다(남은 서버는 위에서 이미 내렸다). 그 작업을 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --ref 빼기')"; continue; fi
     TAKEN+=("${got[@]}"); sel=$(IFS=,; echo "${got[*]}")
     [[ $w == fl2va ]] && GPUS=$sel; [[ $w == ref2va ]] && REF_GPUS=$sel
   done
+  layout() {   # GPU 목록 → 쓰는 방식 (diffusers)
+    local n; n=$(tr ',' '\n' <<<"$1" | grep -c .)
+    [[ "$H3_ENGINE" != diffusers ]] && return
+    if [[ $n -ge 3 ]]; then echo " — 텍스트 인코더·VAE 1장 + 영상 모델 $((n - 1))장에 나눠 함께"
+    elif [[ $n -eq 2 ]]; then echo " — 텍스트 인코더 1장 + 영상 모델 1장"
+    else echo " — 1장에서 번갈아 올림 (느림)"; fi; }
   if [[ $problems -eq $gpu_problems ]]; then
-    for w in "${START[@]}"; do [[ $w == fl2va ]] && green "✓ fl2va GPU $GPUS (비어 있음)"; [[ $w == ref2va ]] && green "✓ ref2va GPU $REF_GPUS (비어 있음)"; done
+    for w in "${START[@]}"; do [[ $w == fl2va ]] && green "✓ fl2va GPU $GPUS (비어 있음)$(layout "$GPUS")"; [[ $w == ref2va ]] && green "✓ ref2va GPU $REF_GPUS (비어 있음)$(layout "$REF_GPUS")"; done
   fi
 fi
 if [[ $problems -gt 0 ]]; then

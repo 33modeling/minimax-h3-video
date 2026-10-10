@@ -3,7 +3,9 @@
 드라이버가 CUDA 12.x 인 노드에서 쓴다. H3 를 지원하는 sglang(0.5.17+)은 CUDA 13 전용이라 그런 노드에서는 못 띄운다.
 diffusers 0.41 의 공식 통합(MiniMaxH3ModularPipeline)을 기존 클러스터 레포와 같은 torch 2.7.1(CUDA 12.6)로 돌린다.
 
-  GPU 2장 이상: 텍스트 인코더(Qwen3-VL, 62GB) → 두 번째 장, 영상 모델(62GB)·VAE → 첫 번째 장 (diffusers 문서의 2장 방식)
+  GPU 3장 이상: 텍스트 인코더(Qwen3-VL, 62GB)·VAE → 첫 장, 영상 모델(62GB) → 나머지 장에 나눠 함께 돌린다
+                (context parallel, diffusers Ulysses. 워커 h3video.dworker 를 torchrun 으로 띄운다). 4장이면 영상 모델 3장
+  GPU 2장:      텍스트 인코더 → 두 번째 장, 영상 모델·VAE → 첫 번째 장 (diffusers 문서의 2장 방식)
   GPU 1장:      한 장에서 컴포넌트를 번갈아 올리고 내린다 (ComponentsManager 자동 오프로드)
 
   POST /v1/videos                → {"id", "status"}
@@ -16,6 +18,7 @@ diffusers 0.41 의 공식 통합(MiniMaxH3ModularPipeline)을 기존 클러스�
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import queue
@@ -40,6 +43,10 @@ def log(msg: str) -> None:
 
 class BadRequest(ValueError):
     pass
+
+
+class WorkerDied(RuntimeError):
+    """영상 모델 워커(torchrun)가 끝났다. 서버도 끝내서 up.sh 가 알아채고 정리하게 한다."""
 
 
 def local_path(uri: str) -> str:
@@ -77,7 +84,22 @@ class Engine:
         load_wf = "fl2va" if variant == "fl2va" else "ref2va"   # t2va·fl2va 는 transformer/, ref2va 는 transformer_ref/
         blocks = ModularPipeline.from_pretrained(model_dir).blocks
         t0 = time.time()
-        if len(devices) >= 2:
+        self.mode, self._proc, self._conn = "single", None, None
+        if len(devices) >= 3:
+            self.mode = "cp"
+            log(f"GPU {len(devices)}장 방식: 텍스트 인코더·VAE → {devices[0]}, 영상 모델 → {', '.join(devices[1:])} 에 나눔 (context parallel)")
+            self._start_workers(model_dir, variant, devices[1:], dtype, attn)   # 워커가 영상 모델을 올리는 동안 여기서도 올린다
+            stage = {n: blocks.sub_blocks.pop(n) for n in ("before_encode", "text_encoder", "vae_encoder")}
+            m = ComponentsManager()
+            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
+            self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m)
+            self.cond.load_components(dtype=dt)
+            self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks["decode"]}).init_pipeline(model_dir)
+            self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
+            self.pipe, self.geo = None, self.cond
+            self._wait_workers()
+        elif len(devices) >= 2:
+            self.mode = "split"
             log(f"GPU 2장 방식: 텍스트 인코더 → {devices[1]}, 영상 모델·VAE → {devices[0]}")
             first = {n: blocks.sub_blocks.pop(n) for n in ("before_encode", "text_encoder")}
             m_text = ComponentsManager()
@@ -88,6 +110,7 @@ class Engine:
             m_main.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
             self.pipe = blocks.init_pipeline(model_dir, components_manager=m_main)
             self.pipe.load_components(workflow=load_wf, dtype=dt)
+            self.geo = self.pipe
         else:
             log(f"GPU 1장 방식: {devices[0]} 에서 컴포넌트를 번갈아 올린다 (CPU 메모리에 가중치 상주)")
             self.cond = None
@@ -95,23 +118,104 @@ class Engine:
             m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
             self.pipe = blocks.init_pipeline(model_dir, components_manager=m)
             self.pipe.load_components(workflow=load_wf, dtype=dt)
-        tname = "transformer" if variant == "fl2va" else "transformer_ref"
-        self.transformer = getattr(self.pipe, tname, None)
-        if self.transformer is None:
-            raise RuntimeError(f"{tname} 를 불러오지 못했다: {model_dir}/{tname}")
-        if attn:
-            self.transformer.set_attention_backend(attn)
-            log(f"어텐션 백엔드: {attn}")
+            self.geo = self.pipe
         self._steps_done = 0
-        self.transformer.register_forward_hook(self._count)
-        cfg = self.pipe.config
+        if self.mode != "cp":   # cp 는 워커가 영상 모델을 갖고 진행 스텝을 보내 준다
+            tname = "transformer" if variant == "fl2va" else "transformer_ref"
+            self.transformer = getattr(self.pipe, tname, None)
+            if self.transformer is None:
+                raise RuntimeError(f"{tname} 를 불러오지 못했다: {model_dir}/{tname}")
+            if attn:
+                self.transformer.set_attention_backend(attn)
+                log(f"어텐션 백엔드: {attn}")
+            self.transformer.register_forward_hook(self._count)
+        cfg = self.geo.config
         self.short_edge = int(getattr(cfg, "canvas_short_edge", 768) or 768)
         self.max_pixels = int(getattr(cfg, "canvas_max_pixels", 768 * 1344) or 768 * 1344)
         log(f"적재 완료 ({time.time() - t0:.0f}초): variant={variant} 작업={'/'.join(TASKS[variant])} "
-            f"캔버스 배수={self.pipe.canvas_multiple} 기본 짧은 변={self.short_edge}")
+            f"캔버스 배수={self.geo.canvas_multiple} 기본 짧은 변={self.short_edge}")
 
     def _count(self, *_):
         self._steps_done += 1
+
+    # ── 영상 모델 워커 (GPU 3장 이상) ──
+    def _start_workers(self, model_dir: str, variant: str, devs: list[str], dtype: str, attn: str | None) -> None:
+        import atexit
+        import secrets
+        import socket
+        import subprocess
+        import sys
+        from multiprocessing.connection import Listener
+        key = secrets.token_hex(16)
+        self._listener = Listener(("127.0.0.1", 0), authkey=key.encode())
+        env = dict(os.environ, H3_CP_AUTHKEY=key)
+        if all(d == "cpu" for d in devs):
+            env["H3_CP_DEVICE"] = "cpu"
+        else:   # 워커가 볼 GPU = 이 프로세스가 보는 GPU 중 첫 장을 뺀 나머지 (nvidia-smi 번호로)
+            vis = [x.strip() for x in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if x.strip()]
+            idx = [int(d.split(":")[1]) for d in devs]
+            env["CUDA_VISIBLE_DEVICES"] = ",".join(vis[i] if i < len(vis) else str(i) for i in idx)
+        if attn:
+            env["H3_ATTN_BACKEND"] = attn
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        cmd = [sys.executable, "-m", "torch.distributed.run", "--nproc_per_node", str(len(devs)), "--master_addr", "127.0.0.1",
+               "--master_port", str(port), "-m", "h3video.dworker", "--model-dir", model_dir, "--variant", variant,
+               "--address", f"127.0.0.1:{self._listener.address[1]}", "--dtype", dtype]
+        log(f"영상 모델 워커 {len(devs)}개 시작 (GPU {env.get('CUDA_VISIBLE_DEVICES', 'cpu')}): torchrun … -m h3video.dworker")
+        self._proc = subprocess.Popen(cmd, env=env)
+        atexit.register(self._stop_workers)
+
+    def _wait_workers(self) -> None:
+        box = {}
+        th = threading.Thread(target=lambda: box.setdefault("conn", self._listener.accept()), daemon=True)
+        th.start()
+        while th.is_alive():
+            if self._proc.poll() is not None:
+                raise WorkerDied(f"영상 모델 워커가 준비 중에 끝났다 (종료 코드 {self._proc.returncode}). 바로 위 [dworker] 로그가 원인")
+            th.join(1)
+        self._conn = box["conn"]
+        log(f"영상 모델 워커 연결: {self._recv().decode()}")
+
+    def _recv(self) -> bytes:
+        while True:
+            try:
+                if self._conn.poll(1):
+                    return self._conn.recv_bytes()
+            except (EOFError, OSError) as e:
+                raise WorkerDied(f"영상 모델 워커와 연결이 끊겼다 ({type(e).__name__}). 바로 위 [dworker] 로그가 원인") from e
+            if self._proc.poll() is not None:
+                raise WorkerDied(f"영상 모델 워커가 끝났다 (종료 코드 {self._proc.returncode}). 바로 위 [dworker] 로그가 원인")
+
+    def _stop_workers(self) -> None:
+        if self._proc is None or self._proc.poll() is not None:
+            return
+        try:
+            self._conn and self._conn.send_bytes(b"STOP")
+            self._proc.wait(timeout=30)
+        except Exception:   # noqa: BLE001 — 끄는 길이라 실패해도 아래에서 강제로 끈다
+            pass
+        if self._proc.poll() is None:
+            self._proc.terminate()
+
+    def _denoise_remote(self, state, g, gen: dict) -> dict:
+        import torch
+        state.values.pop("generator", None)   # 생성기는 직렬화가 안 된다 → 상태만 넘긴다
+        state.values = _to_cpu(state.values)
+        buf = io.BytesIO()
+        torch.save({"state": state, "gen_state": g.get_state(), "kwargs": gen}, buf)
+        self._conn.send_bytes(buf.getvalue())
+        while True:
+            m = self._recv()
+            if m.startswith(b"PROG "):
+                self._steps_done = int(m[5:])
+            elif m.startswith(b"DONE"):
+                res = torch.load(io.BytesIO(m[4:]), weights_only=False)
+                if not res["ok"]:
+                    raise RuntimeError("영상 모델 워커: " + res["error"])
+                return res
 
     # ── 요청 → 파이프라인 입력 ──
     def plan(self, body: dict) -> dict:
@@ -159,7 +263,7 @@ class Engine:
                 raise BadRequest("레퍼런스는 이미지 9·영상 3·오디오 3, 합계 12 까지")
             if not refs or count("audio") == len(kinds):
                 raise BadRequest("ref2va 는 이미지나 영상 레퍼런스가 하나 이상 있어야 한다 (오디오만은 안 된다)")
-        p = self.pipe
+        p = self.geo
         nf, secs = frames_for(target.get("duration_seconds", 8), p.vae_frames_per_chunk, p.vae_latents_per_chunk,
                               p.fps, p.min_duration, p.max_duration)
         steps = body.get("num_inference_steps")
@@ -177,7 +281,7 @@ class Engine:
         else:
             aw, ah = (float(x) for x in aspect.split(":"))
         max_px = round(self.max_pixels * (short_edge / self.short_edge) ** 2)
-        return resolve_canvas_size(aw, ah, self.pipe.canvas_multiple, short_edge, max_px)
+        return resolve_canvas_size(aw, ah, self.geo.canvas_multiple, short_edge, max_px)
 
     def run(self, plan: dict, out_path: Path, on_progress) -> None:
         from diffusers.modular_pipelines.minimax_h3 import (MiniMaxH3AudioReference, MiniMaxH3ImageReference,
@@ -224,12 +328,16 @@ class Engine:
         threading.Thread(target=ticker, daemon=True).start()
         g = torch.Generator(device="cpu").manual_seed(plan["seed"])
         try:
-            if self.cond is None:
+            gen = {k: inputs[k] for k in ("num_frames", "height", "width", "num_inference_steps")}
+            if self.mode == "single":
                 r = self.pipe(**inputs, generator=g, output=OUTPUTS)
-            else:
+            elif self.mode == "split":
                 state = self.cond(**inputs, generator=g)
-                gen = {k: inputs[k] for k in ("num_frames", "height", "width", "num_inference_steps")}
                 r = self.pipe(state=state, generator=g, output=OUTPUTS, **gen)
+            else:   # cp: 조건(여기) → 디노이징(워커들) → 디코딩(여기)
+                state = self.cond(**inputs, generator=g)
+                res = self._denoise_remote(state, g, gen)
+                r = self.dec(latents=res["latents"], audio_latents=res["audio_latents"], output=OUTPUTS)
         finally:
             stop.set()
         tmp = out_path.with_suffix(".part.mp4")
@@ -288,6 +396,11 @@ class Server:
             try:
                 self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
                 job.update(status="completed", progress=1.0, file=str(out))
+            except WorkerDied as e:   # 워커 묶음이 죽으면 이후 요청도 못 한다 → 서버를 끝내 up.sh 가 정리하게
+                job.update(status="failed", error=str(e), finished_at=int(time.time()))
+                self.save(job)
+                log(f"실패 {vid}: {e} → 서버를 끝낸다")
+                os._exit(3)
                 log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
             except Exception as e:   # noqa: BLE001 — 실패는 작업 상태로 돌려주고 서버는 계속 돈다
                 traceback.print_exc()
@@ -295,6 +408,17 @@ class Server:
                 log(f"실패 {vid}: {job['error']}")
             job["finished_at"] = int(time.time())
             self.save(job)
+
+
+def _to_cpu(obj):
+    import torch
+    if isinstance(obj, torch.Tensor):
+        return obj.cpu()
+    if isinstance(obj, (list, tuple)):
+        return type(obj)(_to_cpu(x) for x in obj)
+    if isinstance(obj, dict):
+        return {k: _to_cpu(v) for k, v in obj.items()}
+    return obj
 
 
 def make_handler(srv: Server):
@@ -363,9 +487,8 @@ def pick_devices(spec: str | None) -> list[str]:
     n = torch.cuda.device_count()
     if n == 0:
         raise SystemExit("GPU 가 안 보인다 (CUDA_VISIBLE_DEVICES·드라이버 확인). 바로 위 torch 경고를 참고")
-    if n > 2:
-        log(f"GPU {n}장이 보이지만 2장만 쓴다 (텍스트 인코더 1장 + 영상 모델 1장). 남는 장은 다른 서버(--ref)에 주면 된다")
-    return [f"cuda:{i}" for i in range(min(n, 2))]
+    use = min(n, 2) if os.environ.get("H3_DSERVER_CP", "1") == "0" else min(n, 8)   # 3장 이상이면 영상 모델을 나눠 돌린다
+    return [f"cuda:{i}" for i in range(use)]
 
 
 def check_free(devices: list[str]) -> None:
@@ -404,10 +527,17 @@ def main(argv=None) -> int:
     import torch
     log(f"torch {torch.__version__} (CUDA {torch.version.cuda}), 모델 {a.model_dir}, 결과 {out_dir}")
     devices = pick_devices(a.devices)
-    check_free(devices)
+    check_free(devices[:1] if len(devices) >= 3 else devices)   # 3장 이상: 나머지는 워커가 자기 GPU 를 확인한다
     engine = Engine(a.model_dir, a.variant, devices, a.dtype, a.attn)
     srv = Server(engine, out_dir, a.variant)
     threading.Thread(target=srv.worker, daemon=True).start()
+    if engine.mode == "cp":   # 쉬는 동안 워커가 죽어도 바로 알아채고 서버를 끝낸다 (up.sh 가 정리)
+        def watch():
+            while engine._proc.poll() is None:
+                time.sleep(2)
+            log(f"영상 모델 워커가 끝났다 (종료 코드 {engine._proc.returncode}). 바로 위 [dworker] 로그가 원인 → 서버를 끝낸다")
+            os._exit(3)
+        threading.Thread(target=watch, daemon=True).start()
     httpd = ThreadingHTTPServer((a.host, a.port), make_handler(srv))
     httpd.daemon_threads = True
     log(f"준비됨: http://{a.host}:{a.port} (variant={a.variant})")
