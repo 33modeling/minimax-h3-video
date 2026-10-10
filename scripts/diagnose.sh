@@ -6,6 +6,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/cluster_env.sh" >/dev/null 2>&1
 sec() { echo; echo "===== $* ====="; }
+sec "SUMMARY (English)"
+for v in "fl2va:${H3_PORT_FL2VA:-30010}" "ref2va:${H3_PORT_REF2VA:-30011}"; do
+  python3 -c "import urllib.request,sys; urllib.request.urlopen(f'http://127.0.0.1:{sys.argv[1]}/health', timeout=3)" "${v#*:}" 2>/dev/null \
+    && echo "server ${v%%:*}: UP" || echo "server ${v%%:*}: DOWN"
+done
+CG="/sys/fs/cgroup$(awk -F: '$1=="0"{print $3; exit}' /proc/self/cgroup 2>/dev/null)"; [[ -r "$CG/memory.events" ]] || CG=/sys/fs/cgroup
+for f in "$CG/memory.events" /sys/fs/cgroup/memory/memory.oom_control; do [[ -r $f ]] && { echo "oom_kill (container, total so far): $(awk '$1=="oom_kill"{print $2}' "$f")"; break; }; done
+LC_ALL=C free -g 2>/dev/null | awk '/^Mem:/{print "RAM(host) total " $2 "GB used " $3 "GB available " $7 "GB"}'
+U=$(ls -t "$H3_LOG_DIR"/up-*.log 2>/dev/null | head -1); [[ -n "$U" ]] && grep -aE "\[up\] STOP|SERVER DIED|CAUSE" "$U" | tail -3
+S=$(ls -t "$H3_LOG_DIR"/serve-*.log 2>/dev/null | head -1)
+if [[ -n "$S" ]]; then echo "serve log: $S"; tr '\r' '\n' < "$S" | grep -aE "step [0-9]+/[0-9]+|STALL|[0-9]+%\|" | tail -2
+  echo "error lines:"; tr '\r' '\n' < "$S" | grep -aiE "error|exception|traceback|killed|signal|exitcode|nccl|out of memory|File \"" | tail -25; fi
 sec "코드"; (cd "$ROOT" && git -c safe.directory='*' log -1 --format='%h %ad %s' --date=format:'%m-%d %H:%M' 2>/dev/null || echo "git 없음 (rsync 로 올린 코드)"); ls -l --time-style=+%m-%d_%H:%M "$ROOT/src/h3video/dserver.py" | awk '{print "dserver.py 수정 시각:", $6}'
 sec "엔진·경로"; echo "H3_ENGINE=$H3_ENGINE VENV=$VENV"; echo "DIFFUSERS_DIR=${H3_DIFFUSERS_DIR:-} GUIDE_DIR=${H3_GUIDE_DIR:-}"
 sec "서버 상태"; bash "$ROOT/scripts/status.sh" 2>&1 | sed 's/\x1b\[[0-9;]*m//g'

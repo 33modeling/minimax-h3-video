@@ -535,9 +535,23 @@ class Engine:
         stop = threading.Event()
         g = torch.Generator(device="cpu").manual_seed(plan["seed"])
 
-        def ticker():
+        def ticker():   # 진행률을 상태에 올리고, 이 창에도 10% 마다 스텝 속도를, 10분 동안 멈추면 STALL 을 찍는다
+            first, shown, last_t, last_n = None, 0, time.time(), 0
             while not stop.wait(2):
-                on_progress(min(0.99, self._steps_done / total))
+                done, now = self._steps_done, time.time()
+                on_progress(min(0.99, done / total))
+                if done != last_n:
+                    last_t, last_n = now, done
+                elif self.stage == "생성 중" and now - last_t >= 600 and int(now - last_t) % 600 < 2:
+                    log(f"[STALL] 디노이징이 {int(now - last_t) // 60}분 동안 스텝 {done}/{total} 에서 안 넘어간다 (no step progress). "
+                        f"워커(torchrun) 로그를 본다. 끄지는 않는다")
+                if done and first is None:
+                    first = (now, done)
+                if first and done > first[1] and done * 10 // total > shown:
+                    shown = done * 10 // total
+                    per = (now - first[0]) / (done - first[1])
+                    left = int(per * (total - done))
+                    log(f"디노이징 step {done}/{total} ({done * 100 // total}%) · {per:.1f}s/step · 남은 약 {left // 60}분 {left % 60}초")
         self._steps_done = 0
         threading.Thread(target=ticker, daemon=True).start()
         times = {}

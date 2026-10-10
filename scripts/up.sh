@@ -214,8 +214,34 @@ cleanup() {   # 서버·웹 UI 를 하위 프로세스까지 끄고 GPU 반환 �
   done
   green "== 종료"
 }
-trap 'cleanup; exit 130' INT TERM
-trap 'exec >>"$UP_LOG" 2>&1; cleanup; exit 129' HUP   # 창을 닫거나 SSH 가 끊기면 화면 대신 로그 파일로 쓰며 정리
+trap 'echo "[up] STOP: Ctrl+C/TERM → 서버를 끈다"; cleanup; exit 130' INT TERM
+# 창을 닫거나 SSH 가 끊기면 화면 대신 로그 파일로 쓰며 정리 (끊겨도 계속 돌리려면 직접 연 tmux 안에서 up.sh 를 실행)
+trap 'exec >>"$UP_LOG" 2>&1; echo "[up] STOP: SIGHUP (terminal closed / ssh disconnected) → 서버를 끈다. 끊겨도 계속 돌리려면 tmux 안에서 실행"; cleanup; exit 129' HUP
+# 서버가 죽었을 때 원인: 시스템 OOM killer(메모리 부족 강제 종료) 기록·RAM·서버 로그의 오류 줄을 영어 표시와 함께 찍는다
+# ── death_report begin
+CG="${H3_CGROUP_DIR:-/sys/fs/cgroup$(awk -F: '$1=="0"{print $3; exit}' /proc/self/cgroup 2>/dev/null)}"   # 이 프로세스의 cgroup (컨테이너면 보통 /sys/fs/cgroup)
+[[ -r "$CG/memory.events" ]] || CG=/sys/fs/cgroup
+oom_kills() { local f; for f in "$CG/memory.events" /sys/fs/cgroup/memory/memory.oom_control; do
+  [[ -r $f ]] && { awk '$1=="oom_kill"{print $2; exit}' "$f"; return; }; done; }
+ram_line() { local cur="" max=""
+  if [[ -r "$CG/memory.current" ]]; then cur=$(cat "$CG/memory.current"); max=$(cat "$CG/memory.max" 2>/dev/null)
+  elif [[ -r /sys/fs/cgroup/memory/memory.usage_in_bytes ]]; then cur=$(cat /sys/fs/cgroup/memory/memory.usage_in_bytes); max=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null); fi
+  [[ -n "$cur" ]] && echo "RAM(container) used $((cur / 1073741824))GB / limit $([[ "$max" =~ ^[0-9]+$ && $max -lt 9000000000000000 ]] && echo "$((max / 1073741824))GB" || echo none)"
+  LC_ALL=C free -g 2>/dev/null | awk '/^Mem:/{print "RAM(host) total " $2 "GB used " $3 "GB available " $7 "GB"}'; }
+OOM0=$(oom_kills)
+death_report() {   # name
+  local n; n=$(oom_kills)
+  red "✗ SERVER DIED: $1 — 서버 본체가 끝났다"
+  if [[ -n "$n" && -n "$OOM0" && $n -gt $OOM0 ]]; then
+    red "  CAUSE: OOM killer — 시스템이 RAM(GPU 메모리 아님) 부족으로 프로세스를 강제 종료했다 (oom_kill $OOM0→$n). 그래서 오류 메시지 없이 죽었다"
+  else
+    echo "  OOM killer record: none (oom_kill=${n:-unknown}) → 아래 오류 줄이 원인"
+  fi
+  ram_line | sed 's/^/  /'
+  local L; L=$(ls -t "$H3_LOG_DIR"/serve-"$1"-*.log 2>/dev/null | head -1)
+  [[ -n "$L" ]] && { echo "  last error lines ($L):"; tr '\r' '\n' < "$L" | grep -aiE "error|exception|traceback|killed|signal|exitcode|nccl|out of memory|File \"" | tail -15 | sed 's/^/    /'; }
+}
+# ── death_report end
 for w in "${START[@]}"; do
   case $w in
     fl2va) cmd=(bash scripts/serve.sh fl2va --gpus "$GPUS" "${MODE_ARGS[@]}") ;;
@@ -243,7 +269,7 @@ server_alive() {  # name pid seconds-since-start
 for w in "${START[@]}"; do
   [[ $w == web ]] && continue
   until healthy "${PORT[$w]}"; do
-    if ! server_alive "$w" "$(pid_of "$w")" "$t"; then sleep 1; red "✗ $w 서버가 끝났다 (바로 위 로그가 원인). 남은 프로세스를 끄고 GPU 를 반환한다"; cleanup; exit 1; fi
+    if ! server_alive "$w" "$(pid_of "$w")" "$t"; then sleep 1; death_report "$w"; red "  남은 프로세스를 끄고 GPU 를 반환한다"; cleanup; exit 1; fi
     sleep 5; t=$((t + 5))
     if [[ $limit -gt 0 && $t -ge $limit ]]; then red "✗ $w: ${limit}초 안에 준비되지 않음"; cleanup; exit 1; fi
   done
@@ -265,7 +291,7 @@ echo
 # 서버 하나라도 끝나면 알리고 전부 끈다
 while :; do
   for i in "${!PIDS[@]}"; do
-    if ! server_alive "${NAMES[$i]}" "${PIDS[$i]}" 99; then red "✗ ${NAMES[$i]} 가 끝났다 (바로 위 로그가 원인). 남은 프로세스를 끄고 GPU 를 반환한다"; cleanup; exit 1; fi
+    if ! server_alive "${NAMES[$i]}" "${PIDS[$i]}" 99; then sleep 1; death_report "${NAMES[$i]}"; red "  남은 프로세스를 끄고 GPU 를 반환한다"; cleanup; exit 1; fi
   done
   sleep 3
 done
