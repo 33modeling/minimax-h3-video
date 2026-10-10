@@ -30,7 +30,7 @@ MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 SGLang 으로
 
 ```
 scripts/cluster_env.sh   # fdmu 규약: 저장은 /group-volume/minsoo3.kim/minimax-h3-video, 모델은 /group-volume/models/MiniMax-H3
-scripts/provision.sh     # venv + sglang[diffusion] + 가중치 검증(없으면 Hub→hf-mirror 다운로드)
+scripts/provision.sh     # venv + sglang[diffusion] + 가중치 확인(받아 둔 곳 자동 검색, 받기는 --download 일 때만)
 scripts/serve.sh         # sglang serve (tmux 포그라운드, 로그 tee)   fl2va|ref2va
 scripts/up.sh / down.sh   # 한 번에: 점검 → tmux 에 서버·웹 UI → 준비 대기 → PC 접속 안내 / 전부 끄기
 scripts/stop.sh / health.sh / sync_to_cluster.sh
@@ -65,7 +65,7 @@ CLUSTER_SSH=user@host CLUSTER_CODE_DIR=/user-volume/<you>/minimax-h3-video bash 
 # 클러스터 셸
 cd /user-volume/<you>/minimax-h3-video
 source scripts/cluster_env.sh                 # 가중치를 다른 곳에 올렸으면 H3_MODEL_DIR=<경로> 를 먼저 export
-bash scripts/provision.sh                     # 가중치가 이미 있으면 검증만 하고 지나감
+bash scripts/provision.sh                     # 가중치는 받아 둔 곳을 찾아 확인만 (새로 받기는 --download)
 tmux new -s h3                                # nohup 금지, 포그라운드
 bash scripts/serve.sh fl2va --gpus 0,1,2,3    # 포트 30010. ref2va 는 --gpus 4,5,6,7 로 30011
 bash scripts/health.sh                        # 다른 창에서

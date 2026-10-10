@@ -15,7 +15,29 @@ _REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export GROUP_VOLUME_ROOT="${GROUP_VOLUME_ROOT:-/group-volume}"
 export STORAGE_ROOT="${STORAGE_ROOT:-$GROUP_VOLUME_ROOT/minsoo3.kim/$REPO_NAME}"
 export MODELS_DIR="${MODELS_DIR:-$GROUP_VOLUME_ROOT/models}"
+_h3_model_explicit="${H3_MODEL_DIR:-}"
 export H3_MODEL_DIR="${H3_MODEL_DIR:-$MODELS_DIR/MiniMax-H3}"
+
+# 이미 받아 둔 MiniMax-H3 가중치 찾기 (받기는 하지 않는다). 폴더 이름·대소문자·HF 캐시 구조가 달라도 찾는다:
+# model_index.json 이 있고 fl2va 폴더(대소문자 무관)가 있는 곳. FL2VA/ 안의 model_index.json 을 찾으면 그 위 폴더.
+h3_model_ok() { [[ -f "$1/model_index.json" ]] && compgen -G "$1/[Ff][Ll]2[Vv][Aa]" >/dev/null; }
+h3_find_models() {
+  local f d
+  for d in "$MODELS_DIR/MiniMax-H3" "$GROUP_VOLUME_ROOT/models/MiniMax-H3"; do h3_model_ok "$d" && realpath -m -- "$d"; done
+  timeout 20 find -L "$MODELS_DIR" "$GROUP_VOLUME_ROOT/models" "$GROUP_VOLUME_ROOT/minsoo3.kim/models" "$STORAGE_ROOT/models" \
+      "${HF_HOME:-/nonexistent}/hub" -maxdepth 6 -iname model_index.json 2>/dev/null | while read -r f; do
+    d="$(dirname "$f")"
+    case "${d##*/}" in [Ff][Ll]2[Vv][Aa]|[Rr][Ee][Ff]2[Vv][Aa]) d="$(dirname "$d")" ;; esac
+    h3_model_ok "$d" && realpath -m -- "$d"
+  done
+}
+if [[ -z "$_h3_model_explicit" ]] && ! h3_model_ok "$H3_MODEL_DIR"; then
+  _found="$(h3_find_models | awk '!seen[$0]++' | head -1)"
+  if [[ -n "$_found" ]]; then
+    echo "[cluster-env] 기본 경로에 가중치가 없어 이미 받아 둔 곳을 쓴다: $_found (고정하려면 .cluster_env.local.sh 에 export H3_MODEL_DIR=...)" >&2
+    export H3_MODEL_DIR="$_found"
+  fi
+fi
 
 _user="${USER:-$(id -un)}"; _host="${HOSTNAME:-$(hostname)}"
 export WORK_ROOT="${WORK_ROOT:-$STORAGE_ROOT/runtime/$_user/$_host}"

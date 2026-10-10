@@ -29,7 +29,12 @@ cd "$ROOT"
 
 # 2) 점검
 command -v tmux >/dev/null || fail "tmux 가 없다" "apt install tmux 또는 관리자에게 요청"
-[[ -f "$H3_MODEL_DIR/model_index.json" ]] && green "✓ 모델: $H3_MODEL_DIR" || fail "모델 없음: $H3_MODEL_DIR" "bash scripts/provision.sh, 또는 .cluster_env.local.sh 에 H3_MODEL_DIR"
+if h3_model_ok "$H3_MODEL_DIR"; then green "✓ 모델: $H3_MODEL_DIR"
+  if [[ $REF == 1 ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "--ref 빼고 실행 (fl2va 만)"; fi
+else
+  cands="$(h3_find_models 2>/dev/null | awk '!seen[$0]++' | tr '\n' ' ')"
+  fail "모델 없음: $H3_MODEL_DIR" "받아 둔 곳을 .cluster_env.local.sh 에 export H3_MODEL_DIR=<경로>${cands:+ (찾은 곳: $cands)}. 새로 받는 건 provision.sh --download 뿐"
+fi
 command -v sglang >/dev/null && green "✓ sglang: $(command -v sglang)" || fail "sglang 없음" "bash scripts/provision.sh (venv: $VENV)"
 ngpu=0; command -v nvidia-smi >/dev/null && ngpu=$(nvidia-smi -L 2>/dev/null | grep -c '^GPU')
 need=$(tr ',' '\n' <<<"$GPUS" | grep -c .); [[ $REF == 1 ]] && need=$((need + $(tr ',' '\n' <<<"$REF_GPUS" | grep -c .)))

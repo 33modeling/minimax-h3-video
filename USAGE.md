@@ -93,13 +93,16 @@ source scripts/cluster_env.sh
 ### 2-2. 프로비저닝 (처음 한 번, 이후에는 검증만)
 
 ```bash
-bash scripts/provision.sh                 # venv + sglang[diffusion] + 가중치 검증/다운로드
-bash scripts/provision.sh --fl2va-only    # Ref2VA 가중치는 건너뜀 (텍스트·프레임 입력만 쓸 때)
+bash scripts/provision.sh                 # venv + sglang[diffusion] + 가중치 확인 (받지 않음)
 bash scripts/provision.sh --skip-model    # 패키지만 설치
+bash scripts/provision.sh --download      # 가중치가 정말 없을 때만: 새로 받기 (수백 GB). --fl2va-only 면 Ref2VA 는 안 받음
 ```
 
 - venv 는 `$STORAGE_ROOT/.venv` 에 만든다. 이미 있으면 재사용한다.
-- 가중치가 없으면 HF Hub 에서 받고, 실패하면 hf-mirror.com 으로 다시 시도한다. 둘 다 안 되면 PC 에서 받아 rsync 한다.
+- **가중치는 기본으로 받지 않는다.** `cluster_env.sh` 가 이미 받아 둔 곳을 찾는다: `/group-volume/models` 아래(깊이 6까지, 폴더 이름·대소문자 무관, `MiniMaxAI/MiniMax-H3` 같은 한 단계 더 들어간 폴더, HF 캐시 `hub/models--MiniMaxAI--MiniMax-H3/snapshots/...` 포함)에서 `model_index.json` 과 `fl2va` 폴더가 있는 곳. 찾으면 그 경로를 쓰고 어디를 쓰는지 출력한다.
+- 그래도 못 찾으면 provision.sh 가 "찾지 못했다"와 후보를 보여 주고 멈춘다. 받아 둔 곳이 따로 있으면 레포 루트의 `.cluster_env.local.sh` 에 `export H3_MODEL_DIR=<경로>` 를 적는다.
+- Ref2VA 가 없으면 받지 않고 "ref2va 서버는 못 띄운다"고만 알린다. fl2va 는 그대로 쓴다.
+- `--download` 일 때만 HF Hub 에서 받고, 실패하면 hf-mirror.com 으로 다시 시도한다. 둘 다 안 되면 PC 에서 받아 rsync 한다.
 
   ```bash
   # PC 에서
@@ -420,7 +423,7 @@ non_diegetic_music: 배경음악 스타일·템포.
 |---|---|
 | `cluster_env.sh 를 먼저 source 하라` | 매 셸마다 `source scripts/cluster_env.sh` |
 | `저장 경로가 group-volume 밖` | STORAGE_ROOT 를 group-volume 아래로. 부록 A |
-| `모델 없음: ...` | `H3_MODEL_DIR` 경로에 `model_index.json` 이 있는지. provision.sh 다시 |
+| `모델 없음: ...` / provision.sh 가 `가중치를 찾지 못했다` | 출력된 후보 경로를 `.cluster_env.local.sh` 에 `export H3_MODEL_DIR=<경로>`. 이미 받아 둔 모델을 다시 받지 않는다(받기는 `--download` 일 때만) |
 | `sglang 없음` | provision.sh 가 실패했거나 venv 가 PATH 에 없음. `which sglang` 확인. 안 되면 3절 도커 |
 | `포트 30010 이미 사용 중` | `bash scripts/stop.sh` 후 재시도. 다른 사람 프로세스면 `ss -ltnp` 로 확인 |
 | health 가 `000` | 서버 로딩 중(몇 분) 또는 죽음. 서버 tmux 창 로그 확인 |
