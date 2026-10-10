@@ -2,6 +2,14 @@
 
 ## 빠른 시작 (이것만 보면 된다)
 
+**서버 띄우기·확인·끄기는 이 세 개다** (클러스터의 레포 폴더 `/user-volume/<계정>/minimax-h3-video` 에서):
+
+| 할 일 | 명령 | 보이는 것 |
+|---|---|---|
+| 띄우기 | `bash scripts/up.sh` (레퍼런스도: `--ref`) | 이 화면에 서버 원본 로그. 다 뜨면 `✓ fl2va 준비됨`, `== 준비 완료` |
+| 떴는지 확인 (다른 창) | `bash scripts/status.sh` | fl2va·ref2va·웹 UI 마다 `준비됨 ✓` / `로딩 중`(+로그 마지막 줄) / `꺼짐`, GPU 메모리 |
+| 끄기 | `up.sh` 화면에서 Ctrl+C, 다른 창에서는 `bash scripts/down.sh` | 서버·워커·웹 UI 종료, GPU 메모리 표시 |
+
 ```bash
 # ① 내 PC: 코드를 클러스터로 (코드를 고칠 때마다)
 CLUSTER_SSH=<계정>@<호스트> CLUSTER_CODE_DIR=/user-volume/<계정>/minimax-h3-video bash scripts/sync_to_cluster.sh
@@ -163,7 +171,13 @@ bash scripts/serve.sh fl2va --gpus 0,1,2,3       # 텍스트/프레임 → 영�
 
 tmux 창 다루기: `Ctrl-b c` 새 창, `Ctrl-b n` 다음 창, `Ctrl-b d` 떼어놓기(서버는 계속 돈다), `tmux attach -t h3` 다시 붙기.
 
-### 2-4. 살아 있는지 확인 (다른 tmux 창에서)
+### 2-4. 살아 있는지 확인 (다른 창에서)
+
+```bash
+bash scripts/status.sh     # fl2va·ref2va·웹 UI: 준비됨 ✓ / 로딩 중(로그 마지막 줄) / 꺼짐, GPU 메모리
+```
+
+아래는 더 자세히 볼 때.
 
 ```bash
 source scripts/cluster_env.sh
@@ -521,6 +535,7 @@ export H3_NUM_GPUS=4
 # 서버
 bash scripts/up.sh                  # 서버 + 웹 UI (이 화면, Ctrl+C 로 전부 끄기)
 bash scripts/up.sh --check          # 점검만
+bash scripts/status.sh              # 떴는지 확인
 bash scripts/down.sh                # 다른 창에서 끄기
 source scripts/cluster_env.sh && bash scripts/health.sh
 # 생성

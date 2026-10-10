@@ -32,7 +32,7 @@ MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 SGLang 으로
 scripts/cluster_env.sh   # fdmu 규약: 저장은 /group-volume/minsoo3.kim/minimax-h3-video, 모델은 /group-volume/models/MiniMax-H3
 scripts/provision.sh     # venv + sglang[diffusion] + 가중치 확인(받아 둔 곳 자동 검색, 받기는 --download 일 때만)
 scripts/serve.sh         # sglang serve (tmux 포그라운드, 로그 tee)   fl2va|ref2va
-scripts/up.sh / down.sh   # 한 번에: 점검 → 서버·웹 UI 를 이 화면에서 포그라운드(원본 로그) → 준비되면 PC 접속 안내, Ctrl+C 로 전부 끄고 GPU 반환 / 다른 창에서 끄기
+scripts/up.sh / status.sh / down.sh   # 띄우기 / 떴는지 확인 / 끄기 — 한 번에: 점검 → 서버·웹 UI 를 이 화면에서 포그라운드(원본 로그) → 준비되면 PC 접속 안내, Ctrl+C 로 전부 끄고 GPU 반환 / 다른 창에서 끄기
 scripts/stop.sh / health.sh / sync_to_cluster.sh
 src/h3video/spec.py      # 사양 상수, 장면 분할
 src/h3video/client.py    # /v1/videos 제출·폴링·다운로드
@@ -53,6 +53,7 @@ shortform/               # 숏폼 제작: shorts CLI(파이썬) + 웹(Vite, 허�
 ```bash
 cd /user-volume/<you>/minimax-h3-video
 bash scripts/up.sh             # fl2va(GPU 0-3) + 웹 UI 8790.  --ref 로 ref2va(GPU 4-7)도, --check 는 점검만
+bash scripts/status.sh         # 떴는지 확인: 준비됨 / 로딩 중 / 꺼짐
 bash scripts/down.sh           # 전부 끄기
 ```
 
