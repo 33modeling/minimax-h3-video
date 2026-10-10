@@ -35,7 +35,7 @@ h3video jobs / h3video show last                                       # 지난 
 | 알아 둘 것 | 내용 |
 |---|---|
 | 결과 | `/group-volume/minsoo3.kim/minimax-h3-video/outputs/<작업id>/` (`-o` 를 주면 거기에도 복사) |
-| 모델 위치 | 기본 `/group-volume/models/MiniMax-H3`. 못 찾으면 `up.sh` 가 경로를 묻고 `.cluster_env.local.sh` 에 저장 |
+| 모델 위치 | `/group-volume/models/MiniMax-H3` (고정, 노드가 바뀌어도 그대로. 받지 않는다) |
 | 웹 UI (선택) | CLI 만 쓰면 필요 없다. 쓰려면 `bash scripts/up.sh --web` 후 출력되는 `ssh -N -L ...` 를 PC 에서 실행 → `http://127.0.0.1:8790` |
 | 이미 떠 있으면 | `up.sh` 는 떠 있는 서버·웹 UI 를 다시 띄우지 않고 그대로 쓴다 |
 | 이미지·영상 입력 | 4-0절 표(H3), 숏폼은 [shortform/USAGE.md](shortform/USAGE.md) 3-1절 |
@@ -140,8 +140,7 @@ bash scripts/provision.sh --download      # 가중치가 정말 없을 때만: �
 ```
 
 - venv 는 `$STORAGE_ROOT/.venv` 에 만든다. 이미 있으면 재사용한다.
-- **모델 기본 위치는 `/group-volume/models/MiniMax-H3`** 이고, 가중치는 기본으로 받지 않는다. 그 폴더에 `model_index.json` 이나 `fl2va` 폴더 중 하나라도 있으면 그대로 쓴다. `.cluster_env.local.sh` 에 다른 경로를 적었는데 거기 가중치가 없으면 기본 위치로 돌아간다. 기본 위치에도 없을 때만 `/group-volume/models` 아래를 찾아(깊이 6, 이름·대소문자 무관, HF 캐시 구조 포함) 찾은 곳을 쓰고 출력한다.
-- 그래도 못 찾으면 `up.sh`·`provision.sh` 가 **경로를 물어본다**(`/group-volume/models` 안 목록을 보여 주고, Tab 자동완성). 입력한 경로는 레포 루트의 `.cluster_env.local.sh`(git 제외)에 `export H3_MODEL_DIR=...` 로 저장돼 다음부터 묻지 않는다. 폴더 구조가 예상과 달라도 "그래도 쓸까요?"에 y 면 그 경로를 쓴다. 터미널 없이 실행하면 묻지 않고 어디에 적으면 되는지만 출력한다.
+- **모델 위치는 `/group-volume/models/MiniMax-H3` 고정**이고, 가중치는 받지 않는다. 그 폴더에 `model_index.json` 이나 `FL2VA` 가 없으면 "가중치가 없다"고 하고 멈춘다.
 - Ref2VA 가 없으면 받지 않고 "ref2va 서버는 못 띄운다"고만 알린다. fl2va 는 그대로 쓴다.
 - `--download` 일 때만 HF Hub 에서 받고, 실패하면 hf-mirror.com 으로 다시 시도한다. 둘 다 안 되면 PC 에서 받아 rsync 한다.
 
@@ -484,7 +483,7 @@ non_diegetic_music: 배경음악 스타일·템포.
 |---|---|
 | `cluster_env.sh 를 먼저 source 하라` | 매 셸마다 `source scripts/cluster_env.sh` |
 | `저장 경로가 group-volume 밖` | STORAGE_ROOT 를 group-volume 아래로. 부록 A |
-| `모델 없음: ...` / provision.sh 가 `가중치를 찾지 못했다` | `bash scripts/up.sh` 가 경로를 물어볼 때 가중치 폴더를 입력(저장됨). 또는 `.cluster_env.local.sh` 에 `export H3_MODEL_DIR=<경로>`. 이미 받아 둔 모델을 다시 받지 않는다(받기는 `--download` 일 때만) |
+| `모델 없음: ...` / provision.sh 가 `가중치가 없다` | `ls /group-volume/models/MiniMax-H3` 로 확인. 이미 받아 둔 모델을 다시 받지 않는다(받기는 `--download` 일 때만) |
 | `sglang 없음` | provision.sh 가 실패했거나 venv 가 PATH 에 없음. `which sglang` 확인. 안 되면 3절 도커 |
 | `포트 30010 이미 사용 중` / `OSError: [Errno 98] Address already in use` | 그 포트에 이미 서버·웹 UI 가 떠 있다. `up.sh` 는 떠 있는 걸 그대로 쓴다. 새로 띄우려면 `bash scripts/down.sh`, 예전 방식(tmux 세션)으로 띄운 게 남았으면 `tmux kill-session -t h3` |
 | `up.sh` 가 `서버가 끝났다` | 바로 위 원본 로그가 원인(OOM 등). 남은 프로세스는 끄고 GPU 를 반환한 상태 |

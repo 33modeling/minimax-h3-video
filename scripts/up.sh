@@ -30,15 +30,9 @@ source "$ROOT/scripts/cluster_env.sh" || { red "cluster_env.sh 실패 (위 메�
 cd "$ROOT"
 
 # 2) 점검
-model_ok=0
-if h3_model_ok "$H3_MODEL_DIR"; then model_ok=1
-elif h3_ask_model_dir; then model_ok=1; fi      # 못 찾으면 경로를 물어보고 .cluster_env.local.sh 에 저장
-if [[ $model_ok == 1 ]]; then green "✓ 모델: $H3_MODEL_DIR"
+if h3_model_ok "$H3_MODEL_DIR"; then green "✓ 모델: $H3_MODEL_DIR"
   if [[ $REF == 1 ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "--ref 빼고 실행 (fl2va 만)"; fi
-else
-  cands="$(h3_find_models 2>/dev/null | awk '!seen[$0]++' | tr '\n' ' ')"
-  fail "모델 없음: $H3_MODEL_DIR" "받아 둔 곳을 .cluster_env.local.sh 에 export H3_MODEL_DIR=<경로>${cands:+ (찾은 곳: $cands)}. 새로 받는 건 provision.sh --download 뿐"
-fi
+else fail "모델 없음: $H3_MODEL_DIR" "ls $H3_MODEL_DIR 로 확인"; fi
 command -v sglang >/dev/null && green "✓ sglang: $(command -v sglang)" || fail "sglang 없음" "bash scripts/provision.sh (venv: $VENV)"
 ngpu=0; command -v nvidia-smi >/dev/null && ngpu=$(nvidia-smi -L 2>/dev/null | grep -c '^GPU')
 need=$(tr ',' '\n' <<<"$GPUS" | grep -c .); [[ $REF == 1 ]] && need=$((need + $(tr ',' '\n' <<<"$REF_GPUS" | grep -c .)))
