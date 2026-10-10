@@ -10,6 +10,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cluster_env.sh" >/dev/null || { echo "cluster_env.sh 실패"; exit 1; }
 unset HF_HUB_OFFLINE HF_DATASETS_OFFLINE TRANSFORMERS_OFFLINE || true
 log() { printf '[provision %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+mkdir -p "$H3_LOG_DIR"; PROV_LOG="$H3_LOG_DIR/provision-$(date +%Y%m%d-%H%M%S).log"
+exec > >(trap '' INT; tee -a "$PROV_LOG") 2>&1
+log "로그 파일: $PROV_LOG"
 
 FL2VA_ONLY=0 SKIP_MODEL=0 DOWNLOAD=0
 PYTHON_BOOTSTRAP="${PYTHON_BOOTSTRAP:-python3.12}"
@@ -28,6 +31,8 @@ log "패키지 설치 (h3video + sglang[diffusion])"
 "$VENV/bin/pip" install -e ".[serve,dev]" ${PIP_INDEX_URL:+-i "$PIP_INDEX_URL"} \
   || { log "pip 설치 실패 — sglang 은 docker lmsysorg/sglang:dev 로 대체 가능 (README 참조)"; exit 1; }
 "$VENV/bin/python" -c "import sglang, sys; print('sglang', sglang.__version__)" || log "경고: sglang import 실패"
+# 드라이버(예: CUDA 12.2)보다 새 CUDA 로 빌드된 torch 가 깔렸으면 같은 버전의 CUDA 12 빌드로 바꾼다
+bash "$ROOT/scripts/fix_torch_cuda.sh" || log "경고: torch 가 GPU 를 못 쓴다 (위 [torch-cuda] 줄 참고)"
 
 # 2) 모델: 확인만. 받기는 --download 일 때만 (예전에는 경로만 달라도 전부 다시 받았다)
 fl2va_ok() { h3_model_ok "$H3_MODEL_DIR"; }   # cluster_env.sh: model_index.json + fl2va 폴더(대소문자 무관)

@@ -28,6 +28,10 @@ problems=0; fail() { red "✗ $1"; [[ -n "${2:-}" ]] && echo "   → $2"; proble
 # shellcheck source=/dev/null
 source "$ROOT/scripts/cluster_env.sh" || { red "cluster_env.sh 실패 (위 메시지 참고)"; exit 1; }
 cd "$ROOT"
+# 이 화면에 나오는 것 전부(서버 원본 로그·오류 포함)를 파일로도 남긴다. Ctrl+C 때 기록이 끊기지 않게 tee 는 INT 를 무시
+mkdir -p "$H3_LOG_DIR"; UP_LOG="$H3_LOG_DIR/up-$(date +%Y%m%d-%H%M%S).log"
+exec > >(trap '' INT; tee -a "$UP_LOG") 2>&1
+echo "[up] 로그 파일: $UP_LOG"
 
 # 2) 점검
 h3_model_ok "$H3_MODEL_DIR" || h3_ask_model_dir || true    # 기본·저장·검색으로도 없으면 경로를 묻는다
@@ -65,6 +69,12 @@ for w in "${TODO[@]}"; do
   else START+=("$w"); fi
 done
 if [[ $problems -gt 0 ]]; then red "== 문제 ${problems}개: 위 → 를 처리한 뒤 다시 실행"; exit 1; fi
+# GPU 를 실제로 쓸 수 있는지 (드라이버보다 새 CUDA 로 빌드된 torch 면 여기서 원래 오류가 그대로 나온다)
+if ! python3 -c "import torch; torch.zeros(1).cuda()" ; then
+  fail "torch 가 GPU 를 못 쓴다 (바로 위 원래 오류 참고)" "bash scripts/fix_torch_cuda.sh  (드라이버에 맞는 CUDA 12 빌드로 다시 설치)"
+  red "== 문제가 있어 서버를 띄우지 않는다. 로그: $UP_LOG"; exit 1
+fi
+green "✓ torch GPU 사용 가능"
 green "== 점검 통과"; [[ $CHECK == 1 ]] && exit 0
 
 # 3) 이 화면에서 포그라운드로 실행. 각 서버의 출력(원본 로그·오류)이 그대로 이 화면에 나온다.

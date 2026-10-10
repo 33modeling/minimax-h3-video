@@ -40,6 +40,7 @@ h3video jobs / h3video show last                                       # 지난 
 | 이미 떠 있으면 | `up.sh` 는 떠 있는 서버·웹 UI 를 다시 띄우지 않고 그대로 쓴다 |
 | 이미지·영상 입력 | 4-0절 표(H3), 숏폼은 [shortform/USAGE.md](shortform/USAGE.md) 3-1절 |
 | 막히면 | 7절 표. 오류는 `up.sh` 화면의 원본 로그에 그대로 나온다 |
+| 로그 파일 | `up.sh`·`provision.sh` 화면 전체가 `/group-volume/minsoo3.kim/minimax-h3-video/logs/up-<시각>.log`·`provision-<시각>.log` 에, 서버 로그는 `serve-fl2va-<시각>.log` 에 남는다 (시작할 때 경로 출력) |
 
 아래는 같은 내용을 단계마다 자세히 적은 것이다.
 
@@ -486,6 +487,7 @@ non_diegetic_music: 배경음악 스타일·템포.
 | `모델 없음: ...` / provision.sh 가 `가중치가 없다` | `ls /group-volume/models/MiniMax-H3` 로 확인. 이미 받아 둔 모델을 다시 받지 않는다(받기는 `--download` 일 때만) |
 | `sglang 없음` | provision.sh 가 실패했거나 venv 가 PATH 에 없음. `which sglang` 확인. 안 되면 3절 도커 |
 | `포트 30010 이미 사용 중` / `OSError: [Errno 98] Address already in use` | 그 포트에 이미 서버·웹 UI 가 떠 있다. `up.sh` 는 떠 있는 걸 그대로 쓴다. 새로 띄우려면 `bash scripts/down.sh`, 예전 방식(tmux 세션)으로 띄운 게 남았으면 `tmux kill-session -t h3` |
+| `The NVIDIA driver on your system is too old (found version 12020)` | 노드 드라이버(CUDA 12.2)보다 새 CUDA 로 빌드된 torch 가 깔림. `bash scripts/fix_torch_cuda.sh` 가 같은 버전의 CUDA 12 빌드로 다시 설치한다(provision.sh 도 끝에 자동 실행). `up.sh` 는 서버를 띄우기 전에 이걸 먼저 확인한다 |
 | `up.sh` 가 `서버가 끝났다` | 바로 위 원본 로그가 원인(OOM 등). 남은 프로세스는 끄고 GPU 를 반환한 상태 |
 | health 가 `000` | 서버 로딩 중(몇 분) 또는 죽음. `up.sh` 화면의 로그 확인 |
 | CUDA OOM | `--mode memory` 로 재시작. 그래도 안 되면 `--steps` 줄이거나 길이 단축 |
