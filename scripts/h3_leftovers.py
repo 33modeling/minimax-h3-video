@@ -158,10 +158,17 @@ def main():
     a = ap.parse_args()
     if a.gpu_users:
         users = gpu_holders(a.exclude)
-        if not users:
-            print("     이 계정 프로세스 중 GPU 를 잡은 것은 없다 → 다른 계정·다른 파드가 쓰거나, 비정상 종료로 남은 메모리다")
+        if not users:   # 붙여 넣을 때 한글이 지워져도 알 수 있게 영어 표시를 같이 둔다
+            print("     (none) 이 계정 프로세스 중 GPU 를 잡은 것은 없다 → 다른 계정·다른 파드가 쓰거나, 비정상 종료로 남은 메모리다")
         for pid, gpus, cmd in users:
-            print(f"     pid {pid}  GPU 장치 {','.join(gpus) or '-'}  {cmd}")
+            print(f"     pid {pid}  GPU {','.join(gpus) or '-'}  {cmd}")
+        import subprocess
+        try:
+            apps = subprocess.run(["nvidia-smi", "--query-compute-apps=pid,used_memory,process_name", "--format=csv,noheader"],
+                                  capture_output=True, text=True, timeout=20).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            apps = ""
+        print("     nvidia-smi apps: " + ("; ".join(apps.splitlines()) if apps else "(none)"))
         return 0
     procs = find(a.exclude)
     if a.all or a.web_only:
