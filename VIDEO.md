@@ -120,3 +120,4 @@ h3video fetch <video_id> -o a.mp4     # 서버에 남은 완성본 받기 (참�
 | 느리다 | 서버 로그의 `걸린 시간: 다듬기 … 디노이징 …(스텝당 …초)` 를 본다. 빠르게: `--steps 30`, `--size 576`, 다듬기 생략 `--raw` |
 | `out of memory` | 다른 작업이 GPU 사용 중 → `bash scripts/up.sh` 다시 |
 | 생성 중 서버가 끝났다 | `up.sh` 화면의 바로 위 오류를 확인한다 |
+| 그 밖에 안 될 때 | `bash scripts/diagnose.sh` 출력을 통째로 붙여 준다 |
