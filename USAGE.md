@@ -58,11 +58,13 @@ bash scripts/up.sh --check      # 점검만: 모델·sglang·GPU 장수·포트
 bash scripts/up.sh              # fl2va 서버(GPU 0,1,2,3, 포트 30010) + 웹 UI(8790)
 bash scripts/up.sh --ref        # ref2va 서버(GPU 4,5,6,7, 포트 30011)도. 8장 노드
 bash scripts/up.sh --cors https://33modeling.pages.dev   # 허브 '숏폼 제작'에서 웹 UI 를 부를 때
-bash scripts/down.sh            # 전부 끄기 (tmux 세션·서버·웹 UI)
+bash scripts/down.sh            # 다른 창에서 끄기 (up.sh 화면에서는 Ctrl+C)
 ```
 
-- `cluster_env.sh` 를 알아서 읽고, 서버와 웹 UI 는 tmux 세션 `h3` 의 창(fl2va·ref2va·web)에서 포그라운드로 돈다. 로그는 창과 `$H3_LOG_DIR` 에 같이 남는다. 보기: `tmux attach -t h3`.
-- 모델 로딩이 끝날 때까지 기다렸다가(기본 30분 한도, `H3_UP_TIMEOUT`) 준비되면 PC 에서 쓸 SSH 터널 명령을 출력한다. 서버 창이 먼저 끝나면 로그 끝부분을 보여 주고 멈춘다.
+- `cluster_env.sh` 를 알아서 읽고, 서버와 웹 UI 를 **이 화면에서 포그라운드로** 돌린다. 따로 tmux 를 띄우지 않는다. 오래 띄워 둘 거면 직접 연 tmux 창 안에서 `up.sh` 를 실행한다.
+- 서버 **원본 로그**(sglang 출력 그대로)와 오류가 이 화면에 실시간으로 나온다. 모델 로딩은 **시간 제한 없이** 기다린다.
+- 서버가 죽으면(OOM 등) 바로 "서버가 끝났다"를 띄우고 남은 프로세스(워커 포함)를 꺼서 GPU 를 반환한 뒤 종료한다. sglang 본체만 죽고 워커가 남은 경우도 잡는다.
+- **Ctrl+C** 하면 서버·워커·웹 UI 를 프로세스 묶음째 끄고(30초 안에 안 꺼지면 강제 종료) GPU 별 메모리 사용량을 보여 준다. 이 스크립트가 띄우지 않은 다른 GPU 작업은 건드리지 않는다. 준비되면 PC 에서 쓸 SSH 터널 명령을 출력한다. 서버 창이 먼저 끝나면 로그 끝부분을 보여 주고 멈춘다. 제한을 걸고 싶으면 `H3_UP_TIMEOUT=초`(넘어도 서버는 tmux 에서 계속 로딩한다).
 - 이미 떠 있는 서버는 다시 띄우지 않고 그대로 쓴다. 그 포트를 다른 프로그램이 쓰고 있으면 이유를 출력하고 멈춘다.
 - `--gpus`, `--ref-gpus`, `--mode speed|memory`, `--no-web` 으로 바꿀 수 있다. 처음 한 번은 `bash scripts/provision.sh`(아래 2-2)가 먼저 필요하다.
 

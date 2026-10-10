@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# 클러스터 노드에서 명령 하나로: 환경 설정 → 점검 → tmux 세션에 서버·웹 UI 띄우기 → 준비될 때까지 대기 → PC 접속 방법 안내.
+# 클러스터 노드에서 명령 하나로: 환경 설정 → 점검 → 서버·웹 UI 를 이 화면에서 포그라운드로 실행.
+# 서버 원본 로그와 오류가 이 화면에 그대로 나온다. 준비되면 PC 접속 방법을 출력하고 계속 돈다. Ctrl+C 로 전부 끈다.
+# (오래 띄워 둘 거면 직접 연 tmux 창 안에서 실행)
 #
 #   bash scripts/up.sh                 fl2va 서버(GPU 0,1,2,3) + 웹 UI(8790)
 #   bash scripts/up.sh --ref           ref2va 서버도 (GPU 4,5,6,7 — 8장 노드)
@@ -7,7 +9,7 @@
 #   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7 --mode memory
 #   bash scripts/up.sh --cors https://33modeling.pages.dev    허브 '숏폼 제작'에서 웹 UI 를 부를 수 있게
 #   bash scripts/up.sh --check         점검만
-# 끄기: bash scripts/down.sh       보기: tmux attach -t h3   (창: fl2va · ref2va · web)
+# 끄기: 이 화면에서 Ctrl+C (다른 창에서는 bash scripts/down.sh)
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"
@@ -28,7 +30,6 @@ source "$ROOT/scripts/cluster_env.sh" || { red "cluster_env.sh 실패 (위 메�
 cd "$ROOT"
 
 # 2) 점검
-command -v tmux >/dev/null || fail "tmux 가 없다" "apt install tmux 또는 관리자에게 요청"
 model_ok=0
 if h3_model_ok "$H3_MODEL_DIR"; then model_ok=1
 elif h3_ask_model_dir; then model_ok=1; fi      # 못 찾으면 경로를 물어보고 .cluster_env.local.sh 에 저장
@@ -57,48 +58,63 @@ done
 if [[ $problems -gt 0 ]]; then red "== 문제 ${problems}개: 위 → 를 처리한 뒤 다시 실행"; exit 1; fi
 green "== 점검 통과"; [[ $CHECK == 1 ]] && exit 0
 
-# 3) tmux 세션에 창마다 포그라운드로 띄운다 (로그는 창과 $H3_LOG_DIR 에 같이 남는다)
-win_cmd() {  # 창이 끝나도 바로 닫히지 않게 메시지를 남긴다
-  printf 'cd %q && source scripts/cluster_env.sh >/dev/null && %s; echo; echo "[%s 종료됨: 위 로그 확인. Enter 로 창 닫기]"; read' "$ROOT" "$1" "$2"
+# 3) 이 화면에서 포그라운드로 실행. 각 서버의 출력(원본 로그·오류)이 그대로 이 화면에 나온다.
+PIDS=(); NAMES=()
+cleanup() {   # 서버·웹 UI 를 하위 프로세스까지 끄고 GPU 반환 확인
+  trap - INT TERM HUP EXIT
+  echo; yellow "== 끄는 중: ${NAMES[*]} (GPU 반환까지 확인)"
+  h3_stop_tree "${PIDS[@]}"
+  rm -f "$H3_LOG_DIR/web.pid" "$H3_LOG_DIR"/serve-*.pid
+  green "== 종료"
 }
-# tmux 서버가 이미 떠 있으면 새 창은 그 서버의 환경을 물려받는다. 이 셸에서 정한 값(명령줄의 H3_PORT_* 등)이
-# 창에도 가도록 관련 변수를 -e 로 넘긴다 (tmux 3.0+).
-E_ARGS=()
-while IFS='=' read -r k _; do
-  [[ "$k" =~ ^(H3_[A-Z0-9_]*|GROUP_VOLUME_ROOT|STORAGE_ROOT|MODELS_DIR|WORK_ROOT|PATH|CUDA_VISIBLE_DEVICES|HF_[A-Z_]*)$ ]] && E_ARGS+=(-e "$k=${!k}")
-done < <(env)
+trap 'cleanup; exit 130' INT TERM HUP
 for w in "${START[@]}"; do
   case $w in
-    fl2va) cmd="bash scripts/serve.sh fl2va --gpus $GPUS ${MODE_ARGS[*]}" ;;
-    ref2va) cmd="bash scripts/serve.sh ref2va --gpus $REF_GPUS ${MODE_ARGS[*]}" ;;
-    web) cmd="python3 -m h3video.cli web --host 127.0.0.1 --port ${PORT[web]}${CORS:+ --cors-origin $CORS}" ;;
+    fl2va) cmd=(bash scripts/serve.sh fl2va --gpus "$GPUS" "${MODE_ARGS[@]}") ;;
+    ref2va) cmd=(bash scripts/serve.sh ref2va --gpus "$REF_GPUS" "${MODE_ARGS[@]}") ;;
+    web) cmd=(python3 -m h3video.cli web --host 127.0.0.1 --port "${PORT[web]}"); [[ -n "$CORS" ]] && cmd+=(--cors-origin "$CORS") ;;
   esac
-  if tmux has-session -t "$SESSION" 2>/dev/null; then tmux new-window -d "${E_ARGS[@]}" -t "$SESSION" -n "$w" "$(win_cmd "$cmd" "$w")"
-  else tmux new-session -d "${E_ARGS[@]}" -s "$SESSION" -n "$w" "$(win_cmd "$cmd" "$w")"; fi
-  echo "· tmux $SESSION:$w ← $cmd"
+  echo "== $w 시작: ${cmd[*]}"
+  # 작업 제어(set -m)로 서버마다 자기 프로세스 그룹을 갖게 한다: $! 가 곧 그룹 번호라 끌 때 하위 프로세스까지 정확히 끈다.
+  # (setsid 는 경우에 따라 한 번 더 fork 해서 $! 가 금방 끝나는 중간 프로세스가 될 수 있다.) 출력은 그대로 이 화면으로.
+  set -m; "${cmd[@]}" & PIDS+=($!); set +m
+  NAMES+=("$w")
+  [[ $w == web ]] && echo $! > "$H3_LOG_DIR/web.pid"
 done
 
-# 4) 준비될 때까지 대기 (모델 로딩에 몇 분). 서버 창이 먼저 끝나면 로그 끝부분을 보여 주고 멈춘다
-limit=${H3_UP_TIMEOUT:-1800}; t=0
+# 4) 준비될 때까지 기다린다 (시간 제한 없음, H3_UP_TIMEOUT=초 로 걸 수 있음). 그동안 로그는 위에 그대로 흐른다.
+limit=${H3_UP_TIMEOUT:-0}; t=0
+pid_of() { local i; for i in "${!NAMES[@]}"; do [[ ${NAMES[$i]} == "$1" ]] && echo "${PIDS[$i]}"; done; }
+# 서버가 살아 있는가: 실행 스크립트가 살아 있고, (시작 후 10초가 지났다면) 그룹 안에 sglang 본체("sglang serve")가 있어야 한다.
+# 본체가 OOM 등으로 죽어도 워커가 로그 파이프를 잡고 있으면 serve.sh 가 끝나지 않으므로 본체를 직접 본다.
+server_alive() {  # name pid seconds-since-start
+  kill -0 "$2" 2>/dev/null || return 1
+  [[ $1 == web || $3 -le 10 ]] && return 0
+  pgrep -g "$2" -f 'sglang serve' >/dev/null
+}
 for w in "${START[@]}"; do
   [[ $w == web ]] && continue
-  p=${PORT[$w]}; pidf="$H3_LOG_DIR/serve-$w.pid"
-  until healthy "$p"; do
+  until healthy "${PORT[$w]}"; do
+    if ! server_alive "$w" "$(pid_of "$w")" "$t"; then sleep 1; red "✗ $w 서버가 끝났다 (바로 위 로그가 원인). 남은 프로세스를 끄고 GPU 를 반환한다"; cleanup; exit 1; fi
     sleep 5; t=$((t + 5))
-    if [[ $t -gt 10 && -f "$pidf" ]] && ! kill -0 "$(cat "$pidf")" 2>/dev/null; then
-      red "✗ $w 서버가 끝났다. 로그 끝부분:"; tail -n 20 "$(ls -t "$H3_LOG_DIR"/serve-$w-*.log 2>/dev/null | head -1)" 2>/dev/null; exit 1; fi
-    if [[ $t -ge $limit ]]; then red "✗ $w: ${limit}초 안에 준비되지 않음 (tmux attach -t $SESSION 로 확인)"; exit 1; fi
-    (( t % 30 == 0 )) && echo "  … $w 로딩 중 ${t}초: $(tail -n 1 "$(ls -t "$H3_LOG_DIR"/serve-$w-*.log 2>/dev/null | head -1)" 2>/dev/null | cut -c1-100)"
+    if [[ $limit -gt 0 && $t -ge $limit ]]; then red "✗ $w: ${limit}초 안에 준비되지 않음"; cleanup; exit 1; fi
   done
-  green "✓ $w 준비됨 (포트 $p)"
+  green "✓ $w 준비됨 (포트 ${PORT[$w]})"
 done
 
-# 5) 안내
+# 5) 안내 (서버는 계속 이 화면에서 돈다)
 host="$(hostname -f 2>/dev/null || hostname)"
 echo
-green "== 실행 중 (tmux 세션 $SESSION)"
-echo "  보기:   tmux attach -t $SESSION      (창 이동 Ctrl-b n, 나오기 Ctrl-b d)"
-echo "  끄기:   bash scripts/down.sh"
-echo "  영상:   h3video gen \"...\" -s 8          (이 노드에서. source scripts/cluster_env.sh 후)"
+green "== 준비 완료. 로그는 계속 이 화면에 나온다. 끄기: Ctrl+C"
+echo "  영상:   다른 창에서 source scripts/cluster_env.sh && h3video gen \"...\" -s 8"
 echo "  PC 에서: ssh -N -L 8790:127.0.0.1:${PORT[web]} -L ${PORT[fl2va]}:127.0.0.1:${PORT[fl2va]} -L ${PORT[ref2va]}:127.0.0.1:${PORT[ref2va]} $(id -un)@$host"
 echo "           그다음 브라우저 http://127.0.0.1:8790 (허브 숏폼 제작의 서버 주소도 http://localhost:8790)"
+echo
+
+# 서버 하나라도 끝나면 알리고 전부 끈다
+while :; do
+  for i in "${!PIDS[@]}"; do
+    if ! server_alive "${NAMES[$i]}" "${PIDS[$i]}" 99; then red "✗ ${NAMES[$i]} 가 끝났다 (바로 위 로그가 원인). 남은 프로세스를 끄고 GPU 를 반환한다"; cleanup; exit 1; fi
+  done
+  sleep 3
+done

@@ -32,7 +32,7 @@ MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 SGLang 으로
 scripts/cluster_env.sh   # fdmu 규약: 저장은 /group-volume/minsoo3.kim/minimax-h3-video, 모델은 /group-volume/models/MiniMax-H3
 scripts/provision.sh     # venv + sglang[diffusion] + 가중치 확인(받아 둔 곳 자동 검색, 받기는 --download 일 때만)
 scripts/serve.sh         # sglang serve (tmux 포그라운드, 로그 tee)   fl2va|ref2va
-scripts/up.sh / down.sh   # 한 번에: 점검 → tmux 에 서버·웹 UI → 준비 대기 → PC 접속 안내 / 전부 끄기
+scripts/up.sh / down.sh   # 한 번에: 점검 → 서버·웹 UI 를 이 화면에서 포그라운드(원본 로그) → 준비되면 PC 접속 안내, Ctrl+C 로 전부 끄고 GPU 반환 / 다른 창에서 끄기
 scripts/stop.sh / health.sh / sync_to_cluster.sh
 src/h3video/spec.py      # 사양 상수, 장면 분할
 src/h3video/client.py    # /v1/videos 제출·폴링·다운로드
@@ -48,7 +48,7 @@ shortform/               # 숏폼 제작: shorts CLI(파이썬) + 웹(Vite, 허�
 
 ## 클러스터에서 (서버)
 
-명령 하나로 띄우고 끈다. 환경 설정, 모델·sglang·GPU·포트 점검, tmux 세션 `h3` 에 서버(포그라운드)와 웹 UI, 준비될 때까지 대기, PC 접속 명령 안내까지 한다.
+명령 하나로 띄우고 끈다. 환경 설정, 모델·sglang·GPU·포트 점검 뒤 서버와 웹 UI 를 **이 화면에서 포그라운드로** 돌린다. 서버 원본 로그와 오류가 그대로 나오고, 준비되면 PC 접속 명령을 출력한다. Ctrl+C 로 서버·워커·웹 UI 를 전부 끄고 GPU 반환까지 확인한다(오래 띄워 둘 거면 직접 연 tmux 창 안에서 실행).
 
 ```bash
 cd /user-volume/<you>/minimax-h3-video
