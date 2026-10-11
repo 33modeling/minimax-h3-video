@@ -123,6 +123,7 @@ cat prompt.txt | h3video gen -s 10              # 표준입력 (또는 -f prompt
 h3video gen "프롬프트" -s 40 --dry-run           # 보내지 않고 장면 분할·요청만 확인
 h3video ref "프롬프트" --image me.png --audio voice.mp3 -s 6           # ref2va
 h3video batch examples/batch_example.txt -o out/                        # 여러 개 차례로 (--- 구분)
+h3video json 토토.json pages/ -o 토토.mp4       # JSON + 그림들 → 장면마다 영상 → 이어 붙이기 (장면 수·길이는 JSON 에서)
 h3video jobs / h3video show last              # 지난 작업, 마지막 작업 상세
 h3video fetch <video_id> [--ref] -o x.mp4     # 서버에서 받기 (ref2va 는 --ref)
 ```

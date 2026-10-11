@@ -31,6 +31,7 @@ class State:
         self.requests: list[dict] = []
         self.n = 0
         self.lock = threading.Lock()
+        self.fail_once: list[str] = []   # 프롬프트에 이 글이 든 요청을 한 번 실패시킨다 (다시 하기 테스트)
 
 
 def make_handler(state: State, steps: int = 3):
@@ -59,6 +60,8 @@ def make_handler(state: State, steps: int = 3):
                     self.send_header("Content-Length", str(len(b))); self.end_headers(); return self.wfile.write(b)
                 with state.lock:
                     v["polls"] += 1
+                    if v["polls"] >= steps and v.get("fail"):
+                        return self._json({"id": parts[2], "status": "failed", "progress": v["progress"], "error": "mock failure"})
                     if v["polls"] >= steps:
                         v["status"], v["progress"] = "completed", 1.0
                     else:
@@ -75,7 +78,10 @@ def make_handler(state: State, steps: int = 3):
             with state.lock:
                 state.n += 1
                 vid = f"video_{state.n:04d}"
-                state.videos[vid] = {"status": "queued", "progress": 0.0, "polls": 0}
+                hit = next((x for x in state.fail_once if x in body["prompt"]), None)
+                if hit:
+                    state.fail_once.remove(hit)
+                state.videos[vid] = {"status": "queued", "progress": 0.0, "polls": 0, "fail": bool(hit)}
                 state.requests.append(body)
             self._json({"id": vid, "status": "queued"}, 201)
     return H

@@ -34,6 +34,8 @@ EXAMPLES = """예:
   h3video gen -f my_ir.txt --raw -s 8                   직접 쓴 프롬프트를 다듬지 않고 그대로
   h3video ref "<Subject 1>이 손을 흔든다" --image me.png -s 6
   h3video batch prompts.txt -o out/                     여러 개를 차례로 (--- 로 구분)
+  h3video json 토토.json pages/ -o 토토.mp4              JSON + 그림 폴더로 한 번에 (장면 수·길이는 JSON 에서)
+  h3video json --resume last                           실패한 장면만 다시 하고 이어 붙이기
   h3video jobs / h3video show last                     지난 작업, 마지막 작업 상세
   h3video shorts run job.json [source.mp4]             숏폼 제작 (자막·음악·템플릿 합성, shortform/)
 공통 옵션(--endpoint, --output-dir 등)은 명령 앞뒤 어디에 써도 된다."""
@@ -166,6 +168,22 @@ def scene_line(jb: Job) -> str:
 
 def run_jobs(a, jobs: list[Job], out: str | None = None) -> None:
     """진행 상황은 stderr, 결과 mp4 경로만 stdout (out=$(h3video gen ...) 로 받을 수 있게)."""
+    store, t0 = execute_jobs(a, jobs)
+    failed = 0
+    for job in jobs:
+        jb = store.get(job.id)
+        if jb.status == "completed":
+            print(copy_out(jb.output, out, many=len(jobs) > 1, job_id=job.id))
+        else:
+            failed += 1
+            print(f"실패 {job.id}: {jb.error}", file=sys.stderr)
+    print(f"끝: {len(jobs) - failed}/{len(jobs)}개 완료, {fmt_secs(time.time() - t0)}", file=sys.stderr)
+    if failed:
+        sys.exit(1)
+
+
+def execute_jobs(a, jobs: list[Job], on_tick=None) -> tuple[JobStore, float]:
+    """작업들을 서버에 보내고 다 끝날 때까지 진행 상황을 stderr 에 쓴다. (기록, 시작 시각)을 돌려준다."""
     for job in jobs:
         validate_job(job)
     needs_ref = any(j.task == "ref2va" for j in jobs)
@@ -200,22 +218,14 @@ def run_jobs(a, jobs: list[Job], out: str | None = None) -> None:
                     tag = f"{job.id[-6:]} " if len(jobs) > 1 else ""
                     print(f"  [{time.strftime('%H:%M:%S')}] {tag}{line}  (경과 {fmt_secs(time.time() - t0)})", file=sys.stderr, flush=True)
                     last[job.id] = line
+            if on_tick:
+                on_tick(store)
             if not pending:
                 break
     except KeyboardInterrupt:
         interrupted(store, jobs)
         sys.exit(130)
-    failed = 0
-    for job in jobs:
-        jb = store.get(job.id)
-        if jb.status == "completed":
-            print(copy_out(jb.output, out, many=len(jobs) > 1, job_id=job.id))
-        else:
-            failed += 1
-            print(f"실패 {job.id}: {jb.error}", file=sys.stderr)
-    print(f"끝: {len(jobs) - failed}/{len(jobs)}개 완료, {fmt_secs(time.time() - t0)}", file=sys.stderr)
-    if failed:
-        sys.exit(1)
+    return store, t0
 
 
 def interrupted(store: JobStore, jobs: list[Job]) -> None:
@@ -374,6 +384,58 @@ def cmd_batch(a):
     run_jobs(a, jobs, a.out)
 
 
+def cmd_json(a):
+    """JSON 하나 + 그림들 → 장면마다 영상 → 쪽 순서대로 이어 붙인 영상 하나. 장면 수·길이는 JSON 에서 정한다."""
+    from . import story as ST
+    from . import storyrun as SR
+    root = Path(a.output_dir)
+    if a.resume:
+        d = SR.find_story_dir(root, a.resume)
+        state = SR.load_state(d)
+        print(f"이어 하기: {d}", file=sys.stderr)
+    else:
+        if not a.file:
+            raise H3Error("JSON 파일이 필요하다: h3video json 이야기.json [그림들·폴더]  (이어 하기는 --resume last)")
+        story = ST.load_story_file(a.file, a.images, narration=not a.no_narration, ratio=a.ratio, seed=a.seed)
+        print(ST.describe(story), file=sys.stderr)
+        if a.list:
+            for c in story.clips:
+                print(f"\n[{c.id}] {c.label} · {c.seconds}초 · {Path(c.image).name if c.image else '그림 없음'}\n{c.prompt}")
+            return
+        params = {"size": a.size, "steps": a.steps, "negative": a.negative, "raw": a.raw, "narration": not a.no_narration}
+        state = SR.initial_state(story, params)
+        d = None
+    only = {x.strip() for x in a.only.split(",") if x.strip()} if a.only else None
+    if only and not only <= {c["id"] for c in state["clips"]}:
+        raise H3Error(f"없는 장면: {', '.join(sorted(only - {c['id'] for c in state['clips']}))} (목록: --list)")
+    jobs = SR.jobs_for(state, only)
+    if a.dry_run:
+        for job in jobs:
+            preview(job)
+        return
+    if not jobs:
+        print("다시 만들 장면이 없다", file=sys.stderr)
+    if d is None:
+        d = SR.new_story_dir(root)
+    SR.save_state(d, state)
+    print(f"장면 {len(jobs)}개 만들기 → 기록 {d / SR.STATE}", file=sys.stderr)
+    if jobs:
+        store, t0 = execute_jobs(a, jobs, on_tick=lambda st: SR.refresh(d, state, st))
+    else:
+        store, t0 = JobStore(root), time.time()
+    state = SR.refresh(d, state, store)
+    s = SR.summary(state)
+    if state.get("output"):
+        print(copy_out(state["output"], a.out))
+        print(f"끝: 장면 {s['total']}개 {s['seconds']}초를 이어 붙였다, {fmt_secs(time.time() - t0)}", file=sys.stderr)
+        return
+    for c in state["clips"]:
+        if c.get("error"):
+            print(f"실패 {c['label']}: {c['error']}", file=sys.stderr)
+    print(f"장면 {s['done']}/{s['total']}개 완료. 실패한 장면만 다시: h3video json --resume {d.name}", file=sys.stderr)
+    sys.exit(1)
+
+
 def cmd_jobs(a):
     if not Path(a.output_dir).is_dir():
         print(f"작업이 없다 ({a.output_dir})")
@@ -516,6 +578,22 @@ def build_parser() -> argparse.ArgumentParser:
     p = cmd("batch", cmd_batch, "파일의 여러 프롬프트를 차례로 (--- 줄로 구분, 블록 맨 위 'seconds: 10' 같은 줄은 그 영상 옵션)")
     p.add_argument("file", help="프롬프트 파일 (- 는 표준입력)")
     add_video_opts(p)
+
+    p = cmd("json", cmd_json, "JSON 하나 + 그림들로 한 번에: 장면마다 영상을 만들어 이어 붙인다 (장면 수·길이는 JSON 에서, -s 불필요)")
+    p.add_argument("file", nargs="?", help="동화책 콘티 JSON, 동화책 만들기 book.json, 또는 {\"clips\": [{\"prompt\", \"image\", \"text\", \"seconds\"}]}")
+    p.add_argument("images", nargs="*", help="첫 프레임 그림 파일이나 폴더 (이름 page-03·03 → 3쪽, cover → 표지, 나머지는 순서대로)")
+    p.add_argument("--list", action="store_true", help="만들지 않고 장면·길이·그림·프롬프트만 보기")
+    p.add_argument("--only", help="일부 장면만 (예: page-02,page-05 — --list 로 id 확인)")
+    p.add_argument("--resume", help="그 JSON 작업 폴더에서 실패한·안 된 장면만 다시 하고 이어 붙이기 (폴더, 이름, last)")
+    p.add_argument("--no-narration", action="store_true", help="쪽 글을 내레이션으로 읽게 하지 않기 (길이는 그대로 글 읽는 시간)")
+    p.add_argument("-r", "--ratio", choices=spec.ASPECT_RATIOS, help="화면비 (기본: JSON 판형, 없으면 그림 비율 auto)")
+    p.add_argument("--seed", type=seed_arg, default=0, help="첫 장면 시드 (장면마다 1씩 더함)")
+    p.add_argument("--steps", type=int, help="디노이징 스텝 (기본: 서버 기본값)")
+    p.add_argument("-n", "--negative", help="넣지 않을 것")
+    p.add_argument("--size", type=int, default=spec.SHORT_EDGE_DEFAULT, choices=[512, 576, 640, 704, 768], help="짧은 변 픽셀")
+    p.add_argument("--raw", action="store_true", help="서버의 프롬프트 다듬기 끄기")
+    p.add_argument("-o", "--out", help="이어 붙인 영상을 여기로도 복사")
+    p.add_argument("--dry-run", action="store_true", help="서버에 보내지 않고 요청만 출력")
 
     p = cmd("jobs", cmd_jobs, "지난 작업 목록 (최근 순)")
     p.add_argument("--limit", type=int, default=20); p.add_argument("--json", action="store_true")

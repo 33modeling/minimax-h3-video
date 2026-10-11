@@ -2,6 +2,8 @@
 
   h3video web --port 8790
 API: GET /api/spec, GET /api/jobs, GET /api/jobs/{id}, POST /api/jobs (multipart), GET /files/{job}/{name}, GET /api/health
+     JSON 한번에: POST /api/story/plan (미리 보기), POST /api/story (multipart: json, images[], narration, ratio, seed, size),
+     GET /api/story/{id} (장면별 상태, 다 끝나면 이어 붙인 영상), GET /api/stories
 
 CORS: 기본은 끔. 다른 웹 페이지(예: 33modeling 허브의 숏폼 제작)에서 이 서버를 부르려면
   h3video web --cors-origin https://33modeling.pages.dev   (여러 개는 쉼표, 전부 허용은 *)
@@ -22,6 +24,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import spec
+from . import story as ST
+from . import storyrun as SR
 from .client import DEFAULT_ENDPOINT, DEFAULT_REF_ENDPOINT, H3Client, H3Error
 from .jobs import INBOX_DIR, OUTPUT_DIR, JobStore, Worker, new_job
 
@@ -53,6 +57,22 @@ class App:
         dest = self.upload_dir / f"{os.urandom(4).hex()}-{Path(filename).name}"
         dest.write_bytes(data)
         return str(dest)
+
+
+def story_fields(fields: dict) -> dict:
+    """JSON 한번에 폼: json(파일이나 글), narration, ratio, seed, size."""
+    g = lambda k, d=None: (fields[k][0][1].decode("utf-8", "replace").strip() if k in fields else d)  # noqa: E731
+    raw = fields.get("json", [(None, b"")])[0][1]
+    if not raw.strip():
+        raise H3Error("JSON 파일을 고르거나 붙여 넣어라")
+    ratio = g("ratio") or None
+    if ratio and ratio not in spec.ASPECT_RATIOS:
+        raise H3Error(f"ratio 는 {spec.ASPECT_RATIOS} 중 하나")
+    size = int(g("size") or spec.SHORT_EDGE_DEFAULT)
+    if size not in (512, 576, 640, 704, 768):
+        raise H3Error("size 는 512·576·640·704·768 중 하나")
+    return {"json": raw, "narration": g("narration", "1") not in ("0", "false", "off", ""), "ratio": ratio,
+            "seed": int(g("seed") or 0), "size": size}
 
 
 def parse_multipart(content_type: str, body: bytes) -> dict[str, list[tuple[str | None, bytes]]]:
@@ -169,6 +189,23 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             if p.startswith("/api/jobs/"):
                 job = app.store.get(p.split("/")[3])
                 return self._json(job.to_json()) if job else self._json({"error": "없음"}, 404)
+            if p == "/api/stories":
+                out = []
+                for d in sorted(app.store.root.glob("story-*"), reverse=True)[:20]:
+                    if (d / SR.STATE).is_file():
+                        st = SR.refresh(d, SR.load_state(d), app.store)
+                        out.append({"id": d.name, "title": st["title"], **SR.summary(st)})
+                return self._json(out)
+            if p.startswith("/api/story/"):
+                name = p.split("/")[3]
+                d = app.store.root / name
+                if not re.fullmatch(r"story-[\w-]+", name) or not (d / SR.STATE).is_file():
+                    return self._json({"error": "없음"}, 404)
+                try:
+                    st = SR.refresh(d, SR.load_state(d), app.store)
+                except Exception as e:   # 이어 붙이기 실패(ffmpeg 등)도 화면에 보이게
+                    return self._json({"error": f"이어 붙이기 실패: {e}"}, 500)
+                return self._json({"id": name, **st, **SR.summary(st)})
             if p.startswith("/files/"):
                 rel = urllib.parse.unquote(p[len("/files/"):])
                 f = (app.store.root / rel).resolve()
@@ -177,7 +214,43 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 return self._send_file(f)
             self._json({"error": "not found"}, 404)
 
+        def _story_post(self):
+            ctype = self.headers.get("Content-Type", "")
+            if not ctype.startswith("multipart/form-data"):
+                return self._json({"error": "multipart/form-data 로 보내라 (json 파일 + images)"}, 400)
+            try:
+                fields = parse_multipart(ctype, self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                f = story_fields(fields)
+                if self.path == "/api/story/plan":   # 미리 보기: 그림은 이름만 받는다
+                    names = [x[1].decode("utf-8", "replace") for x in fields.get("image_names", [])]
+                    st = ST.load_story(f["json"], names, narration=f["narration"], ratio=f["ratio"], seed=f["seed"], local_paths=False)
+                    d = st.to_json()
+                    for c in d["clips"]:
+                        c["image"] = Path(c["image"]).name if c["image"] else None
+                    d["unused_images"] = [Path(x).name for x in d["unused_images"]]
+                    return self._json(d)
+                folder = app.upload_dir / f"story-{os.urandom(4).hex()}"
+                paths = []
+                for fname, data in fields.get("images", []):
+                    if fname and data:
+                        folder.mkdir(parents=True, exist_ok=True)
+                        dest = folder / Path(fname).name
+                        dest.write_bytes(data)
+                        paths.append(str(dest))
+                st = ST.load_story(f["json"], paths, narration=f["narration"], ratio=f["ratio"], seed=f["seed"], local_paths=False)
+                state = SR.initial_state(st, {"size": f["size"], "narration": f["narration"]})
+                jobs = SR.jobs_for(state)
+                d = SR.new_story_dir(app.store.root)
+                SR.save_state(d, state)
+                for job in jobs:
+                    app.worker.enqueue(job)
+                return self._json({"id": d.name, **state, **SR.summary(state)}, 201)
+            except (H3Error, ValueError) as e:
+                return self._json({"error": str(e)}, 400)
+
         def do_POST(self):
+            if self.path in ("/api/story", "/api/story/plan"):
+                return self._story_post()
             if self.path != "/api/jobs":
                 return self._json({"error": "not found"}, 404)
             ctype = self.headers.get("Content-Type", "")

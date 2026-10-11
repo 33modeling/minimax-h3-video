@@ -23,6 +23,9 @@ button{padding:9px 16px;border:0;border-radius:6px;background:var(--acc);color:#
 video{width:100%;max-height:420px;border-radius:6px;background:#000;margin-top:8px}
 .scene{font-size:12px;color:var(--mut);margin:2px 0}.err{color:var(--bad);font-size:12px;white-space:pre-wrap}
 details summary{cursor:pointer;color:var(--mut);font-size:12px}
+h2.h2{font-size:15px;margin:0 0 4px}.chk{display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px}.chk input{width:auto}
+.btns{margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}button.alt{background:var(--mut)}
+.plan{margin-top:10px;font-size:12px}.plan ol{margin:6px 0;padding-left:20px}.plan li{margin:2px 0}.story{border-left:4px solid var(--acc)}
 </style></head><body>
 <header><h1>H3 Video Studio</h1><span id="h-fl" class="pill">fl2va 서버 확인 중</span><span id="h-ref" class="pill">ref2va 서버 확인 중</span><span id="h-q" class="mut"></span></header>
 <main>
@@ -51,14 +54,29 @@ details summary{cursor:pointer;color:var(--mut);font-size:12px}
     <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><button id="go">생성 시작</button><span id="msg" class="mut"></span></div>
   </form>
   <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+  <form id="sf">
+    <h2 class="h2">JSON 한번에</h2>
+    <div class="mut">동화책 콘티 JSON(또는 동화책 만들기 book.json, 장면 목록 JSON)과 쪽 그림을 넣으면 장면마다 영상을 만들어 쪽 순서대로 이어 붙입니다. 장면 수와 길이(쪽 글 읽는 시간)는 JSON 에서 정합니다.</div>
+    <label>JSON 파일</label><input type="file" name="json" id="sj" accept=".json,application/json">
+    <label>쪽 그림 (여러 장 · 이름 page-03·03 → 3쪽, cover → 표지, 나머지는 순서대로)</label><input type="file" name="images" id="si" accept="image/*" multiple>
+    <div class="row">
+      <div><label>화면비</label><select name="ratio" id="sr"><option value="">JSON 대로</option></select></div>
+      <div><label>짧은 변</label><select name="size"><option>768</option><option>704</option><option>640</option><option>576</option><option>512</option></select></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="sn" checked> 쪽 글을 내레이션으로 읽기</label>
+    <div class="btns"><button type="button" id="sp" class="alt">미리 보기</button><button id="sg">한 번에 만들기</button><span id="smsg" class="mut"></span></div>
+    <div id="splan" class="plan"></div>
+  </form>
+  <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
   <details open><summary>모델 사양</summary><pre class="spec" id="spec"></pre></details>
 </section>
-<section id="jobs"></section>
+<section><div id="stories"></div><div id="jobs"></div></section>
 </main>
 <script>
 const $=s=>document.querySelector(s);let spec=null;
 async function j(u,o){const r=await fetch(u,o);const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d}
 async function loadSpec(){spec=await j('/api/spec');$('#spec').textContent=spec.summary;
+  $('#sr').insertAdjacentHTML('beforeend',spec.aspect_ratios.map(a=>`<option>${a}</option>`).join(''));
   $('#ar').innerHTML=spec.aspect_ratios.map(a=>`<option ${a==='16:9'?'selected':''}>${a}</option>`).join('');
   $('#dur-note').textContent=`한 장면 ${spec.duration_min}~${spec.duration_max}초, 초과분은 자동 분할·연결`}
 async function health(){try{const h=await j('/api/health');
@@ -84,5 +102,33 @@ async function poll(){try{render(await j('/api/jobs'))}catch(e){}}
 $('#f').addEventListener('submit',async e=>{e.preventDefault();$('#go').disabled=true;$('#msg').textContent='제출 중…';
   try{const fd=new FormData(e.target);const r=await j('/api/jobs',{method:'POST',body:fd});$('#msg').textContent='큐에 추가: '+r.id;poll()}
   catch(err){$('#msg').textContent='오류: '+err.message}finally{$('#go').disabled=false}});
+const esc=t=>String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function storyForm(plan){const f=$('#sf'),fd=new FormData();const js=$('#sj').files[0];if(!js)throw new Error('JSON 파일을 고르세요');
+  fd.append('json',js);fd.set('narration',$('#sn').checked?'1':'0');fd.set('ratio',f.ratio.value);fd.set('size',f.size.value);
+  for(const im of $('#si').files)plan?fd.append('image_names',im.name):fd.append('images',im);return fd}
+$('#sp').addEventListener('click',async()=>{$('#smsg').textContent='';try{const d=await j('/api/story/plan',{method:'POST',body:storyForm(true)});
+  $('#splan').innerHTML=`<b>${esc(d.title)}</b> · 장면 ${d.clips.length}개 · 합계 ${d.total_seconds}초 · 화면비 ${esc(d.ratio)}<ol>`+
+    d.clips.map(c=>`<li>${esc(c.label)} · ${c.seconds}초 (${esc(c.auto)}) · ${c.image?'첫 프레임 '+esc(c.image):'그림 없음(글만)'}</li>`).join('')+'</ol>'+
+    (d.unused_images.length?`<div class="err">쓰지 않은 그림: ${d.unused_images.map(esc).join(', ')}</div>`:'')}
+  catch(err){$('#splan').innerHTML=`<div class="err">${esc(err.message)}</div>`}});
+$('#sf').addEventListener('submit',async e=>{e.preventDefault();$('#sg').disabled=true;$('#smsg').textContent='올리는 중…';
+  try{const r=await j('/api/story',{method:'POST',body:storyForm(false)});$('#smsg').textContent=`장면 ${r.total}개 ${r.seconds}초 시작: ${r.id}`;stories()}
+  catch(err){$('#smsg').textContent='오류: '+err.message}finally{$('#sg').disabled=false}});
+function renderStory(st){const el=document.createElement('div');el.className='job story';
+  const prog=st.clips.length?st.clips.reduce((a,c)=>a+(c.output?1:(c.progress||0)),0)/st.clips.length:0;
+  el.innerHTML=`<h3>JSON · ${esc(st.title)}</h3><div class="mut">${esc(st.id)} · 장면 ${st.total}개 · ${st.seconds}초 · 완료 ${st.done}/${st.total}${st.failed?` · 실패 ${st.failed}`:''}</div>
+    <div class="bar"><i style="width:${Math.round((st.output?1:prog)*100)}%"></i></div>
+    ${st.clips.map(c=>`<div class="scene">${esc(c.label)} ${c.seconds}초 · ${c.output?'완료':c.error?'실패':c.status==='running'?Math.round((c.progress||0)*100)+'%':'대기'}${c.error?` — ${esc(c.error)}`:''}</div>`).join('')}
+    ${st.failed?`<div class="err">실패한 장면만 다시: h3video json --resume ${esc(st.id)}</div>`:''}
+    ${st.output?`<video controls src="/files/${encodeURIComponent(st.id)}/${encodeURIComponent(st.output.split('/').pop())}"></video><div class="mut">${esc(st.output)}</div>`:''}`;
+  return el}
+// 바뀐 것만 다시 그린다 (재생 중인 영상이 3초마다 처음으로 돌아가지 않게)
+async function stories(){try{const list=(await j('/api/stories')).slice(0,3);const box=$('#stories');const keep=new Set(list.map(s=>s.id));
+  for(const el of [...box.children])if(!keep.has(el.dataset.id))el.remove();
+  for(const [i,s] of list.entries()){const st=await j('/api/story/'+encodeURIComponent(s.id));const sig=JSON.stringify(st);
+    let el=box.querySelector(`[data-id="${CSS.escape(s.id)}"]`);
+    if(!el||el.dataset.sig!==sig){const nu=renderStory(st);nu.dataset.id=s.id;nu.dataset.sig=sig;el?el.replaceWith(nu):box.appendChild(nu);el=nu}
+    if(box.children[i]!==el)box.insertBefore(el,box.children[i]||null)}}catch(e){}}
+setInterval(stories,3000);stories();
 loadSpec();health();poll();setInterval(poll,2500);setInterval(health,10000);
 </script></body></html>
