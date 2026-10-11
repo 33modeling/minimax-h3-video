@@ -13,7 +13,7 @@
       "title": "장면 목록",
       "type": "array",
       "minItems": 1,
-      "maxItems": 8,
+      "maxItems": 40,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -65,7 +65,7 @@
     "captions": {
       "title": "자막",
       "type": "array",
-      "maxItems": 60,
+      "maxItems": 200,
       "items": {
         "anyOf": [
           { "type": "string", "minLength": 1, "maxLength": 120 },

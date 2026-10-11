@@ -1,0 +1,498 @@
+[
+ {
+  "spec": {
+   "scenes": [
+    {
+     "prompt": "Book cover: Toto holds a taro leaf. Bring this picture-book illustration to life with gentle, natural motion: the characters move a little and the camera drifts slowly. Keep the art style and every character exactly as in the first frame. No on-screen text or captions. Soft, calm background music.",
+     "duration": 6,
+     "seed": 0,
+     "image": "cover.png"
+    },
+    {
+     "prompt": "Wide shot: Toto sits alone. Bring this picture-book illustration to life with gentle, natural motion: the characters move a little and the camera drifts slowly. Keep the art style and every character exactly as in the first frame. No on-screen text or captions. Soft, calm background music. Voice-over: an off-screen storyteller with a warm, gentle voice reads slowly and clearly <d>[Korean] 숲 가장자리에 아기 고슴도치 토토가 살았어요. 토토는 늘 혼자 놀았어요.</d>",
+     "duration": 10,
+     "seed": 1,
+     "image": "a-first.png"
+    },
+    {
+     "prompt": "Close-up: Toto smiles at Bori. Bring this picture-book illustration to life with gentle, natural motion: the characters move a little and the camera drifts slowly. Keep the art style and every character exactly as in the first frame. No on-screen text or captions. Soft, calm background music. Voice-over: an off-screen storyteller with a warm, gentle voice reads slowly and clearly <d>[Korean] \"같이 쓰자!\" ‹작은 소리›</d>",
+     "duration": 5,
+     "seed": 2,
+     "image": "zz-extra.png"
+    },
+    {
+     "prompt": "Bird's-eye view: A rainbow over the forest. Bring this picture-book illustration to life with gentle, natural motion: the characters move a little and the camera drifts slowly. Keep the art style and every character exactly as in the first frame. No on-screen text or captions. Soft, calm background music. Voice-over: an off-screen storyteller with a warm, gentle voice reads slowly and clearly <d>[Korean] 비가 그치고 무지개가 떴어요. 토토와 보리는 손을 잡고 숲길을 따라 천천히 걸었어요. 새들이 노래하고 나뭇잎마다 물방울이 반짝였어요. 토토는 이제 더는 혼자가 아니었어요. 보리가 웃으며 내일도 같이 놀자고 말했어요. 둘은 해가 질 때까지 토란잎 우산을 번갈아 들고 웅덩이를 건너뛰며 놀았답니다.</d>",
+     "duration": 15,
+     "seed": 3,
+     "image": "page-03.png"
+    },
+    {
+     "prompt": "The end, a quiet forest. Bring this picture-book illustration to life with gentle, natural motion: the characters move a little and the camera drifts slowly. Keep the art style and every character exactly as in the first frame. No on-screen text or captions. Soft, calm background music.",
+     "duration": 8,
+     "seed": 4,
+     "image": "zzz-more.png"
+    }
+   ],
+   "ratio": "4:3",
+   "template": "montage",
+   "fit": "blur",
+   "title": "토토의 우산",
+   "max_duration": 45,
+   "output": "토토의-우산.mp4",
+   "captions": [
+    {
+     "text": "숲 가장자리에 아기 고슴도치 토토가 살았어요.",
+     "start": 6.0,
+     "end": 12.286
+    },
+    {
+     "text": "토토는 늘 혼자 놀았어요.",
+     "start": 12.286,
+     "end": 16.0
+    },
+    {
+     "text": "\"같이 쓰자!\" <작은 소리>",
+     "start": 16.0,
+     "end": 21.0
+    },
+    {
+     "text": "비가 그치고 무지개가 떴어요.",
+     "start": 21.0,
+     "end": 22.63
+    },
+    {
+     "text": "토토와 보리는 손을 잡고 숲길을 따라 천천히 걸었어요.",
+     "start": 22.63,
+     "end": 25.348
+    },
+    {
+     "text": "새들이 노래하고 나뭇잎마다 물방울이 반짝였어요.",
+     "start": 25.348,
+     "end": 27.957
+    },
+    {
+     "text": "토토는 이제 더는 혼자가 아니었어요.",
+     "start": 27.957,
+     "end": 29.913
+    },
+    {
+     "text": "보리가 웃으며 내일도 같이 놀자고 말했어요.",
+     "start": 29.913,
+     "end": 32.196
+    },
+    {
+     "text": "둘은 해가 질 때까지 토란잎 우산을 번갈아 들고 웅덩이를 건너뛰며 놀았답니다.",
+     "start": 32.196,
+     "end": 36.0
+    }
+   ]
+  },
+  "info": {
+   "title": "토토의 우산",
+   "source": "conti",
+   "total": 44,
+   "unused_images": [],
+   "clips": [
+    {
+     "id": "cover",
+     "label": "표지",
+     "seconds": 6,
+     "image": "cover.png",
+     "auto": "기본"
+    },
+    {
+     "id": "page-01",
+     "label": "1쪽",
+     "seconds": 10,
+     "image": "a-first.png",
+     "auto": "글 31자"
+    },
+    {
+     "id": "page-02",
+     "label": "2쪽",
+     "seconds": 5,
+     "image": "zz-extra.png",
+     "auto": "글 13자"
+    },
+    {
+     "id": "page-03",
+     "label": "3쪽",
+     "seconds": 15,
+     "image": "page-03.png",
+     "auto": "글 126자"
+    },
+    {
+     "id": "page-04",
+     "label": "4쪽",
+     "seconds": 8,
+     "image": "zzz-more.png",
+     "auto": "JSON"
+    }
+   ]
+  }
+ },
+ {
+  "spec": {
+   "scenes": [
+    {
+     "prompt": "Mo finds an apple. Characters — Mo: a tiny mouse. Style: children's picture book illustration, crayon. Gentle, natural motion and a slow camera drift. No on-screen text or captions. Soft, calm background music.",
+     "duration": 6,
+     "seed": 0
+    }
+   ],
+   "ratio": "16:9",
+   "template": "montage",
+   "fit": "blur",
+   "title": "짧은 이야기",
+   "max_duration": 7,
+   "output": "짧은-이야기.mp4",
+   "captions": [
+    {
+     "text": "The little mouse found a big red apple under the tree",
+     "start": 0.0,
+     "end": 6.0
+    }
+   ]
+  },
+  "info": {
+   "title": "짧은 이야기",
+   "source": "conti",
+   "total": 6,
+   "unused_images": [],
+   "clips": [
+    {
+     "id": "page-01",
+     "label": "1쪽",
+     "seconds": 6,
+     "image": null,
+     "auto": "글 11단어"
+    }
+   ]
+  }
+ },
+ {
+  "spec": {
+   "scenes": [
+    {
+     "prompt": "Book cover: A. Bring this picture-book illustration to life with gentle, natural motion: the characters move a little and the camera drifts slowly. Keep the art style and every character exactly as in the first frame. No on-screen text or captions. Soft, calm background music.",
+     "duration": 6,
+     "seed": 0,
+     "image": "cover.png"
+    },
+    {
+     "prompt": "Wide shot: B. Bring this picture-book illustration to life with gentle, natural motion: the characters move a little and the camera drifts slowly. Keep the art style and every character exactly as in the first frame. No on-screen text or captions. Soft, calm background music. Voice-over: an off-screen storyteller with a warm, gentle voice reads slowly and clearly <d>[Korean] 하나</d>",
+     "duration": 5,
+     "seed": 1,
+     "image": "page-01.png"
+    },
+    {
+     "prompt": "Scene C. Style: x. Bring this picture-book illustration to life with gentle, natural motion: the characters move a little and the camera drifts slowly. Keep the art style and every character exactly as in the first frame. No on-screen text or captions. Soft, calm background music. Voice-over: an off-screen storyteller with a warm, gentle voice reads slowly and clearly <d>[Korean] 둘</d>",
+     "duration": 5,
+     "seed": 2,
+     "image": "page-02.png"
+    }
+   ],
+   "ratio": "4:3",
+   "template": "montage",
+   "fit": "blur",
+   "title": "만든 책",
+   "max_duration": 17,
+   "output": "만든-책.mp4",
+   "captions": [
+    {
+     "text": "하나",
+     "start": 6.0,
+     "end": 11.0
+    },
+    {
+     "text": "둘",
+     "start": 11.0,
+     "end": 16.0
+    }
+   ]
+  },
+  "info": {
+   "title": "만든 책",
+   "source": "book",
+   "total": 16,
+   "unused_images": [
+    "sheet-1.png"
+   ],
+   "clips": [
+    {
+     "id": "cover",
+     "label": "표지",
+     "seconds": 6,
+     "image": "cover.png",
+     "auto": "기본"
+    },
+    {
+     "id": "page-01",
+     "label": "1쪽",
+     "seconds": 5,
+     "image": "page-01.png",
+     "auto": "글 2자"
+    },
+    {
+     "id": "page-02",
+     "label": "2쪽",
+     "seconds": 5,
+     "image": "page-02.png",
+     "auto": "글 1자"
+    }
+   ]
+  }
+ },
+ {
+  "spec": {
+   "scenes": [
+    {
+     "prompt": "고양이가 하품한다 Voice-over: an off-screen storyteller with a warm, gentle voice reads slowly and clearly <d>[Korean] 하암</d>",
+     "duration": 8,
+     "seed": 0,
+     "image": "k.png"
+    },
+    {
+     "prompt": "강아지",
+     "duration": 4,
+     "seed": 42
+    },
+    {
+     "prompt": "새",
+     "duration": 15,
+     "seed": 7
+    }
+   ],
+   "ratio": "9:16",
+   "template": "montage",
+   "fit": "blur",
+   "title": "묶음",
+   "max_duration": 28,
+   "output": "묶음.mp4",
+   "captions": [
+    {
+     "text": "하암",
+     "start": 0.0,
+     "end": 8.0
+    }
+   ]
+  },
+  "info": {
+   "title": "묶음",
+   "source": "list",
+   "total": 27,
+   "unused_images": [],
+   "clips": [
+    {
+     "id": "clip-01",
+     "label": "1번",
+     "seconds": 8,
+     "image": "k.png",
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-02",
+     "label": "2번",
+     "seconds": 4,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-03",
+     "label": "3번",
+     "seconds": 15,
+     "image": null,
+     "auto": "JSON"
+    }
+   ]
+  }
+ },
+ {
+  "spec": {
+   "scenes": [
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 0
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 1
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 2
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 3
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 4
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 5
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 6
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 7
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 8
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 9
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 10
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 11
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 12
+    },
+    {
+     "prompt": "p",
+     "duration": 12,
+     "seed": 13
+    }
+   ],
+   "ratio": "16:9",
+   "template": "montage",
+   "fit": "blur",
+   "title": "영상 묶음",
+   "max_duration": 169,
+   "output": "영상-묶음.mp4"
+  },
+  "info": {
+   "title": "영상 묶음",
+   "source": "list",
+   "total": 168,
+   "unused_images": [],
+   "clips": [
+    {
+     "id": "clip-01",
+     "label": "1번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-02",
+     "label": "2번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-03",
+     "label": "3번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-04",
+     "label": "4번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-05",
+     "label": "5번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-06",
+     "label": "6번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-07",
+     "label": "7번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-08",
+     "label": "8번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-09",
+     "label": "9번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-10",
+     "label": "10번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-11",
+     "label": "11번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-12",
+     "label": "12번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-13",
+     "label": "13번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    },
+    {
+     "id": "clip-14",
+     "label": "14번",
+     "seconds": 12,
+     "image": null,
+     "auto": "JSON"
+    }
+   ]
+  }
+ }
+]

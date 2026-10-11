@@ -40,6 +40,7 @@ export function matchFiles(spec, files) {
   setRole(mediaPath(next.base), '기본 영상');
   (next.sources || []).forEach((m, i) => setRole(mediaPath(m), next.prompt || next.scenes ? `AI 참조 ${i + 1}` : `소스 ${i + 1}`));
   (next.scenes || []).forEach((s, i) => (s.sources || []).forEach((m) => setRole(mediaPath(m), `장면 ${i + 1} 참조`)));
+  (next.scenes || []).forEach((s, i) => setRole(s.image, `장면 ${i + 1} 첫 프레임`));
   setRole(next.image, '첫 프레임 이미지');
   setRole(next.bgm, '배경음');
   const missing = referencedPaths(next).map(baseName).filter((b) => !have.has(b));

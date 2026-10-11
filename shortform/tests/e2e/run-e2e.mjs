@@ -307,6 +307,41 @@ const scenarios = {
     fake.close();
   },
 
+  // JSON 한번에: 동화책 콘티 JSON(숏폼 명세 아님) + 쪽 그림 → 장면 수·길이를 알아서 → 쪽마다 첫 프레임으로 생성 → 합성
+  async ai_story() {
+    const fake = await startH3video(genMp4);
+    const { page, done } = await newPage('ai-story');
+    for (const [n, c] of [['page-01', 'red'], ['page-02', 'green'], ['page-03', 'blue'], ['extra-99', 'white']]) {
+      const f = join(MEDIA, `${n}.png`);
+      if (!existsSync(f)) execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', `color=c=${c}:s=320x240`, '-frames:v', '1', f]);
+    }
+    await page.locator('#aiPanel summary').click();
+    await page.fill('#aiServer', fake.url);
+    await page.locator('#aiServer').dispatchEvent('change');
+    const conti = { guide: 'g', opts: { ratio: '4:3' }, book: { title: '토토의 우산', style: { prompt: 'watercolor' }, characters: [{ name: 'Toto', prompt: 'a hedgehog' }],
+      cover: { scene: 'Toto waves' }, pages: [
+        { page: 1, text: '숲 가장자리에 아기 고슴도치 토토가 살았어요.\n토토는 늘 혼자 놀았어요.', shot: 'wide', characters: ['Toto'], scene: 'Toto sits alone' },
+        { page: 2, text: '같이 쓰자!', characters: ['Toto'], scene: 'Toto smiles' },
+        { page: 3, text: '', characters: [], scene: 'A rainbow' }] } };
+    await loadJob(page, 'ai-story', conti, media('extra-99.png', 'page-03.png', 'page-01.png', 'page-02.png'));
+    await waitReady(page, 'ai-story');
+    const msg = await page.locator('#messages').innerText();
+    check(/동화책 콘티 → 숏폼: 토토의 우산 · 장면 3개 · 합계 21초\(쪽 글 읽는 시간\) · 그림 3장 연결 · 쓰지 않는 그림: extra-99\.png/.test(msg), `ai_story: 안내 이상 ${msg}`);
+    const spec = JSON.parse(await page.locator('#jsonText').inputValue());
+    check(spec.scenes.map((x) => `${x.image}:${x.duration}`).join(',') === 'page-01.png:10,page-02.png:5,page-03.png:6' && spec.ratio === '4:3', `ai_story: 명세 이상 ${JSON.stringify(spec.scenes)}`);
+    check(!/extra-99/.test(await page.locator('#fileList').innerText()), 'ai_story: 안 쓰는 그림이 파일 목록(참조)에 남음');
+    const list = await page.locator('#fileList').innerText();
+    check(/page-01\.png\s*장면 1 첫 프레임/.test(list) && /page-03\.png\s*장면 3 첫 프레임/.test(list), `ai_story: 파일 목록 역할 이상 ${list}`);
+    await page.screenshot({ path: join(OUT, 'ai-story-ready.png') });
+    const { info } = await makeAndDownload(page, 'ai-story', 240000);
+    check(info.w === 720 && info.h === 1280 && info.acodec, `ai_story: 결과 이상 ${JSON.stringify(info)}`);
+    const subs = fake.log.filter((x) => x.kind === 'submit').map((x) => Object.fromEntries(x.fields.map((f) => [f.name, f.filename || f.value])));
+    check(subs.map((f) => `${f.first_image}:${f.seconds}:${f.aspect_ratio}`).join(',') === 'page-01.png:10:4:3,page-02.png:5:4:3,page-03.png:6:4:3', `ai_story: 요청 이상 ${JSON.stringify(subs.map((f) => [f.first_image, f.seconds, f.aspect_ratio]))}`);
+    check(subs.every((f) => !f.ref_images) && /<d>\[Korean\] 숲 가장자리에/.test(subs[0].prompt), 'ai_story: 참조가 섞이거나 내레이션이 없음');
+    await done();
+    fake.close();
+  },
+
   // AI: 진행률 없음 + 상태 조회 503 한 번(재시도 표시) → 결국 완료
   async ai_flaky() {
     const fake = await startH3video(genMp4);

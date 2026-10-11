@@ -1,0 +1,72 @@
+{
+  "cases": [
+    {
+      "name": "콘티 JSON + 이름·순서로 맞춘 그림 (표지, 따옴표, 긴 글 자막 나누기, 남는 그림)",
+      "images": ["cover.png", "page-03.png", "a-first.png", "zz-extra.png", "zzz-more.png"],
+      "narration": true,
+      "data": {
+        "guide": "고슴도치", "opts": {"ratio": "4:3", "target": "qwen"},
+        "book": {
+          "title": "토토의 우산", "style": {"prompt": "soft watercolor.", "palette": "moss"},
+          "characters": [{"name": "Toto", "prompt": "a baby hedgehog with a red scarf"}, {"name": "Bori", "prompt": "a baby squirrel"}],
+          "places": [], "cover": {"scene": "Toto holds a taro leaf", "characters": ["Toto"]},
+          "pages": [
+            {"page": 1, "text": "숲 가장자리에 아기 고슴도치 토토가 살았어요.\n토토는 늘 혼자 놀았어요.", "shot": "wide", "characters": ["Toto"], "scene": "Toto sits alone"},
+            {"page": 2, "text": "\"같이 쓰자!\" <작은 소리>", "shot": "close-up", "characters": ["Toto", "Bori"], "scene": "Toto smiles at Bori"},
+            {"page": 3, "text": "비가 그치고 무지개가 떴어요. 토토와 보리는 손을 잡고 숲길을 따라 천천히 걸었어요. 새들이 노래하고 나뭇잎마다 물방울이 반짝였어요. 토토는 이제 더는 혼자가 아니었어요. 보리가 웃으며 내일도 같이 놀자고 말했어요. 둘은 해가 질 때까지 토란잎 우산을 번갈아 들고 웅덩이를 건너뛰며 놀았답니다.", "shot": "bird-eye", "characters": ["Bori"], "scene": "A rainbow over the forest"},
+            {"page": 4, "text": "", "shot": "unknown", "characters": ["Nobody"], "scene": "The end, a quiet forest", "seconds": 7.5}
+          ]
+        }
+      }
+    },
+    {
+      "name": "그림 없는 콘티 book 만 (표지 빠짐, 그림체·인물을 글로, 내레이션 끔)",
+      "images": [],
+      "narration": false,
+      "data": {
+        "title": "짧은 이야기", "style": {"prompt": "crayon"}, "characters": [{"name": "Mo", "prompt": "a tiny mouse"}],
+        "cover": {"scene": "Mo waves"},
+        "pages": [{"text": "The little mouse found a big red apple under the tree", "characters": ["Mo"], "scene": "Mo finds an apple"}]
+      }
+    },
+    {
+      "name": "동화책 만들기 book.json (시트 빼고, 그림은 이름으로)",
+      "images": ["page-01.png", "cover.png", "page-02.png", "sheet-1.png"],
+      "narration": true,
+      "data": {
+        "kind": "batch", "title": "만든 책", "style": "watercolor", "width": 1152, "height": 864,
+        "items": [
+          {"id": "sheet-1", "kind": "sheet", "image": "images/sheet-1.png", "prompt": "sheet"},
+          {"id": "cover", "kind": "cover", "label": "표지", "image": "images/cover.png", "scene": "Book cover: A", "prompt": "long"},
+          {"id": "page-01", "kind": "page", "label": "1쪽", "page": 1, "text": "하나", "image": "images/page-01.png", "scene": "Wide shot: B"},
+          {"id": "page-02", "kind": "page", "label": "2쪽", "page": 2, "text": "둘", "image": "images/page-02.png", "prompt": "Scene C. Style: x"}
+        ]
+      }
+    },
+    {
+      "name": "clips 목록 (길이·시드·글 지정, 세로)",
+      "images": ["k.png"],
+      "narration": true,
+      "data": {"title": "묶음", "ratio": "9:16", "clips": [
+        {"prompt": "고양이가 하품한다", "image": "k.png", "seconds": 8, "text": "하암"},
+        {"prompt": "강아지", "duration": 4, "seed": 42},
+        {"prompt": "새", "seconds": 30, "seed": "7"}
+      ]}
+    },
+    {
+      "name": "40장면 × 15초 → 180초로 줄이기",
+      "images": [],
+      "narration": true,
+      "data": {"clips": [{"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15},
+        {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15},
+        {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15},
+        {"prompt": "p", "seconds": 15}, {"prompt": "p", "seconds": 15}]}
+    }
+  ],
+  "errors": [
+    {"data": "{oops", "images": [], "contains": "JSON"},
+    {"data": {"clips": [{"text": "x"}]}, "images": [], "contains": "prompt"},
+    {"data": {"clips": [{"prompt": "a", "image": "missing.png"}]}, "images": [], "contains": "missing.png"},
+    {"data": [{"prompt": "a", "image": "x.svg"}], "images": ["x.svg"], "contains": "x.svg"}
+  ]
+}

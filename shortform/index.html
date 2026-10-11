@@ -28,13 +28,13 @@
       <div class="slots">
         <label class="slot" id="slotJson" for="jsonFile">
           <span class="slot-num">1</span>
-          <span class="slot-text"><strong>작업 JSON <button type="button" class="tip" data-tip="prompt(AI 생성) 또는 base·sources(내 영상 합성) 중 하나는 있어야 합니다. 파일 이름은 2번 칸에서 고른 파일과 이름으로 맞춥니다.">ⓘ</button></strong><small>프롬프트·템플릿·자막을 적은 명세 파일</small></span>
+          <span class="slot-text"><strong>작업 JSON <button type="button" class="tip" data-tip="prompt(AI 생성) 또는 base·sources(내 영상 합성) 중 하나는 있어야 합니다. 파일 이름은 2번 칸에서 고른 파일과 이름으로 맞춥니다.">ⓘ</button></strong><small>프롬프트·템플릿·자막을 적은 명세 파일 · 동화책 콘티 JSON도 됨(장면 수·길이 자동)</small></span>
           <input id="jsonFile" type="file" accept=".json,application/json">
           <span class="slot-file" id="jsonName"></span>
         </label>
         <label class="slot" id="slotMedia" for="mediaFiles">
           <span class="slot-num">2</span>
-          <span class="slot-text"><strong>소스 영상 <em class="optional">선택 · 없어도 됨</em> <button type="button" class="tip" data-tip="소스 영상은 없어도 됩니다. JSON에 prompt가 있으면 AI가 장면을 만들고, 있으면 참조(ref2va)로 함께 보냅니다.">ⓘ</button></strong><small>JSON이 가리키는 영상·배경음을 함께 고르세요. 여러 개 가능</small></span>
+          <span class="slot-text"><strong>소스 영상 <em class="optional">선택 · 없어도 됨</em> <button type="button" class="tip" data-tip="소스 영상은 없어도 됩니다. JSON에 prompt가 있으면 AI가 장면을 만들고, 있으면 참조(ref2va)로 함께 보냅니다.">ⓘ</button></strong><small>JSON이 가리키는 영상·배경음을 함께 고르세요. 여러 개 가능 · 동화책 콘티 JSON이면 쪽 그림을 여기에</small></span>
           <input id="mediaFiles" type="file" accept="video/*,audio/*,image/*" multiple>
           <span class="slot-file" id="mediaName"></span>
         </label>

@@ -414,6 +414,42 @@ def attach_role_inputs(spec: dict, a) -> dict:
     return spec
 
 
+def story_spec(a, out: Out):
+    """첫 파일이 숏폼 명세가 아니라 이야기 JSON(동화책 콘티·동화책 만들기 book.json·clips 목록)이면 숏폼 명세로 바꾼다.
+    뒤에 준 그림(또는 그림 폴더)은 쪽마다 첫 프레임으로, 나머지(음악 등)는 평소처럼. 아니면 None."""
+    from . import story as STY
+    p = Path(a.files[0])
+    try:
+        data = json.loads(p.read_bytes().decode("utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None   # 오류 문장은 load_spec 이 알려 준다
+    if not STY.is_story(data):
+        return None
+    imgs, rest = [], []
+    for f in a.files[1:]:
+        q = Path(f).expanduser()
+        if q.is_dir():
+            imgs += STY._h3story().expand_images([str(q)])
+        elif S.is_image_path(f):
+            imgs.append(str(q.resolve()))
+        else:
+            rest.append(f)
+    try:
+        spec, info = STY.story_to_spec(data, imgs, base=p.resolve().parent, narration=not a.no_narration)
+    except Exception as e:   # h3video.client.H3Error: 그림·JSON 문제
+        if type(e).__name__ != "H3Error":
+            raise
+        input_error(f"{a.files[0]}: {e}")
+    kind = {"conti": "동화책 콘티", "book": "동화책 만들기 book.json", "list": "장면 목록"}[info["source"]]
+    out.event("story", f"{kind} → 숏폼: {info['title']} · 장면 {len(info['clips'])}개 · 합계 {info['total']}초 (쪽 글 읽는 시간)",
+              title=info["title"], clips=info["clips"], total=info["total"])
+    for c in info["clips"]:
+        out.event("story_clip", f"  {c['label']} {c['seconds']}초 ({c['auto']}) · {Path(c['image']).name if c['image'] else '그림 없음(글만)'}", **c)
+    for f in info["unused_images"]:
+        out.event("warning", f"주의: 그림 {Path(f).name} 은(는) 맞는 쪽이 없어 쓰지 않습니다", file=f)
+    return spec, p.resolve().parent, rest
+
+
 def cmd_run(a) -> int:
     out = Out(a.json)
     if a.idea:
@@ -426,8 +462,12 @@ def cmd_run(a) -> int:
     else:
         if not a.files:
             input_error("프롬프트 JSON 파일을 주세요: shorts run prompt.json [source.mp4]")
-        spec, root = load_spec(a.files[0])
-        extra = a.files[1:]
+        conv = story_spec(a, out)
+        if conv:
+            spec, root, extra = conv
+        else:
+            spec, root = load_spec(a.files[0])
+            extra = a.files[1:]
     uses_ai = bool(spec.get("prompt") or spec.get("scenes"))
     out.plan_stages(["검증", "서버 연결", "생성", "다운로드", "합성"] if uses_ai else ["검증", "합성"])
     out.stage("검증", f"{a.files[0] if a.files and not a.idea else '기획 결과'}" + (f" + 소스 {len(extra)}개" if extra else ""))
@@ -724,7 +764,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("run", help="검증 → (AI 생성) → 합성 → 출력")
-    r.add_argument("files", nargs="*", help="prompt.json [source.mp4 ...]  (--idea 를 쓰면 소스 영상만)")
+    r.add_argument("files", nargs="*", help="prompt.json [source.mp4 ...]  (--idea 를 쓰면 소스 영상만). "
+                   "동화책 콘티 JSON·동화책 만들기 book.json·clips 목록이면 뒤에 쪽 그림(또는 폴더)을 주면 장면 수·길이를 알아서")
+    r.add_argument("--no-narration", dest="no_narration", action="store_true",
+                   help="이야기 JSON 일 때 쪽 글을 내레이션으로 읽게 하지 않기 (자막은 그대로)")
     r.add_argument("--idea", help="아이디어로 시작: Claude 가 명세를 쓰고 이어서 생성·합성")
     r.add_argument("--claude-model", dest="model_claude", help="기획 모델 (기본 claude-opus-5-5)")
     r.add_argument("--plan-output", dest="plan_output", help="--idea 로 만든 명세를 저장할 경로")

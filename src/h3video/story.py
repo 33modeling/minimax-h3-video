@@ -68,7 +68,8 @@ def auto_seconds(text: str = "", given=None) -> tuple[int, str]:
     lo, hi = spec.SCENE_MIN, spec.DURATION_MAX
     if given not in (None, ""):
         try:
-            return max(spec.DURATION_MIN, min(hi, int(round(float(given))))), "JSON"
+            # 반올림은 웹(JS Math.round)과 같게: .5 는 올린다
+            return max(spec.DURATION_MIN, min(hi, math.floor(float(given) + 0.5))), "JSON"
         except (TypeError, ValueError):
             raise H3Error(f"seconds 는 숫자여야 한다: {given!r}") from None
     r = reading_seconds(text)

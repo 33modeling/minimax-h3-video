@@ -2,7 +2,8 @@ import './style.css';
 import { checkSpec, normalizeSpec, composeInputs, baseName, aiScenes, schema } from './core/spec.js';
 import { planTimeline, describePlan, TEMPLATE_KO } from './core/plan.js';
 import { plan as claudePlan } from './core/claude.js';
-import { matchFiles, fileFor, outputName } from './app/match.js';
+import { matchFiles, fileFor, outputName, kindOf } from './app/match.js';
+import { isStory, storyToSpec } from './core/story.js';
 import { EXAMPLE_JOB, EXAMPLES } from './app/example.js';
 import { StatusView, notifyDone } from './app/status.js';
 import { Tour, tourSeen, setupTips } from './app/tour.js';
@@ -57,8 +58,13 @@ const pctx = el.preview.getContext('2d', { alpha: false });
 const scratch = document.createElement('canvas');
 const status = new StatusView(el.statusBox, el.liveStatus);
 
+// 이야기 JSON(JSON 한번에) 상태 — 아래 '입력' 의 takeStory/convertStory 가 쓴다
+const story = { src: null, note: null, unused: new Set() };
+
 // ---------- 메시지 ----------
 function setMessages(list) {
+  // 이야기 JSON 을 바꿔 넣었으면 그 안내를 맨 위에 둔다
+  if (story.src && story.note) list = [story.note, ...list];
   el.messages.replaceChildren(
     ...list.map(({ level, text }) => {
       const p = document.createElement('p');
@@ -637,9 +643,44 @@ async function loadJsonFile(f) {
   if (!f) return;
   const fromSlot = f === el.jsonFile.files[0];
   if (!fromSlot) el.jsonFile.value = '';
-  setJsonText(await f.text(), fromSlot ? '' : f.name);
+  const text = await f.text();
   el.importFile.value = '';
+  if (takeStory(text, f.name)) return analyze();
+  setJsonText(text, fromSlot ? '' : f.name);
   analyze();
+}
+
+// ---------- JSON 한번에: 이야기 JSON(동화책 콘티·동화책 만들기 book.json·clips 목록) ----------
+// 1번 칸에 넣으면 숏폼 명세로 바꿔 넣는다. 장면 수·길이(쪽 글 읽는 시간)는 JSON 에서 정하고,
+// 2번 칸에서 고른 그림을 쪽마다 첫 프레임으로 맞춘다(이름 page-03 → 3쪽, cover → 표지, 나머지는 순서대로).
+// CLI 의 shorts run 이야기.json 그림폴더/ 와 같다(src/core/story.js ↔ shorts/story.py).
+const KIND_KO = { conti: '동화책 콘티', book: '동화책 만들기 book.json', list: '장면 목록' };
+function takeStory(text, name) {
+  let v;
+  try { v = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { story.src = null; return false; }
+  if (!isStory(v)) { story.src = null; return false; }
+  story.src = { data: v, name };
+  convertStory();
+  return true;
+}
+function convertStory() {
+  if (!story.src) return;
+  const names = slotFiles.media.filter((f) => kindOf(f) === 'image').map((f) => f.name)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  story.unused = new Set();
+  try {
+    const { spec, info } = storyToSpec(story.src.data, names);
+    story.unused = new Set(info.unused_images);
+    const linked = info.clips.filter((c) => c.image).length;
+    story.note = { level: 'info', text: `${KIND_KO[info.source]} → 숏폼: ${info.title} · 장면 ${info.clips.length}개 · 합계 ${info.total}초(쪽 글 읽는 시간) · 그림 ${linked}장 연결`
+      + (linked < info.clips.length ? ` · 그림 없는 장면 ${info.clips.length - linked}개는 글로만 만듭니다(쪽 그림은 2번 칸에서 여러 장 고르기)` : '')
+      + (story.unused.size ? ` · 쓰지 않는 그림: ${[...story.unused].join(', ')}` : '') };
+    setJsonText(JSON.stringify(spec, null, 2), `${story.src.name} → 숏폼 명세`);
+  } catch (e) {
+    story.note = { level: 'error', text: `${story.src.name}: ${e.message}` };
+    setJsonText('', story.src.name);
+  }
+  syncFiles();
 }
 
 el.jsonFile.addEventListener('change', () => loadJsonFile(el.jsonFile.files[0]));
@@ -649,6 +690,7 @@ let typing = null;
 el.jsonText.addEventListener('input', () => {
   clearTimeout(typing);
   typing = setTimeout(() => {
+    if (takeStory(el.jsonText.value, '직접 입력')) return analyze();
     state.jsonText = el.jsonText.value;
     el.jsonName.textContent = state.jsonText.trim() ? '직접 입력' : '';
     analyze();
@@ -659,11 +701,14 @@ el.jsonText.addEventListener('input', () => {
 const slotFiles = { media: [], image: [], refs: [] };
 function syncFiles() {
   const seen = new Set();
-  state.files = [...slotFiles.media, ...slotFiles.image, ...slotFiles.refs].filter((f) => !seen.has(f.name) && seen.add(f.name));
+  // 이야기 JSON 에서 맞는 쪽이 없는 그림은 빼 둔다(남으면 모든 장면의 참조로 붙는다)
+  state.files = [...slotFiles.media, ...slotFiles.image, ...slotFiles.refs]
+    .filter((f) => !seen.has(f.name) && seen.add(f.name) && !(story.src && story.unused.has(f.name)));
 }
 el.mediaFiles.addEventListener('change', () => {
   slotFiles.media = [...el.mediaFiles.files];
   syncFiles();
+  convertStory();
   el.mediaName.textContent = '';
   analyze();
 });
