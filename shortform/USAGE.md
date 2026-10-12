@@ -183,7 +183,7 @@ SSH 터널 예: `ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@c
 | `template` | `cutaway` `split` `pip` `montage` (base 없으면 montage) | base 있으면 cutaway |
 | `fit` | 가로 영상: `crop`(가운데 자르기) / `blur`(흐린 배경 채우기) | blur |
 | `resolution` | 출력 해상도 `WxH`. 프리셋 `540x960` `720x1280` `1080x1920` `1440x2560`(9:16) · `1080x1080`(1:1) · `1080x1350`(4:5) · `1920x1080`(16:9), 또는 임의 값(짝수, 짧은 변 240~2160, 긴 변 2560 이하). 9:16 이 아니어도 템플릿이 맞춰 배치(16:9 분할은 좌우) | 720x1280 |
-| `gen_size` | AI 생성 크기. 짧은 변 숫자(480·576·720·768) 또는 `WxH`. SGLang H3 는 `target.short_edge`, vLLM 은 `size`(ratio 로 계산)로 보냄. **H3 상한 768**: 넘으면 H3 서버로는 보내기 전에 막음(vLLM 은 그대로). h3video 웹 서버는 768 고정 | H3 768, vLLM 720 |
+| `gen_size` | AI 생성 크기. 짧은 변 숫자(480·576·720·768) 또는 `WxH`. SGLang H3 는 `target.short_edge`, vLLM 은 `size`(ratio 로 계산)로 보냄. **H3 상한 768**: 넘으면 H3 서버로는 보내기 전에 막음(vLLM 은 그대로). h3video 웹 서버에는 `size`(512·576·640·704·768 중 짧은 변 이하에서 가장 큰 값)로 보냄 | H3 768, vLLM 720 |
 | `fps` | 출력 프레임레이트 12~60 (생성은 H3 24fps 고정, 합성 때 맞춤) | 30 |
 | `quality` | 출력 품질 `low` `medium` `high` (CLI x264 crf 28/23/18, 웹은 픽셀당 비트레이트) | medium |
 | `max_duration` | 길이 상한(초) | 60 |
@@ -260,6 +260,7 @@ h3video shorts run 토토.json pages/ music.mp3 --no-narration --dry-run
 - **자막·제목**: 쪽 글은 그 장면 시간에 맞춘 자막이 된다(줄마다, 120자 넘으면 문장마다). 제목은 책 제목이다. 템플릿은 몽타주, 가로 그림은 흐린 배경으로 채운다(`fit: blur`). 화면비는 콘티 판형이다.
 - **내레이션**: 쪽 글을 H3 가 화면 밖 내레이터 목소리로 읽게 한다(`<d>[Korean] …</d>`). `--no-narration` 이면 빼고 자막만 남는다.
 - 웹: 칸 1 에 이야기 JSON 을, 칸 2 에 쪽 그림 여러 장을 넣으면(한꺼번에 놓거나 동화책 만들기 "파일 받기" zip 을 그대로 놓아도 됨) 같은 규칙으로 명세를 만들어 넣는다. 메시지 맨 위에 "장면 N개 · 합계 S초 · 그림 K장 연결"이 나오고, 만든 명세는 "JSON 직접 보기·고치기"에서 고칠 수 있다.
+- CLI 도 동화책 만들기 "파일 받기" zip 을 그대로 받는다: `shorts run 토토.zip` (안의 book.json·그림·소리를 쓰고, 결과는 zip 옆에).
 - 같은 JSON 을 영상 하나로 이어 붙이기만 하려면(자막·9:16 합성 없이) `h3video json` ([VIDEO.md](../VIDEO.md)).
 
 규칙은 파이썬(`shorts/story.py` + `h3video/story.py`)과 웹(`src/core/story.js`)이 같고, `tests/fixtures/story/` 의 기대 결과로 둘을 같이 확인한다. 규칙을 바꾸면 `python3 tests/fixtures/story/make_expected.py` 로 기대 결과를 다시 만들고 바뀐 부분을 확인한 뒤 커밋한다.
