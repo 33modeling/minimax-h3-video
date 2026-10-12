@@ -11,7 +11,7 @@ import { startH3video, startSglang, startAnthropic, jsonReply } from './fake-ser
 import { makeZip } from '../fixtures/zip.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const OUT = join(ROOT, '.tmp/e2e');
+const OUT = process.env.E2E_OUT || join(ROOT, '.tmp/e2e');
 const MEDIA = join(ROOT, '.tmp/media');
 const arg = (name, def) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -312,6 +312,13 @@ const scenarios = {
   },
 
   // AI: h3video 웹 서버(진행률 있음) → 생성 → 합성 → 다운로드, 같은 명세 다시 만들기는 생성 재사용
+  async recovery() {
+    const fake=await startH3video(genMp4);const {page,done}=await newPage('saved-recovery');
+    const job={scenes:[{prompt:'First scene',duration:4},{prompt:'Second scene',duration:4},{prompt:'Third scene',duration:4}],backend:'h3video',server:fake.url,poll:0.2,ratio:'9:16',resolution:'432x768',fps:24,title:'Saved story',output:'recovery.mp4'};
+    await loadJob(page,'saved-recovery',job);await waitReady(page,'saved-recovery');await page.click('#makeBtn');await page.locator('.sc-id code').first().waitFor();await page.click('#pauseBtn');await page.waitForFunction(()=>!document.querySelector('#makeBtn').disabled);check(fake.log.filter(x=>x.kind==='submit').length===1,'pause must finish and preserve the current scene');
+    await page.reload();await waitReady(page,'saved-recovery-reloaded');check((await page.locator('#recoveryMessage').textContent()).includes('1개'),'finished scene was not restored');job.scenes[1].prompt='Edited second scene';job.captions=['Edited caption'];await loadJob(page,'saved-recovery-edited',job);await waitReady(page,'saved-recovery-edited');await makeAndDownload(page,'saved-recovery-output');check(fake.log.filter(x=>x.kind==='submit').length===3,'saved first scene must be reused; only two remaining scenes should be requested');
+    await page.reload();await waitReady(page,'saved-recovery-completed');check(!(await page.locator('#resultBox').isHidden()),'saved output should reopen');check((await page.locator('#recoveryMessage').textContent()).includes('3개'),'all finished scenes should restore');await makeAndDownload(page,'saved-recovery-again');check(fake.log.filter(x=>x.kind==='submit').length===3,'reload must not regenerate completed scenes');await done();fake.close();
+  },
   async ai_h3video() {
     const fake = await startH3video(genMp4);
     const { page, done } = await newPage('ai-h3');

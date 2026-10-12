@@ -1,4 +1,5 @@
 import './style.css';
+import {listProjects,saveDraft,saveScene,saveOutput,loadProject,restorePrevious} from './app/recovery.js';
 import { checkSpec, normalizeSpec, composeInputs, baseName, aiScenes, schema } from './core/spec.js';
 import { planTimeline, describePlan, TEMPLATE_KO } from './core/plan.js';
 import { plan as claudePlan } from './core/claude.js';
@@ -57,6 +58,11 @@ const state = {
   generated: new Map(), // 장면 요청 키 → 생성된 File (같은 요청은 다시 만들지 않음)
 };
 
+let recoveryId=LS.get('shorts.recovery.current')||crypto.randomUUID(),recoveryReady=false,recoveryWrites=Promise.resolve();
+LS.set('shorts.recovery.current',recoveryId);
+async function saveCurrent(){if(!recoveryReady||!state.jsonText.trim())return;const draft={id:recoveryId,jsonText:state.jsonText,files:[...state.files],paused:Boolean(state.paused)};recoveryWrites=recoveryWrites.then(()=>saveDraft(draft)).catch(()=>{el.recoveryMessage.textContent='기기 저장 공간을 확인해 주세요. 현재 작업은 유지하며 결과를 내려받을 수 있습니다.';});await recoveryWrites;await refreshLibrary();}
+async function refreshLibrary(){try{const rows=await listProjects();el.recoveryLibrary.replaceChildren(new Option('저장한 영상 작업', ''),...rows.map(row=>new Option(row.title+(row.paused?' · 일시중지':''),row.id)));el.recoveryLibrary.value=recoveryId;}catch{}}
+async function restoreSaved(saved){if(!saved)return;recoveryId=saved.id;LS.set('shorts.recovery.current',recoveryId);state.files=saved.files.filter(Boolean);slotFiles.media=[...state.files];slotFiles.image=[];slotFiles.refs=[];state.generated=saved.generated;state.paused=saved.paused;setJsonText(saved.jsonText,'저장한 작업');el.resultBox.hidden=true;el.resultEmpty.hidden=false;if(saved.output){if(state.resultUrl)URL.revokeObjectURL(state.resultUrl);state.resultUrl=URL.createObjectURL(saved.output);el.resultVideo.src=state.resultUrl;el.downloadLink.href=state.resultUrl;el.downloadLink.download=saved.output.name;el.downloadLink.textContent='저장한 영상 내려받기';el.resultBox.hidden=false;el.resultEmpty.hidden=true;}el.recoveryMessage.textContent=`저장본을 열었습니다. 완료한 AI 장면 ${state.generated.size}개를 재사용합니다.`;await analyze();}
 const pctx = el.preview.getContext('2d', { alpha: false });
 const scratch = document.createElement('canvas');
 const status = new StatusView(el.statusBox, el.liveStatus);
@@ -403,6 +409,7 @@ function sizePreview(W, H) {
 }
 
 async function analyze() {
+  await saveCurrent();
   const my = ++seq;
   clearPlan();
   el.failBox.hidden = true;
@@ -631,7 +638,8 @@ function setBusy(b) {
   for (const id of ['jsonFile', 'mediaFiles', 'firstImage', 'refFiles', 'allFiles', 'jsonText', 'importFile', 'planBtn', 'pickAll', 'startExample', 'startStory', 'startIdea']) el[id].disabled = b;
   document.querySelectorAll('#settingsPanel select, #settingsPanel input, #aiPanel input, #aiPanel select, .slot-pick').forEach((x) => (x.disabled = b));
   document.body.classList.toggle('is-busy', b);
-  el.makeBtn.textContent = b ? '만드는 중…' : '만들기';
+  el.makeBtn.textContent = b ? '만드는 중…' : state.paused?'저장본 이어 만들기':'만들기';
+  el.pauseBtn.disabled=!b;for(const id of ['recoveryLibrary','recoverySave','recoveryRestore','recoveryNew'])el[id].disabled=b;
   el.progressBox.hidden = !b;
   el.cancelBtn.disabled = !b;
   setReady(!b && !!state.job);
@@ -675,6 +683,8 @@ async function make() {
   el.failBox.hidden = true;
   const abort = new AbortController();
   state.abort = abort;
+  state.paused=false;state.pauseRequested=false;state.phase=job.ai?'generate':'compose';
+  await saveCurrent();
   newPhase();
   setProgress(0, '준비 중…');
   requestAnimationFrame(() => el.progressBox.scrollIntoView({ block: 'nearest' }));
@@ -688,6 +698,7 @@ async function make() {
       const files = [];
       job.scenes.forEach((sc, i) => status.addScene(i, N, sc));
       for (let i = 0; i < N; i++) {
+        if(state.pauseRequested)throw new Cancelled();
         const sc = job.scenes[i];
         const key = genKey(sc, n);
         if (state.generated.has(key)) {
@@ -715,9 +726,12 @@ async function make() {
         });
         const file = new File([blob], `ai-scene-${i + 1}.mp4`, { type: 'video/mp4' });
         state.generated.set(key, file);
+        try{await saveScene(recoveryId,key,file);}catch{el.recoveryMessage.textContent='완료한 장면은 현재 창에 보존했습니다. 기기 저장 공간을 확인해 주세요.';}
         files[i] = file;
         status.updateScene(i, { state: 'completed' });
       }
+      if(state.pauseRequested)throw new Cancelled();
+      state.phase='compose';
       status.stage('compose');
       const composed = await prepareCompose(job, files, null);
       if (!composed) throw new Error(el.messages.textContent || '생성한 영상을 합성 준비하지 못했습니다');
@@ -764,6 +778,7 @@ async function make() {
     el.resultName.textContent = name;
     el.resultMeta.textContent = `${fmtSize(blob.size)} · ${plan.duration.toFixed(1)}초 · ${plan.width}×${plan.height} · ${plan.fps}fps`;
     el.resultSub.textContent = `${engine.label} · ${secs}초 걸림 · 내려받기가 자동으로 시작돼요`;
+    try{await saveOutput(recoveryId,new File([blob],name,{type:blob.type}));}catch{el.recoveryMessage.textContent='기기 저장 공간이 부족합니다. 완성본을 내려받아 보관하세요.';}
     el.resultBox.hidden = false;
     el.resultEmpty.hidden = true;
     el.downloadLink.click();
@@ -774,9 +789,10 @@ async function make() {
     setMessages([{ level: 'ok', text: `완성했어요: ${name}. 내려받기가 저절로 시작되지 않으면 "내려받기"를 누르세요.` }]);
   } catch (e) {
     if (e instanceof Cancelled || e.name === 'AbortError' || abort.signal.aborted) {
-      status.finish(false, '취소했어요', true);
+      state.paused=true;await saveCurrent();
+      status.finish(false,state.pauseRequested?'저장하고 일시중지했습니다':'취소했어요',true);
       status.title(null);
-      setMessages([{ level: 'warn', text: '만들기를 취소했어요. 이미 만든 AI 장면은 다음에 다시 써요.' }]);
+      setMessages([{ level: 'warn', text: '만들기를 취소/일시중지했습니다. 저장본을 수정하고 이어 만들 수 있습니다. 완료한 AI 장면은 새로고침 후에도 재사용합니다.' }]);
     } else {
       console.warn(e);
       const text = explain(e);
@@ -1176,6 +1192,11 @@ el.makeBtn.addEventListener('click', make);
 el.retryBtn.addEventListener('click', make);
 el.againBtn.addEventListener('click', make);
 el.cancelBtn.addEventListener('click', () => state.abort && state.abort.abort());
+el.pauseBtn.onclick=()=>{state.pauseRequested=true;el.pauseBtn.disabled=true;if(state.phase==='generate')setProgress(0,'현재 장면 저장 후 일시중지…');else state.abort?.abort();};
+el.recoverySave.onclick=()=>saveCurrent().then(()=>{el.recoveryMessage.textContent='작업·원본 파일·완료한 장면을 저장했습니다.';});
+el.recoveryLibrary.onchange=async()=>{if(state.busy||!el.recoveryLibrary.value)return;const selected=el.recoveryLibrary.value;await saveCurrent();await restoreSaved(await loadProject(selected));};
+el.recoveryRestore.onclick=async()=>{if(state.busy)return;await restoreSaved(await restorePrevious(recoveryId));};
+el.recoveryNew.onclick=async()=>{if(state.busy)return;await saveCurrent();recoveryId=crypto.randomUUID();LS.set('shorts.recovery.current',recoveryId);state.files=[];state.generated.clear();state.paused=false;setJsonText('','새 작업');el.resultBox.hidden=true;el.resultEmpty.hidden=false;clearPlan();await refreshLibrary();};
 el.notifyChk.addEventListener('change', () => {
   if (el.notifyChk.checked && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
 });
@@ -1375,4 +1396,4 @@ const enginePick = (async () => {
   if (state.job) setReady(!state.busy && engine.kind !== 'none');
   return engine;
 })();
-analyze();
+(async()=>{try{const saved=await loadProject(recoveryId);recoveryReady=true;if(saved)await restoreSaved(saved);else await analyze();await refreshLibrary();}catch{recoveryReady=true;await analyze();}})();

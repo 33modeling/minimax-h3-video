@@ -205,7 +205,8 @@
         </div>
       </details>
 
-      <details class="panel fold" id="claudePanel">
+      <section class="panel"><h2 class="panel-title">저장한 영상 작업 · 중간 수정</h2><div class="settings"><label>작업 목록<select id="recoveryLibrary"><option value="">저장한 영상 작업</option></select></label><button id="recoverySave" type="button" class="ghost small">지금 작업 저장</button><button id="recoveryRestore" type="button" class="ghost small">수정 전 JSON 복원</button><button id="recoveryNew" type="button" class="ghost small">새 작업</button></div><p id="recoveryMessage" role="status">원본 파일과 완료한 AI 장면을 기기에 저장합니다. 일시중지한 뒤 JSON·자막·배치를 수정하고 이어 만들기를 누르세요.</p></section>
+    <details class="panel fold" id="claudePanel">
         <summary><span class="panel-title">아이디어로 기획 (Claude)</span> <small>선택 · 아이디어로 작업 JSON 쓰기</small></summary>
         <div class="fold-body">
           <label class="block">기획 모델<select id="llmModel"><option value="claude-opus-5-5">Claude Opus 5.5</option><option value="Qwen/Qwen3.8-27B">Qwen3.8-27B · LLM</option></select></label><label class="block">Qwen LLM 서버<input id="qwenLlmUrl" type="url" value="http://127.0.0.1:8000/v1"></label><label class="block">Qwen 서버 키 · 선택<input id="qwenLlmKey" type="password" autocomplete="off"></label><label class="block">아이디어
@@ -246,7 +247,7 @@
           <div class="progress" id="progressBox" hidden>
             <div class="progress-top"><strong id="progressPct">0%</strong><span id="progressEta"></span></div>
             <div class="bar" id="progressRole" role="progressbar" aria-label="만들기 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progressBar"></div></div>
-            <div class="progress-row"><span id="progressText">준비 중…</span><button type="button" id="cancelBtn" class="ghost small">취소</button></div>
+            <div class="progress-row"><span id="progressText">준비 중…</span><button type="button" id="pauseBtn" class="ghost small" disabled>일시중지 · 저장</button><button type="button" id="cancelBtn" class="ghost small">취소</button></div>
           </div>
           <div class="status" id="statusBox" hidden></div>
           <p class="sr-only" id="liveStatus" aria-live="polite"></p>
