@@ -25,7 +25,7 @@ from . import spec
 from .client import H3Error
 
 DEFAULT_SECONDS = 6          # 글이 없는 장면
-MAX_CLIPS = 40
+MAX_CLIPS = float("inf")
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
 HANGUL = re.compile(r"[가-힣]")
 
@@ -68,12 +68,15 @@ def reading_seconds(text: str) -> float:
 
 
 def auto_seconds(text: str = "", given=None) -> tuple[int, str]:
-    """장면 길이: JSON 값 → 글 읽는 시간 + 1.5초 → 기본 6초. 5~15초(장면 하나 상한)로 맞춘다."""
-    lo, hi = spec.SCENE_MIN, spec.DURATION_MAX
+    """장면 길이: JSON 값 → 글 읽는 시간 + 1.5초 → 기본 6초. 모델 요청은 나누어 이어 붙이고 전체 장면 길이는 보존한다."""
+    lo = spec.SCENE_MIN
     if given not in (None, ""):
         try:
             # 반올림은 웹(JS Math.round)과 같게: .5 는 올린다
-            return max(spec.DURATION_MIN, min(hi, math.floor(float(given) + 0.5))), "JSON"
+            value = float(given)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError()
+            return max(spec.DURATION_MIN, math.floor(value + 0.5)), "JSON"
         except (TypeError, ValueError):
             raise H3Error(f"seconds 는 숫자여야 한다: {given!r}") from None
     r = reading_seconds(text)
@@ -81,7 +84,7 @@ def auto_seconds(text: str = "", given=None) -> tuple[int, str]:
         return DEFAULT_SECONDS, "기본"
     n = len(re.sub(r"\s", "", text)) if HANGUL.search(text) else len(text.split())
     unit = "자" if HANGUL.search(text) else "단어"
-    return max(lo, min(hi, math.ceil(r + 1.5))), f"글 {n}{unit}"
+    return max(lo, math.ceil(r + 1.5)), f"글 {n}{unit}"
 
 
 # ---------- 영상 프롬프트 ----------
@@ -269,6 +272,8 @@ def load_story(data, images: list[str] | None = None, base: Path | None = None, 
             # 파이썬 영어 메시지만 주지 않고 어디가 틀렸는지 쉬운 말로 (원래 메시지는 괄호에)
             raise H3Error(f"JSON 을 읽을 수 없다: {e.lineno}줄 {e.colno}번째 글자 근처가 JSON 형식이 아니다 "
                           f"(따옴표·쉼표·괄호를 확인. 원래 메시지: {e.msg})") from None
+    if isinstance(data,dict) and isinstance(data.get("board"),dict) and isinstance(data["board"].get("scenes"),list):
+        data={"title":data["board"].get("title"),"ratio":data.get("brief",{}).get("ratio"),"clips":[{"prompt":s.get("videoPrompt") or s.get("imagePrompt") or s.get("visual"),"title":s.get("title"),"seconds":s.get("duration"),"text":s.get("caption","")} for s in data["board"]["scenes"]]}
     if _is_conti(data):
         source, (title, jratio, raw) = "conti", _conti(data, narration)
     elif _is_maker_book(data):

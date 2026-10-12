@@ -10,7 +10,6 @@ QUALITY = {"low": {"crf": 28, "bpp": 0.05}, "medium": {"crf": 23, "bpp": 0.08}, 
 TEMPLATES = ["cutaway", "split", "pip", "montage"]
 TEMPLATE_KO = {"cutaway": "컷어웨이", "split": "위아래 분할", "pip": "PIP", "montage": "몽타주", "base": "기본 영상만"}
 CUTAWAY_MAX_SHARE = 0.6
-MAX_SEGMENTS = 240
 
 
 def js_round(x: float) -> int:
@@ -216,7 +215,7 @@ def plan_timeline(spec: dict, inputs: dict) -> dict:
     sum_clips = 0
     for c in clips:
         sum_clips += c["dur"]
-    T = min(spec["max_duration"], sum_clips) if template == "montage" else min(spec["max_duration"], base["dur"])
+    T = min(spec["max_duration"] if spec["max_duration"] > 0 else float("inf"), sum_clips) if template == "montage" else min(spec["max_duration"] if spec["max_duration"] > 0 else float("inf"), base["dur"])
     T = r3(T)
     # 기본 영상 구간이 비면(start 가 영상 길이보다 뒤 등) 0초짜리 빈 파일을 '완성'이라고 내던 것을 막는다
     if T < 0.1:
@@ -230,7 +229,7 @@ def plan_timeline(spec: dict, inputs: dict) -> dict:
 
     def sequential(rect, z, loop, border):
         t, i = 0, 0
-        while t < T - 0.05 and len(segments) < MAX_SEGMENTS:
+        while t < T - 0.05:
             if not loop and i >= len(clips):
                 break
             c = clips[i % len(clips)]

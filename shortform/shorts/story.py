@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-MAX_TOTAL = 180          # 숏폼 최대 길이(명세 max_duration 상한)
+MAX_TOTAL = float("inf")          # 숏폼 최대 길이(명세 max_duration 상한)
 CAPTION_MAX = 120        # 자막 한 줄 최대 글자 (명세 captions 한도)
 
 
@@ -31,7 +31,7 @@ def is_story(data) -> bool:
         return bool(data) and all(isinstance(x, str) or (isinstance(x, dict) and ("prompt" in x or "scene" in x)) for x in data)
     if not isinstance(data, dict):
         return False
-    return st._is_conti(data) or st._is_maker_book(data) or isinstance(data.get("clips"), list)
+    return isinstance(data.get("board"),dict) and isinstance(data["board"].get("scenes"),list) or st._is_conti(data) or st._is_maker_book(data) or isinstance(data.get("clips"), list)
 
 
 def _r3(x: float) -> float:
@@ -69,15 +69,14 @@ def story_to_spec(data, images: list[str] | None = None, base: Path | None = Non
     story = st.load_story(data, images or [], base=base, narration=narration, local_paths=local_paths)
     secs = [c.seconds for c in story.clips]
     total = sum(secs)
-    if total > MAX_TOTAL:   # 숏폼 최대 길이를 넘으면 장면마다 같은 비율로 줄인다 (최소 4초)
-        secs = [max(4, math.floor(s * MAX_TOTAL / total)) for s in secs]
-        total = sum(secs)
     scenes, captions, t = [], [], 0.0
     for c, sec in zip(story.clips, secs):
-        sc = {"prompt": c.prompt, "duration": sec, "seed": c.seed}
-        if c.image:
-            sc["image"] = c.image
-        scenes.append(sc)
+        from h3video.spec import plan_scenes
+        for part, duration in enumerate(plan_scenes(sec)):
+            sc = {"prompt": c.prompt, "duration": duration, "seed": c.seed + part}
+            if c.image:
+                sc["image"] = c.image
+            scenes.append(sc)
         pieces = caption_pieces(c.text)
         weights = [2 + len(re.sub(r"\s", "", p)) for p in pieces]
         acc = 0
@@ -86,8 +85,8 @@ def story_to_spec(data, images: list[str] | None = None, base: Path | None = Non
             acc += w
             captions.append({"text": p, "start": start, "end": _r3(t + sec * acc / sum(weights))})
         t += sec
-    spec = {"scenes": scenes, "ratio": story.ratio, "template": "montage", "fit": "blur", "title": story.title[:80],
-            "max_duration": min(MAX_TOTAL, total + 1), "output": slug(story.title) + ".mp4"}
+    spec = {"scenes": scenes, "ratio": story.ratio, "template": "montage", "fit": "blur", "title": story.title,
+            "max_duration": 0, "output": slug(story.title) + ".mp4"}
     if captions:
         spec["captions"] = captions
     info = {"title": story.title, "source": story.source, "total": total, "unused_images": story.unused_images,

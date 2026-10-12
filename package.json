@@ -1,0 +1,8 @@
+{
+  "name": "h3video-web-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-ui.mjs"
+  }
+}

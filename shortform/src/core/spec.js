@@ -15,7 +15,7 @@ export const DEFAULTS = {
   resolution: '720x1280',
   fps: 30,
   quality: 'medium',
-  max_duration: 60,
+  max_duration: 0,
   title: '',
   bgm_volume: 0.25,
   original_volume: 1,

@@ -268,7 +268,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
     </div>
     <div class="field" data-modes="text fl ref">
       <div class="grid3">
-        <div><label class="lab" for="seconds">길이(초)</label><input id="seconds" name="seconds" type="number" min="4" max="600" step="1" value="8" inputmode="numeric"></div>
+        <div><label class="lab" for="seconds">길이(초)</label><input id="seconds" name="seconds" type="number" min="4" step="1" value="8" inputmode="numeric"></div>
         <div><label class="lab" for="aspect">화면비</label><select id="aspect" name="aspect_ratio"></select></div>
         <div class="wide"><label class="lab" for="seed">시드 <span class="opt">비우면 매번 다르게</span></label><input id="seed" name="seed" type="text" inputmode="numeric" placeholder="무작위" autocomplete="off"></div>
       </div>
@@ -316,6 +316,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 </section>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button type="button" id="toast-b" hidden></button></div>
+<dialog id="recovery-dialog" style="width:min(640px,94vw);max-height:90vh;overflow:auto;border:1px solid var(--line);border-radius:18px;padding:24px;background:var(--card);color:var(--ink)"><form id="recovery-form"><h2>저장한 장면 일부 수정</h2><p>완성한 원본과 수정 전 저장본은 남습니다. 이어 만들기는 수정한 장면부터 진행합니다.</p><label class="lab">수정할 장면<select id="recovery-scene" style="width:100%"></select></label><label class="lab">영상 프롬프트<textarea id="recovery-prompt" rows="6" required style="width:100%"></textarea></label><label class="lab" id="recovery-text-label">내레이션·글<textarea id="recovery-text" rows="3" style="width:100%"></textarea></label><label class="lab" id="recovery-seconds-label">전체 장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" role="alert"></p><div class="actions"><button type="submit" class="btn main">수정 저장</button><button type="button" class="btn" id="recovery-close">닫기</button></div></form></dialog>
 <script>
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -864,10 +865,14 @@ function progressOf(it) {
 function stateText(it) {
   if (it.kind === 'story') {
     if (it.status === 'completed') return ['완성', `장면 ${it.total}개를 이어 붙였어요`];
+    if(it.status==='paused')return ['일시중지','완성한 장면은 보존했습니다'];
+    if(it.status==='pausing')return ['일시중지 중','현재 장면을 마친 뒤 저장합니다'];
     if (it.status === 'failed') return ['실패', `장면 ${it.failed}개가 안 됐어요 (${it.done}/${it.total} 완성)`];
     const run = it.clips.find(c => c.status === 'running' || c.status === 'in_progress');
     return ['만드는 중', `${it.done}/${it.total} 완성${run ? ` · ${run.label} ${Math.round((run.progress || 0) * 100)}%` : it.done === it.total ? ' · 이어 붙이는 중' : ''}`];
   }
+  if(it.status==='paused')return ['일시중지','저장본에서 수정·이어 만들기'];
+  if(it.status==='pausing')return ['일시중지 중','현재 장면을 마친 뒤 저장합니다'];
   if (it.status === 'completed') return ['완성', ''];
   if (it.status === 'failed') return ['실패', ''];
   if (it.status === 'pending') return ['기다리는 중', it.queue_pos > 1 ? `앞에 ${it.queue_pos - 1}개` : '곧 시작'];
@@ -923,7 +928,7 @@ function cardHtml(it) {
   const meta = story
     ? `${when(it.created)} · 장면 ${it.total}개 · 합계 ${it.seconds}초 · ${esc(it.ratio || '')}`
     : `${when(it.created)} · ${it.total_seconds}초 · ${esc(it.aspect_ratio)}${(it.scenes || []).length > 1 ? ` · 장면 ${it.scenes.length}개` : ''}${it.short_edge && it.short_edge !== 768 ? ` · 크기 ${it.short_edge}` : ''} · 시드 ${it.seed}`;
-  const live = it.status === 'running' || it.status === 'pending';
+  const live = it.status === 'running' || it.status === 'pending' || it.status === 'pausing';
   const elapsed = it.status === 'completed' ? `${fmt(it.elapsed)} 걸림` : live && it.elapsed ? `경과 ${fmt(it.elapsed)}` : '';
   let body = '';
   if (live) body += `<div class="bar"><i style="width:${Math.round(progressOf(it) * 100)}%"></i></div>`;
@@ -942,6 +947,10 @@ function cardHtml(it) {
   const acts = [];
   // ?download=1: 서버가 '내려받기'로 보낸다 (허브처럼 다른 주소에서 연 화면은 download 속성이 안 먹어 영상 페이지로 넘어가 버린다)
   if (it.video_url) acts.push(`<a class="btn" href="${esc(full(it.video_url) + (it.video_url.includes('?') ? '&' : '?') + 'download=1')}" download>${icon('down')}받기</a>`);
+  if (live) acts.push(`<button type="button" class="btn" data-recovery="pause">현재 장면 저장 후 일시중지</button>`);
+  if(it.status==='paused'||it.status==='failed')acts.push(`<button type="button" class="btn main" data-recovery="continue">저장본 이어 만들기</button>`);
+  if(!live)acts.push(`<button type="button" class="btn" data-recovery="edit">일부 수정</button>`);
+  if(!live&&it.revisions)acts.push(`<button type="button" class="btn" data-recovery="restore">수정 전 저장본 복원</button>`);
   if (!story && it.status === 'failed') acts.push(`<button type="button" class="btn main" data-act="retry">${icon('redo')}다시 하기</button>`);
   if (story && it.status === 'failed') acts.push(`<button type="button" class="btn main" data-act="resume">${icon('redo')}안 된 장면 다시</button>`);
   if (!live) acts.push(`<button type="button" class="btn" data-act="again">${icon('edit')}같은 설정으로 다시</button>`);
@@ -1077,4 +1086,36 @@ $('#prompt').value = LS.get('h3video.draft', '');
 setMode(mode);
 boot();
 setInterval(checkHealth, 10000);
+
+let recoveryTarget=null;
+$('#recovery-close').onclick=()=>$('#recovery-dialog').close();
+const recoveryChoices=it=>it.kind==='story'?it.clips:it.scenes;
+function fillRecovery(){const it=recoveryTarget, index=Number($('#recovery-scene').value),scene=recoveryChoices(it)[index];$('#recovery-prompt').value=scene.prompt||it.prompt||'';$('#recovery-text').value=scene.text||'';$('#recovery-seconds').value=scene.seconds||scene.duration||6;}
+$('#recovery-scene').onchange=fillRecovery;
+$('#feed').addEventListener('click',async event=>{
+ const button=event.target.closest('[data-recovery]');if(!button)return;
+ const card=button.closest('[data-id]'),item=cards.get(card.dataset.id).item,action=button.dataset.recovery;
+ const kind=item.kind==='story'?'story':'jobs';
+ if(action==='edit'){
+   recoveryTarget=item;$('#recovery-error').textContent='';$('#recovery-scene').replaceChildren(...recoveryChoices(item).map((scene,i)=>{const option=document.createElement('option');option.value=i;option.textContent=`${i+1}. ${scene.label||'장면 '+(i+1)}`;return option;}));
+   $('#recovery-text-label').hidden=kind!=='story';$('#recovery-seconds-label').hidden=kind!=='story';fillRecovery();$('#recovery-dialog').showModal();return;
+ }
+ button.disabled=true;
+ try{await api(`/api/${kind}/${encodeURIComponent(item.id)}/${action}`,{method:'POST'});toast(action==='pause'?'현재 장면을 마친 뒤 저장하고 멈춥니다':action==='restore'?'수정 전 저장본을 복원했습니다':'완성한 장면을 유지하고 이어 만듭니다');poll();}
+ catch(error){toast(error.message);button.disabled=false;}
+});
+$('#recovery-form').onsubmit=async event=>{
+ event.preventDefault();const item=recoveryTarget,index=Number($('#recovery-scene').value),kind=item.kind==='story'?'story':'jobs',scene=recoveryChoices(item)[index];
+ const patch=kind==='story'?{clip:scene.id,prompt:$('#recovery-prompt').value,text:$('#recovery-text').value,seconds:Number($('#recovery-seconds').value)}:{scene:index,prompt:$('#recovery-prompt').value};
+ try{await api(`/api/${kind}/${encodeURIComponent(item.id)}/edit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});$('#recovery-dialog').close();toast('수정본을 저장했습니다. 원본은 보관했고, 이어 만들기를 누르면 됩니다.');poll();}
+ catch(error){$('#recovery-error').textContent=error.message;}
+};
+// Cross-site handoff uses a readiness handshake; no story is placed in a URL.
+addEventListener('message',event=>{
+ const trusted=event.origin==='https://frame-storyboard-33.glassytune4.chatgpt.site'||event.origin==='https://33modeling.pages.dev'||/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(event.origin);
+ if(!trusted||event.source!==window.opener||event.data?.type!=='creative-conti-handoff')return;
+ const data=event.data.project;if(!data?.board?.scenes)return;
+ files.json=[new File([JSON.stringify(data)],'frame-storyboard.json',{type:'application/json'})];setMode('story');renderZone('json');storyPlan();toast('영상 콘티를 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');
+});
+if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');
 </script></body></html>

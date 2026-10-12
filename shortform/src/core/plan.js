@@ -12,7 +12,7 @@ export function qualityFor(name, W, H, fps) {
 export const TEMPLATES = ['cutaway', 'split', 'pip', 'montage'];
 export const TEMPLATE_KO = { cutaway: '컷어웨이', split: '위아래 분할', pip: 'PIP', montage: '몽타주', base: '기본 영상만' };
 const CUTAWAY_MAX_SHARE = 0.6;
-const MAX_SEGMENTS = 240;
+
 
 export const r3 = (x) => Math.round(x * 1000) / 1000;
 export const jsRound = (x) => Math.round(x);
@@ -221,7 +221,7 @@ export function planTimeline(spec, inputs) {
   if (base && !clips.length) template = 'base';
   if (!base && !clips.length) throw new Error('합성할 영상이 없습니다');
   const sumClips = clips.reduce((a, c) => a + c.dur, 0);
-  let T = template === 'montage' ? Math.min(spec.max_duration, sumClips) : Math.min(spec.max_duration, base.dur);
+  let T = template === 'montage' ? Math.min(spec.max_duration > 0 ? spec.max_duration : Infinity, sumClips) : Math.min(spec.max_duration > 0 ? spec.max_duration : Infinity, base.dur);
   T = r3(T);
   // 기본 영상 구간이 비면(start 가 영상 길이보다 뒤 등) 0초짜리 빈 파일을 '완성'이라고 내던 것을 막는다
   if (T < 0.1) throw new Error(`기본 영상에서 쓸 구간이 없습니다: start/end 가 영상 길이(${base.info.duration.toFixed(1)}초) 밖입니다`);
@@ -233,7 +233,7 @@ export function planTimeline(spec, inputs) {
   const sequential = (rect, z, loop, border) => {
     let t = 0;
     let i = 0;
-    while (t < T - 0.05 && segments.length < MAX_SEGMENTS) {
+    while (t < T - 0.05) {
       if (!loop && i >= clips.length) break;
       const c = clips[i % clips.length];
       const d = Math.min(c.dur, T - t);

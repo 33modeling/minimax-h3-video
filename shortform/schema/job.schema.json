@@ -6,101 +6,298 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
-    "version": { "title": "명세 버전", "type": "integer", "enum": [1] },
-    "prompt": { "title": "프롬프트", "type": "string", "minLength": 1, "maxLength": 4000 },
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "title": "명세 버전",
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "prompt": {
+      "title": "프롬프트",
+      "type": "string",
+      "minLength": 1
+    },
     "scenes": {
       "title": "장면 목록",
       "type": "array",
       "minItems": 1,
-      "maxItems": 40,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["prompt"],
+        "required": [
+          "prompt"
+        ],
         "properties": {
-          "prompt": { "title": "장면 프롬프트", "type": "string", "minLength": 1, "maxLength": 4000 },
-          "sources": { "$ref": "#/$defs/mediaList" },
-          "image": { "title": "첫 프레임 이미지", "type": "string", "minLength": 1 },
-          "duration": { "title": "장면 길이(초)", "type": "number", "minimum": 4, "maximum": 15 },
-          "seed": { "title": "시드", "type": "integer", "minimum": 0 }
+          "prompt": {
+            "title": "장면 프롬프트",
+            "type": "string",
+            "minLength": 1
+          },
+          "sources": {
+            "$ref": "#/$defs/mediaList"
+          },
+          "image": {
+            "title": "첫 프레임 이미지",
+            "type": "string",
+            "minLength": 1
+          },
+          "duration": {
+            "title": "장면 길이(초)",
+            "type": "number",
+            "minimum": 4,
+            "maximum": 15
+          },
+          "seed": {
+            "title": "시드",
+            "type": "integer",
+            "minimum": 0
+          }
         }
       }
     },
-    "sources": { "$ref": "#/$defs/mediaList" },
-    "base": { "$ref": "#/$defs/media" },
-    "image": { "title": "첫 프레임 이미지", "type": "string", "minLength": 1 },
-    "duration": { "title": "AI 장면 길이(초)", "type": "number", "minimum": 4, "maximum": 15 },
-    "ratio": { "title": "AI 화면비", "type": "string", "enum": ["9:16", "16:9", "1:1", "4:3", "3:4", "21:9", "auto"] },
-    "seed": { "title": "시드", "type": "integer", "minimum": 0 },
-    "server": { "title": "AI 서버 주소", "type": "string", "pattern": "^https?://", "x-pattern": "http:// 또는 https:// 로 시작하는 주소여야" },
-    "ref_server": { "title": "참조 모드 서버 주소", "type": "string", "pattern": "^https?://", "x-pattern": "http:// 또는 https:// 로 시작하는 주소여야" },
-    "backend": { "title": "AI 서버 종류", "type": "string", "enum": ["auto", "sglang", "vllm", "h3video"] },
-    "poll": { "title": "상태 확인 간격(초)", "type": "number", "minimum": 0.2, "maximum": 60 },
-    "timeout": { "title": "장면당 생성 대기 한도(초)", "type": "number", "minimum": 10, "maximum": 86400 },
-    "model": { "title": "모델 이름", "type": "string", "minLength": 1 },
-    "template": { "title": "템플릿", "type": "string", "enum": ["cutaway", "split", "pip", "montage"] },
-    "fit": { "title": "가로 영상 맞춤", "type": "string", "enum": ["crop", "blur"] },
+    "sources": {
+      "$ref": "#/$defs/mediaList"
+    },
+    "base": {
+      "$ref": "#/$defs/media"
+    },
+    "image": {
+      "title": "첫 프레임 이미지",
+      "type": "string",
+      "minLength": 1
+    },
+    "duration": {
+      "title": "AI 장면 길이(초)",
+      "type": "number",
+      "minimum": 4,
+      "maximum": 15
+    },
+    "ratio": {
+      "title": "AI 화면비",
+      "type": "string",
+      "enum": [
+        "9:16",
+        "16:9",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+        "auto"
+      ]
+    },
+    "seed": {
+      "title": "시드",
+      "type": "integer",
+      "minimum": 0
+    },
+    "server": {
+      "title": "AI 서버 주소",
+      "type": "string",
+      "pattern": "^https?://",
+      "x-pattern": "http:// 또는 https:// 로 시작하는 주소여야"
+    },
+    "ref_server": {
+      "title": "참조 모드 서버 주소",
+      "type": "string",
+      "pattern": "^https?://",
+      "x-pattern": "http:// 또는 https:// 로 시작하는 주소여야"
+    },
+    "backend": {
+      "title": "AI 서버 종류",
+      "type": "string",
+      "enum": [
+        "auto",
+        "sglang",
+        "vllm",
+        "h3video"
+      ]
+    },
+    "poll": {
+      "title": "상태 확인 간격(초)",
+      "type": "number",
+      "minimum": 0.2,
+      "maximum": 60
+    },
+    "timeout": {
+      "title": "장면당 생성 대기 한도(초)",
+      "type": "number",
+      "minimum": 10,
+      "maximum": 86400
+    },
+    "model": {
+      "title": "모델 이름",
+      "type": "string",
+      "minLength": 1
+    },
+    "template": {
+      "title": "템플릿",
+      "type": "string",
+      "enum": [
+        "cutaway",
+        "split",
+        "pip",
+        "montage"
+      ]
+    },
+    "fit": {
+      "title": "가로 영상 맞춤",
+      "type": "string",
+      "enum": [
+        "crop",
+        "blur"
+      ]
+    },
     "resolution": {
       "title": "출력 해상도",
       "type": "string",
       "pattern": "^[0-9]{1,5}x[0-9]{1,5}$",
       "x-pattern": "'가로x세로' 형식(예: 720x1280)이어야",
       "description": "프리셋 또는 임의의 WxH. 짝수, 짧은 변 240~2160, 긴 변 2560 이하.",
-      "x-presets": ["540x960", "720x1280", "1080x1920", "1440x2560", "1080x1080", "1080x1350", "1920x1080"]
+      "x-presets": [
+        "540x960",
+        "720x1280",
+        "1080x1920",
+        "1440x2560",
+        "1080x1080",
+        "1080x1350",
+        "1920x1080"
+      ]
     },
     "gen_size": {
       "title": "생성 해상도",
       "description": "AI 서버에 보낼 크기. 짧은 변 숫자(예: 480, 576, 720, 768) 또는 WxH. 로컬 H3 상한은 짧은 변 768.",
       "anyOf": [
-        { "type": "integer", "minimum": 240, "maximum": 2160 },
-        { "type": "string", "pattern": "^[0-9]{1,5}x[0-9]{1,5}$", "x-pattern": "짧은 변 숫자(예: 768) 또는 '가로x세로' 형식(예: 432x768)이어야" }
+        {
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 2160
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]{1,5}x[0-9]{1,5}$",
+          "x-pattern": "짧은 변 숫자(예: 768) 또는 '가로x세로' 형식(예: 432x768)이어야"
+        }
       ],
       "x-hint": "짧은 변 숫자(예: 768) 또는 \"가로x세로\" 문자열"
     },
-    "fps": { "title": "출력 프레임레이트", "type": "integer", "minimum": 12, "maximum": 60 },
-    "quality": { "title": "출력 품질", "type": "string", "enum": ["low", "medium", "high"] },
-    "max_duration": { "title": "최대 길이(초)", "type": "number", "minimum": 3, "maximum": 180 },
-    "title": { "title": "제목(상단 훅 문구)", "type": "string", "maxLength": 80 },
+    "fps": {
+      "title": "출력 프레임레이트",
+      "type": "integer",
+      "minimum": 12,
+      "maximum": 60
+    },
+    "quality": {
+      "title": "출력 품질",
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "max_duration": {
+      "title": "출력 길이(초 · 0은 전체)",
+      "type": "number",
+      "minimum": 0
+    },
+    "title": {
+      "title": "제목(상단 훅 문구)",
+      "type": "string"
+    },
     "captions": {
       "title": "자막",
       "type": "array",
-      "maxItems": 200,
       "items": {
         "anyOf": [
-          { "type": "string", "minLength": 1, "maxLength": 120 },
+          {
+            "type": "string",
+            "minLength": 1
+          },
           {
             "type": "object",
             "additionalProperties": false,
-            "required": ["text"],
+            "required": [
+              "text"
+            ],
             "properties": {
-              "text": { "title": "자막 문장", "type": "string", "minLength": 1, "maxLength": 120 },
-              "start": { "title": "시작(초)", "type": "number", "minimum": 0 },
-              "end": { "title": "끝(초)", "type": "number", "minimum": 0 }
+              "text": {
+                "title": "자막 문장",
+                "type": "string",
+                "minLength": 1
+              },
+              "start": {
+                "title": "시작(초)",
+                "type": "number",
+                "minimum": 0
+              },
+              "end": {
+                "title": "끝(초)",
+                "type": "number",
+                "minimum": 0
+              }
             }
           }
         ],
         "x-hint": "문자열 또는 {\"text\", \"start\", \"end\"}"
       }
     },
-    "bgm": { "title": "배경음", "type": "string", "minLength": 1 },
-    "bgm_volume": { "title": "배경음 볼륨", "type": "number", "minimum": 0, "maximum": 1 },
-    "original_volume": { "title": "원본 소리 볼륨", "type": "number", "minimum": 0, "maximum": 1 },
-    "output": { "title": "출력 파일", "type": "string", "minLength": 1 }
+    "bgm": {
+      "title": "배경음",
+      "type": "string",
+      "minLength": 1
+    },
+    "bgm_volume": {
+      "title": "배경음 볼륨",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "original_volume": {
+      "title": "원본 소리 볼륨",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "output": {
+      "title": "출력 파일",
+      "type": "string",
+      "minLength": 1
+    }
   },
   "$defs": {
     "media": {
       "title": "영상",
       "anyOf": [
-        { "type": "string", "minLength": 1 },
+        {
+          "type": "string",
+          "minLength": 1
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["path"],
+          "required": [
+            "path"
+          ],
           "properties": {
-            "path": { "title": "파일", "type": "string", "minLength": 1 },
-            "start": { "title": "시작(초)", "type": "number", "minimum": 0 },
-            "end": { "title": "끝(초)", "type": "number", "minimum": 0 }
+            "path": {
+              "title": "파일",
+              "type": "string",
+              "minLength": 1
+            },
+            "start": {
+              "title": "시작(초)",
+              "type": "number",
+              "minimum": 0
+            },
+            "end": {
+              "title": "끝(초)",
+              "type": "number",
+              "minimum": 0
+            }
           }
         }
       ],
@@ -109,8 +306,9 @@
     "mediaList": {
       "title": "소스 영상 목록",
       "type": "array",
-      "maxItems": 12,
-      "items": { "$ref": "#/$defs/media" }
+      "items": {
+        "$ref": "#/$defs/media"
+      }
     }
   }
 }

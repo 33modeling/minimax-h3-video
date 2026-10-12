@@ -81,10 +81,10 @@ class StoryRunTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout[-2000:] + r.stderr[-2000:])
             events = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
             story = next(e for e in events if e.get("event") == "story")
-            self.assertEqual([c["seconds"] for c in story["clips"]], [6, 10, 5, 15, 8])
+            self.assertEqual([c["seconds"] for c in story["clips"]], [6, 10, 5, 33, 8])
             self.assertTrue(any(e.get("event") == "warning" and "extra-99.png" in e.get("message", "") for e in events))
             reqs = state.requests
-            self.assertEqual([q["target"]["duration_seconds"] for q in reqs], [6, 10, 5, 15, 8])
+            self.assertEqual([q["target"]["duration_seconds"] for q in reqs], [6, 10, 5, 9, 8, 8, 8, 8])
             self.assertTrue(all(q["task"] == "fl2va" and q["target"]["aspect_ratio"] == "4:3" for q in reqs))
             self.assertIn("<d>[Korean] 숲 가장자리에", reqs[1]["prompt"])
             self.assertTrue(out.is_file() and out.stat().st_size > 1000)

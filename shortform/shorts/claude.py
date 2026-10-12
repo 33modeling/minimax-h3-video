@@ -14,6 +14,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import urllib.parse
 
 from . import plan as P
 from . import spec as S
@@ -26,15 +27,15 @@ UNSUPPORTED = ("minimum", "maximum", "minLength", "maxLength", "minItems", "maxI
                "x-pattern", "x-presets",
                "x-hint", "description")
 
-SYSTEM_PROMPT = """너는 세로형 숏폼(9:16, 60초 이하) 기획자다. 사용자의 아이디어(와 소스 영상 프레임)를 보고 작업 명세 JSON 하나를 만든다.
+SYSTEM_PROMPT = """너는 영상 기획자다. 사용자의 아이디어(와 소스 영상 프레임)를 보고 작업 명세 JSON 하나를 만든다.
 명세는 두 단계로 실행된다: (1) 사용자의 영상 생성 서버(MiniMax-H3 같은 모델)가 장면 영상을 만들고, (2) 템플릿으로 9:16 숏폼을 합성한다.
 
 규칙
-- scenes: 장면 1~4개. 각 장면 prompt 는 영상 생성용 영어 프롬프트(피사체·동작·카메라·조명·분위기, 1~3문장). 대사가 필요하면 따옴표 안에 한국어로.
-- 장면 duration 은 4~15초 정수. 장면 길이 합계는 15~45초가 적당하다.
-- ratio 는 "9:16".
-- title: 상단 훅 문구, 한국어 18자 이내, 궁금증을 만드는 말.
-- captions: 한국어 자막, 한 줄에 한 장면/한 생각, 줄당 22자 이내, 4~10줄. 영상 내용과 맞춘다.
+- scenes: 장면 수는 사용자 요청에 맞춘다. 전체 장면 수에 상한을 두지 않는다. 각 장면 prompt 는 영상 생성용 영어 프롬프트(피사체·동작·카메라·조명·분위기, 1~3문장). 대사가 필요하면 따옴표 안에 한국어로.
+- 장면 duration 은 4~15초 정수. 전체 길이를 줄이지 말고 사용자 요청에 맞춘다. 모델의 장면당 길이 범위 안에서 필요한 만큼 장면을 나눈다.
+- ratio 는 사용자가 지정한 비율, 지정이 없으면 "9:16".
+- title: 상단 훅 문구, 한국어로, 궁금증을 만드는 말.
+- captions: 한국어 자막, 한 줄에 한 장면/한 생각, 영상에 필요한 만큼 작성한다. 영상 내용과 맞춘다.
 - 소스 영상이 주어졌을 때:
   * 소스를 AI 참조로 써서 새 장면을 만들려면 scenes[].sources 에 파일 이름을 넣는다(장면당 영상 3개 이하).
   * 소스 자체를 주 화면으로 살리려면 base 에 파일 이름을 넣고 template 을 cutaway(소스 위로 AI 장면이 사이사이), split(위 소스·아래 AI), pip(소스 전체·AI 작은 창) 중에서 고른다.
@@ -155,6 +156,36 @@ def _post(url: str, body: dict, api_key: str, timeout: float) -> dict:
         raise PlanError(f"Anthropic API 에 연결하지 못했습니다: {e.reason}") from e
 
 
+QWEN_MODEL = "Qwen/Qwen3.8-27B"
+
+
+def qwen_endpoint(base_url=None):
+    base = (base_url or os.environ.get("QWEN_LLM_BASE_URL") or "http://127.0.0.1:8000/v1").rstrip("/")
+    parsed = urllib.parse.urlparse(base)
+    if parsed.scheme not in ("http", "https") or parsed.username or parsed.password:
+        raise PlanError("Qwen LLM 서버 주소를 확인하세요")
+    return base if base.endswith("/chat/completions") else base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions")
+
+
+def _qwen_post(url, body, api_key, timeout):
+    messages = [{"role": "system", "content": body["system"]}]
+    for message in body["messages"]:
+        content = message["content"]
+        if isinstance(content, list):
+            content = [{"type":"image_url","image_url":{"url":"data:"+b["source"]["media_type"]+";base64,"+b["source"]["data"]}} if b["type"] == "image" else {"type":"text","text":b.get("text","")} for b in content if b["type"] in ("text","image")]
+        messages.append({"role":message["role"],"content":content})
+    payload = {"model":QWEN_MODEL,"messages":messages,"max_tokens":body["max_tokens"],"stream":False,"chat_template_kwargs":{"enable_thinking":False}}
+    request_headers={"content-type":"application/json"}
+    if api_key:request_headers["Authorization"]="Bearer "+api_key
+    req=urllib.request.Request(url,data=json.dumps(payload,ensure_ascii=False).encode(),method="POST",headers=request_headers)
+    try:
+        with urllib.request.urlopen(req,timeout=timeout) as response:data=json.loads(response.read())
+    except (urllib.error.HTTPError,urllib.error.URLError) as error:
+        raise PlanError("Qwen LLM 서버 연결 실패: "+str(getattr(error,"code",getattr(error,"reason","unknown")))) from error
+    choice=(data.get("choices") or [{}])[0]
+    return {"content":[{"type":"text","text":choice.get("message",{}).get("content","")}],"stop_reason":"max_tokens" if choice.get("finish_reason")=="length" else "end_turn","usage":data.get("usage")}
+
+
 def parse_reply(resp: dict) -> tuple[dict | None, list[str]]:
     stop = resp.get("stop_reason")
     if stop == "refusal":
@@ -176,11 +207,12 @@ def parse_reply(resp: dict) -> tuple[dict | None, list[str]]:
 def plan(idea: str, sources: list[dict], api_key: str | None = None, model: str = DEFAULT_MODEL,
          base_url: str | None = None, timeout: float = 600.0, post=None, log=None) -> dict:
     """기획 → 검증 → (실패 시 1회 재요청). 반환: {"spec", "attempts", "usage"}"""
-    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
+    is_qwen = model.lower() in ("qwen3.8-27b", QWEN_MODEL.lower())
+    api_key = api_key or os.environ.get("QWEN_LLM_API_KEY" if is_qwen else "ANTHROPIC_API_KEY") or ""
+    if not api_key and not is_qwen:
         raise PlanError("ANTHROPIC_API_KEY 환경변수가 없습니다. export ANTHROPIC_API_KEY=... 후 다시 하세요")
-    url = (base_url or os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com").rstrip("/") + "/v1/messages"
-    post = post or _post
+    url = qwen_endpoint(base_url) if is_qwen else (base_url or os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com").rstrip("/") + "/v1/messages"
+    post = post or (_qwen_post if is_qwen else _post)
     body = build_request(idea, sources, model)
     attempts = 0
     usage = []

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from functools import wraps
 import threading
 import time
 import uuid
@@ -17,6 +18,29 @@ from .story import Story
 
 STATE = "story.json"
 _join_lock = threading.Lock()
+
+
+_story_locks = {}
+_story_locks_guard = threading.Lock()
+
+
+def story_lock(directory):
+    key = str(Path(directory).resolve())
+    with _story_locks_guard:
+        return _story_locks.setdefault(key, threading.RLock())
+
+
+def locked_story(function):
+    @wraps(function)
+    def locked(directory, *args, **kwargs):
+        with story_lock(directory):
+            return function(directory, *args, **kwargs)
+    return locked
+
+
+@locked_story
+def refresh_saved(directory, store):
+    return refresh(directory, load_state(directory), store)
 
 
 def new_story_dir(root: Path) -> Path:
@@ -44,7 +68,7 @@ def load_state(d: Path) -> dict:
 
 
 def save_state(d: Path, state: dict) -> None:
-    tmp = Path(d) / (STATE + ".tmp")
+    tmp = Path(d) / (STATE + "." + uuid.uuid4().hex + ".tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(Path(d) / STATE)
 

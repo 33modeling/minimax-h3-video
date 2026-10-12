@@ -665,7 +665,7 @@ def cmd_compose(a) -> int:
     out.plan_stages(["검증", "합성"])
     out.stage("검증", "")
     spec: dict = {"base": a.base, "sources": a.source or [], "template": a.template, "resolution": a.resolution, "fit": a.fit,
-                  "max_duration": 60 if a.max_duration is None else a.max_duration, "fps": a.fps, "quality": a.quality}
+                  "max_duration": 0 if a.max_duration is None else a.max_duration, "fps": a.fps, "quality": a.quality}
     if not a.base:
         spec.pop("base")
     if a.title:
@@ -711,11 +711,11 @@ def plan_with_claude(a, out: Out, sources: list[str]):
     model = getattr(a, "model_claude", None) or C.DEFAULT_MODEL
     if a.dry_run:
         body = C.build_request(a.idea, srcs, model)
-        url = (os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com").rstrip("/") + "/v1/messages"
+        url = C.qwen_endpoint() if model.lower() in ("qwen3.8-27b", C.QWEN_MODEL.lower()) else (os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com").rstrip("/") + "/v1/messages"
         out.event("claude_request", "Claude 에 보낼 요청 요약:\n" + json.dumps(C.request_summary(body, url), ensure_ascii=False, indent=2),
                   summary=C.request_summary(body, url))
         return None
-    out.event("claude", f"Claude({model})에 기획을 요청합니다… (프레임 {sum(len(s['frames']) for s in srcs)}장)")
+    out.event("claude", f"{model}에 기획을 요청합니다… (프레임 {sum(len(s['frames']) for s in srcs)}장)")
     try:
         res = C.plan(a.idea, srcs, model=model, log=lambda m: out.event("claude_retry", m))
     except C.PlanError as e:

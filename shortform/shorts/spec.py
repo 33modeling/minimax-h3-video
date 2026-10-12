@@ -11,7 +11,7 @@ SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 DEFAULTS = {
     "version": 1, "duration": 8, "ratio": "9:16", "seed": 0, "backend": "auto", "poll": 3, "timeout": 1800, "fit": "blur",
-    "resolution": "720x1280", "fps": 30, "quality": "medium", "max_duration": 60, "title": "", "bgm_volume": 0.25, "original_volume": 1,
+    "resolution": "720x1280", "fps": 30, "quality": "medium", "max_duration": 0, "title": "", "bgm_volume": 0.25, "original_volume": 1,
     "output": "short.mp4",
 }
 REF_LIMITS = {"image": 9, "video": 3, "audio": 3, "total": 12}

@@ -519,11 +519,14 @@ class ZeroOptionTest(Base):
     def test_zero_numeric_options_are_checked_not_ignored(self):
         """--fps 0·--max-duration 0·--poll 0 이 말없이 무시돼 기본값으로 만들던 버그. SHORTS_FPS=abc 는 traceback 대신 명세 오류."""
         p = self.write_job("zero-opts", {"base": self.m("base.mp4")})
-        for opt, msg in (("--fps", "12 이상"), ("--max-duration", "3 이상"), ("--poll", "0.2 이상")):
+        for opt, msg in (("--fps", "12 이상"), ("--poll", "0.2 이상")):
             code, out = run_cli("run", p, opt, "0", "--dry-run", env=self.state_env)
             self.assertEqual(code, 2, (opt, out))
             self.assertIn(msg, out)
         code, out = run_cli("compose", "--base", self.m("base.mp4"), "--max-duration", "0", "--dry-run", "-o", self.tmp / "z.mp4")
+        self.assertEqual(code, 0, out)
+        self.assertIn("8.0초", out)
+        code, out = run_cli("compose", "--base", self.m("base.mp4"), "--max-duration", "-1", "--dry-run", "-o", self.tmp / "z.mp4")
         self.assertEqual(code, 2, out)
         code, out = run_cli("run", p, "--dry-run", env={**self.state_env, "SHORTS_FPS": "abc"})
         self.assertEqual(code, 2, out)

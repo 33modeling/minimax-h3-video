@@ -84,6 +84,7 @@ class Job:
     output: str | None = None
     error: str | None = None
     title: str = ""
+    pause_requested: bool = False
 
     def to_json(self) -> dict:
         d = asdict(self)
@@ -193,14 +194,9 @@ def concat_videos(parts: list[Path], out: Path) -> Path:
     ff = ffmpeg()
     if not ff:   # ffmpeg 가 없으면 PyAV 로 다시 인코딩해 잇는다 (h264 + AAC)
         return _concat_av(parts, out)
-    lst = out.with_suffix(".concat.txt")
-    lst.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
-    r = subprocess.run([ff, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)])
-    if r.returncode != 0:  # 코덱 파라미터가 달라 copy 가 실패하면 재인코딩
-        subprocess.run([ff, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
-                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(out)], check=True)
-    lst.unlink(missing_ok=True)
-    return out
+    from .output import join_mp4
+    return join_mp4(parts, out, ff)
+
 
 
 def _concat_av(parts: list[Path], out: Path) -> Path:
@@ -264,6 +260,29 @@ class Worker(threading.Thread):
             self.queue.append(job.id)
             self.cv.notify()
 
+    def pause(self, job_id: str):
+        job = self.store.get(job_id)
+        if not job:
+            raise KeyError(job_id)
+        with self.cv:
+            job.pause_requested = True
+            if job_id in self.queue:
+                self.queue.remove(job_id)
+            if job.status == "pending":
+                job.status = "paused"
+            self.store.save(job)
+        return job
+
+    def resume(self, job_id: str):
+        job = self.store.get(job_id)
+        if not job:
+            raise KeyError(job_id)
+        if job.status in ("pending", "running"):
+            raise H3Error("아직 만드는 중입니다. 일시중지가 끝난 뒤 이어 만드세요.")
+        job.pause_requested, job.status, job.error, job.finished = False, "pending", None, None
+        self.enqueue(job)
+        return job
+
     def run(self):
         while True:
             with self.cv:
@@ -289,17 +308,31 @@ class Worker(threading.Thread):
 
     def process(self, job: Job):
         job.status, job.started = "running", time.time()
-        self.plan(job)
+        if not job.scenes:
+            self.plan(job)
         job_dir = self.store.root / job.id
         job_dir.mkdir(parents=True, exist_ok=True)
         parts: list[Path] = []
         prev_frame: Path | None = None
         for sc in job.scenes:
+            if job.pause_requested:
+                job.status, job.finished = "paused", time.time()
+                self.store.save(job)
+                return
+            if sc.status == "completed" and sc.output and Path(sc.output).is_file():
+                out = Path(sc.output)
+                parts.append(out)
+                if sc.index < len(job.scenes)-1:
+                    prev_frame = extract_last_frame(out, job_dir / f"scene{sc.index+1:02d}.last.png")
+                continue
+            if sc.status == "failed":
+                sc.video_id = None
             req = build_request(job, sc, prev_frame, lambda path: stage_input(path, self.inbox_dir))
             sc.task = req.task
             client = self.ref_client if sc.task == "ref2va" else self.client
             sc.status = "queued"; self.store.save(job)
-            sc.video_id = client.submit(req)
+            if not sc.video_id:
+                sc.video_id = client.submit(req)
 
             def on_progress(st, sc=sc, job=job):
                 sc.status = st.get("status", sc.status)

@@ -35,6 +35,8 @@ from . import storyrun as SR
 from .client import DEFAULT_ENDPOINT, DEFAULT_REF_ENDPOINT, H3Client, H3Error
 from .jobs import INBOX_DIR, OUTPUT_DIR, JobStore, Worker, new_job
 
+from .recovery import edit_story, restore_story, edit_job, restore_job
+
 HTML = Path(__file__).with_name("ui.html").read_text(encoding="utf-8")
 SIZES = (512, 576, 640, 704, 768)
 
@@ -162,12 +164,16 @@ class App:
                 "first_url": self.file_url(d.get("first_image")), "last_url": self.file_url(d.get("last_image")),
                 "first_name": display_name(d["first_image"]) if d.get("first_image") else None,
                 "last_name": display_name(d["last_image"]) if d.get("last_image") else None,
-                "ref_files": refs, "queue_pos": (q.index(d["id"]) + 1) if d["id"] in q else None}
+                "revisions":len(list((self.store.root/d["id"]/"history").glob("*/job.json"))), "ref_files": refs, "queue_pos": (q.index(d["id"]) + 1) if d["id"] in q else None}
 
     def story_dirs(self) -> list[Path]:
         return sorted((d for d in self.store.root.glob("story-*") if (d / SR.STATE).is_file()), key=lambda d: d.name, reverse=True)
 
     def story_item(self, d: Path) -> dict:
+        with SR.story_lock(d):
+            return self._story_item(d)
+
+    def _story_item(self, d: Path) -> dict:
         try:
             st = SR.refresh(d, SR.load_state(d), self.store)
             join_error = None
@@ -177,13 +183,13 @@ class App:
         jobs = [self.store.get(c["job_id"]) for c in st["clips"] if c.get("job_id")]
         jobs = [j for j in jobs if j]
         busy = any(j.status in ("pending", "running") for j in jobs)
-        status = "completed" if st.get("output") else "running" if busy else "failed" if (s["failed"] or join_error) else "running"
+        status = "completed" if st.get("output") else "pausing" if busy and st.get("paused") else "running" if busy else "paused" if st.get("paused") or any(j.status=="paused" for j in jobs) else "failed" if (s["failed"] or join_error) else "paused"
         started = min((j.started or j.created for j in jobs), default=st.get("created") or time.time())
         finished = max((j.finished or 0 for j in jobs), default=0) if status in ("completed", "failed") else None
         clips = []
         for c in st["clips"]:
             clips.append({"id": c["id"], "label": c["label"], "seconds": c["seconds"], "auto": c.get("auto", ""),
-                          "text": c.get("text", ""), "image_name": Path(c["image"]).name if c.get("image") else None,
+                          "text": c.get("text", ""), "prompt": c.get("prompt",""), "image_name": Path(c["image"]).name if c.get("image") else None,
                           "image_url": self.file_url(c.get("image")), "status": "completed" if c.get("output") else
                           ("failed" if c.get("error") else c.get("status") or "pending"), "progress": c.get("progress") or 0,
                           "error": c.get("error"), "error_ko": hints.explain_error(c.get("error")),
@@ -195,14 +201,14 @@ class App:
                 "status": status, "elapsed": round((finished or time.time()) - started, 1), "clips": clips, **s,
                 "video_url": self.file_url(st.get("output")), "error": join_error, "error_ko": hints.explain_error(join_error),
                 "cli": cmds["make"] or cmds["resume"], "resume_cli": cmds["resume"], "params": st.get("params") or {},
-                "inputs": {"json_url": self.file_url(inp.get("json")), "json_name": Path(inp["json"]).name if inp.get("json") else None,
+                "revisions":len(st.get("revisions") or []), "inputs": {"json_url": self.file_url(inp.get("json")), "json_name": Path(inp["json"]).name if inp.get("json") else None,
                            "images": [{"name": p.name, "url": self.file_url(str(p))} for p in imgs
                                       if p.suffix.lower() in ST.IMAGE_EXTS]}}
 
-    def feed(self, limit: int = 40) -> dict:
+    def feed(self, limit: int | None = None) -> dict:
         """화면 오른쪽 카드 목록: 작업과 JSON 한번에를 최근 순으로. JSON 한번에의 장면 작업은 그 카드 안에만 보인다."""
         items, in_story = [], set()
-        for d in self.story_dirs()[:limit]:
+        for d in self.story_dirs():
             try:
                 it = self.story_item(d)
             except (OSError, ValueError, KeyError):
@@ -215,7 +221,7 @@ class App:
                 continue
         items += [self.job_item(j) for j in self.store.list() if j["id"] not in in_story]
         items.sort(key=lambda x: x.get("created") or 0, reverse=True)
-        return {"items": items[:limit], "queue": list(self.worker.queue), "current": self.worker.current, "now": time.time()}
+        return {"items": items if limit is None else items[:limit], "queue": list(self.worker.queue), "current": self.worker.current, "now": time.time()}
 
     def health(self) -> dict:
         ok = {"fl2va": self.client.healthy(), "ref2va": self.ref_client.healthy()}
@@ -237,6 +243,10 @@ class App:
         return job
 
     def resume_story(self, name: str) -> dict:
+        with SR.story_lock(self.store.root / name):
+            return self._resume_story(name)
+
+    def _resume_story(self, name: str) -> dict:
         d = self.store.root / name
         if not re.fullmatch(r"story-[\w-]+", name) or not (d / SR.STATE).is_file():
             raise KeyError(name)
@@ -245,13 +255,23 @@ class App:
                                                              self.store.get(c["job_id"]).status in ("pending", "running"))]
         if busy:
             raise H3Error("아직 만드는 장면이 있어요. 끝난 뒤에 다시 하세요")
-        jobs = SR.jobs_for(st)
-        if not jobs:
+        existing=[]
+        for c in st["clips"]:
+            job=self.store.get(c.get("job_id")) if c.get("job_id") else None
+            if not c.get("output") and job and job.status in ("paused","failed"):
+                existing.append(job)
+        existing_ids={j.id for j in existing}
+        selected={c["id"] for c in st["clips"] if not c.get("output") and c.get("job_id") not in existing_ids}
+        jobs=SR.jobs_for(st,only=selected) if selected else []
+        if not jobs and not existing:
             raise H3Error("다시 만들 장면이 없어요")
-        SR.save_state(d, st)
+        st["paused"]=False
+        SR.save_state(d,st)
+        for job in existing:
+            self.worker.resume(job.id)
         for job in jobs:
             self.worker.enqueue(job)
-        return {"id": name, **SR.summary(st), "redo": len(jobs)}
+        return {"id":name,**SR.summary(st),"redo":len(jobs)+len(existing)}
 
 
 def story_fields(fields: dict) -> dict:
@@ -434,7 +454,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 out = []
                 for d in sorted(app.store.root.glob("story-*"), reverse=True)[:20]:
                     if (d / SR.STATE).is_file():
-                        st = SR.refresh(d, SR.load_state(d), app.store)
+                        st = SR.refresh_saved(d, app.store)
                         out.append({"id": d.name, "title": st["title"], **SR.summary(st)})
                 return self._json(out)
             if p.startswith("/api/story/"):
@@ -443,7 +463,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 if not re.fullmatch(r"story-[\w-]+", name) or not (d / SR.STATE).is_file():
                     return self._json({"error": "없음"}, 404)
                 try:
-                    st = SR.refresh(d, SR.load_state(d), app.store)
+                    st = SR.refresh_saved(d, app.store)
                 except Exception as e:   # 이어 붙이기 실패(ffmpeg 등)도 화면에 보이게
                     return self._json({"error": f"이어 붙이기 실패: {e}"}, 500)
                 return self._json({"id": name, **st, **SR.summary(st)})
@@ -499,6 +519,36 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
 
         def _do_post(self):
             p = urllib.parse.urlparse(self.path).path
+            recovery=re.fullmatch(r"/api/(jobs|story)/([\w-]+)/(pause|continue|edit|restore)",p)
+            if recovery:
+                kind, name, action = recovery.groups()
+                try:
+                    if kind=="jobs":
+                        if action=="pause": result=app.worker.pause(name).to_json()
+                        elif action=="continue": result=app.worker.resume(name).to_json()
+                        elif action=="edit":
+                            body=json.loads(self.rfile.read(int(self.headers.get("Content-Length",0))) or b"{}")
+                            result=edit_job(app.store,name,body).to_json()
+                        else: result=restore_job(app.store,name).to_json()
+                    else:
+                        d=app.store.root/name
+                        if not name.startswith("story-") or not (d/SR.STATE).is_file():raise KeyError(name)
+                        with SR.story_lock(d):
+                            state=SR.load_state(d)
+                            if action=="pause":
+                                state["paused"]=True
+                                for clip in state["clips"]:
+                                    job=app.store.get(clip.get("job_id")) if clip.get("job_id") else None
+                                    if job and job.status in ("pending","running"):app.worker.pause(job.id)
+                                SR.save_state(d,state);result={"id":name,"paused":True}
+                            elif action=="continue": result=app.resume_story(name)
+                            elif action=="edit":
+                                body=json.loads(self.rfile.read(int(self.headers.get("Content-Length",0))) or b"{}")
+                                result=edit_story(d,app.store,body)
+                            else: result=restore_story(d,app.store)
+                    return self._json(result)
+                except KeyError:return self._json({"error":"저장된 작업을 찾지 못했습니다."},404)
+                except (H3Error,ValueError,TypeError) as error:return self._json({"error":str(error)},400)
             if p in ("/api/story", "/api/story/plan"):
                 return self._story_post()
             m = re.fullmatch(r"/api/jobs/([\w-]+)/retry", p)

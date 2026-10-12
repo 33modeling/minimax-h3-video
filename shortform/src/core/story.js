@@ -7,8 +7,8 @@ export const DEFAULT_SECONDS = 6;
 export const SCENE_MIN = 5;
 export const DURATION_MIN = 4;
 export const DURATION_MAX = 15;
-export const MAX_CLIPS = 40;
-export const MAX_TOTAL = 180;
+export const MAX_CLIPS = Infinity;
+export const MAX_TOTAL = Infinity;
 export const CAPTION_MAX = 120;
 const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'auto'];
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'];
@@ -31,17 +31,17 @@ export function readingSeconds(text) {
   return HANGUL.test(t) ? noSpace(t).length / 4 : words(t).length / 2.5;
 }
 
-// 장면 길이: JSON 값 → 글 읽는 시간 + 1.5초 → 기본 6초. 5~15초.
+// 전체 장면 길이는 보존한다. 모델 호출은 nativeDurations로 나눈다.
 export function autoSeconds(text = '', given = null) {
   if (given !== null && given !== undefined && given !== '') {
     const n = Number(given);
-    if (!Number.isFinite(n)) throw new StoryError(`seconds 는 숫자여야 합니다: ${JSON.stringify(given)}`);
-    return [Math.max(DURATION_MIN, Math.min(DURATION_MAX, Math.floor(n + 0.5))), 'JSON'];
+    if (!Number.isFinite(n) || n <= 0) throw new StoryError(`seconds 는 숫자여야 합니다: ${JSON.stringify(given)}`);
+    return [Math.max(DURATION_MIN, Math.floor(n + 0.5)), 'JSON'];
   }
   const r = readingSeconds(text);
   if (!r) return [DEFAULT_SECONDS, '기본'];
   const ko = HANGUL.test(text);
-  return [Math.max(SCENE_MIN, Math.min(DURATION_MAX, Math.ceil(r + 1.5))), `글 ${ko ? noSpace(text).length : words(text).length}${ko ? '자' : '단어'}`];
+  return [Math.max(SCENE_MIN, Math.ceil(r + 1.5)), `글 ${ko ? noSpace(text).length : words(text).length}${ko ? '자' : '단어'}`];
 }
 
 export function narrationLine(text) {
@@ -72,7 +72,7 @@ export const isMakerBook = (o) => isObj(o) && o.kind === 'batch' && Array.isArra
 // 숏폼 명세가 아니라 이야기 JSON 인가 (shorts/story.py is_story 와 같음)
 // 배열은 장면 목록일 때만 (["프롬프트", {prompt}]) — [1, 2] 같은 건 명세 오류로 알린다
 export const isStory = (o) => (Array.isArray(o) ? o.length > 0 && o.every((x) => typeof x === 'string' || (isObj(x) && ('prompt' in x || 'scene' in x)))
-  : isObj(o) && (isConti(o) || isMakerBook(o) || Array.isArray(o.clips)));
+  : isObj(o) && (Array.isArray(o.board?.scenes) || isConti(o) || isMakerBook(o) || Array.isArray(o.clips)));
 
 function contiRaw(o) {
   const b = bookOf(o);
@@ -170,6 +170,7 @@ export function loadStory(data, images = [], { narration = true, ratio = null, s
   if (typeof data === 'string') {
     try { data = JSON.parse(data.replace(/^﻿/, '')); } catch (e) { throw new StoryError(`JSON 을 읽을 수 없습니다: ${e.message}`); }
   }
+  if(isObj(data)&&Array.isArray(data.board?.scenes))data={title:data.board.title,ratio:data.brief?.ratio,clips:data.board.scenes.map(s=>({prompt:s.videoPrompt||s.imagePrompt||s.visual,title:s.title,seconds:s.duration,text:s.caption||''}))};
   let source, title, jratio, raw;
   if (isConti(data)) [source, [title, jratio, raw]] = ['conti', contiRaw(data)];
   else if (isMakerBook(data)) [source, [title, jratio, raw]] = ['book', makerRaw(data)];
@@ -219,23 +220,28 @@ export function slug(title) {
   return str(title).trim().replace(/[\\/:*?"<>|\s]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'short';
 }
 
+export function nativeDurations(total) {
+  if (total <= DURATION_MAX) return [total];
+  const count = Math.min(Math.ceil(total / 10), Math.floor(total / SCENE_MIN));
+  const base = Math.floor(total / count), remainder = total % count;
+  return Array.from({length:count},(_,i)=>base+(i<remainder?1:0));
+}
+
 // 반환: { spec, info: { title, source, total, unused_images, clips: [{id, label, seconds, image, auto}] } }
 export function storyToSpec(data, images = [], opts = {}) {
   const story = loadStory(data, images, opts);
   let secs = story.clips.map((c) => c.seconds);
   let total = secs.reduce((a, b) => a + b, 0);
-  if (total > MAX_TOTAL) {
-    secs = secs.map((s) => Math.max(4, Math.floor((s * MAX_TOTAL) / total)));
-    total = secs.reduce((a, b) => a + b, 0);
-  }
   const scenes = [];
   const captions = [];
   let t = 0;
   story.clips.forEach((c, i) => {
     const sec = secs[i];
-    const sc = { prompt: c.prompt, duration: sec, seed: c.seed };
-    if (c.image) sc.image = c.image;
-    scenes.push(sc);
+    nativeDurations(sec).forEach((duration,part)=>{
+      const sc = { prompt: c.prompt, duration, seed: c.seed + part };
+      if (c.image) sc.image = c.image;
+      scenes.push(sc);
+    });
     const pieces = captionPieces(c.text);
     const weights = pieces.map((p) => 2 + noSpace(p).length);
     const sum = weights.reduce((a, b) => a + b, 0);
@@ -247,7 +253,7 @@ export function storyToSpec(data, images = [], opts = {}) {
     });
     t += sec;
   });
-  const spec = { scenes, ratio: story.ratio, template: 'montage', fit: 'blur', title: story.title.slice(0, 80), max_duration: Math.min(MAX_TOTAL, total + 1), output: `${slug(story.title)}.mp4` };
+  const spec = { scenes, ratio: story.ratio, template: 'montage', fit: 'blur', title: story.title, max_duration: 0, output: `${slug(story.title)}.mp4` };
   if (captions.length) spec.captions = captions;
   const info = { title: story.title, source: story.source, total, unused_images: story.unused_images,
     clips: story.clips.map((c, i) => ({ id: c.id, label: c.label, seconds: secs[i], image: c.image, auto: c.auto })) };

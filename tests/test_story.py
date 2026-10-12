@@ -50,11 +50,11 @@ class StoryReadTest(unittest.TestCase):
     def test_seconds_follow_the_text(self):
         self.assertEqual(S.auto_seconds("숲 가장자리에 아기 고슴도치 토토가 살았어요.\n토토는 늘 혼자 놀았어요."), (10, "글 31자"))
         self.assertEqual(S.auto_seconds("안녕"), (5, "글 2자"))                       # 최소 5초
-        self.assertEqual(S.auto_seconds("가" * 200)[0], 15)                           # 장면 하나 상한
+        self.assertEqual(S.auto_seconds("가" * 200)[0], 52)                           # 읽는 시간이 잘리지 않는다
         self.assertEqual(S.auto_seconds("The little fox ran to the river and looked back"), (6, "글 10단어"))
         self.assertEqual(S.auto_seconds(""), (6, "기본"))
         self.assertEqual(S.auto_seconds("긴 글이어도", 12), (12, "JSON"))
-        self.assertEqual(S.auto_seconds("", 30)[0], 15)
+        self.assertEqual(S.auto_seconds("", 30)[0], 30)
         with self.assertRaises(H3Error):
             S.auto_seconds("", "열초")
 
@@ -110,11 +110,11 @@ class StoryReadTest(unittest.TestCase):
         self.assertEqual((st.ratio, st.clips[0].image, st.clips[0].seconds, st.clips[1].seconds, st.clips[1].seed), ("9:16", str(img), 8, 4, 42))
         self.assertIn("Voice-over", st.clips[0].prompt)
         for bad, msg in [("{oops", "JSON 을 읽을 수 없다"), ({"clips": [{"text": "x"}]}, "prompt 가 없다"), ({"foo": 1}, "장면을 찾지 못했다"),
-                         ({"clips": [{"prompt": "a", "image": "nope.png"}]}, "nope.png"), ([{"prompt": "a", "image": "x.svg"}], "x.svg"),
-                         (["a"] * 41, "최대 40개")]:
+                         ({"clips": [{"prompt": "a", "image": "nope.png"}]}, "nope.png"), ([{"prompt": "a", "image": "x.svg"}], "x.svg")]:
             with self.assertRaises(H3Error) as e:
                 S.load_story(bad, ["x.svg"] if "svg" in json.dumps(bad) else [], base=self.tmp)
             self.assertIn(msg, str(e.exception))
+        self.assertEqual(len(S.load_story(["a"] * 100).clips), 100)
         # 웹 요청은 JSON 에 적힌 경로로 이 컴퓨터의 파일을 읽지 않는다
         with self.assertRaises(H3Error):
             S.load_story({"clips": [{"prompt": "a", "image": str(img)}]}, [], local_paths=False)

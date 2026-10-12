@@ -1230,11 +1230,13 @@ el.planBtn.addEventListener('click', async () => {
       }
     }
     el.planOut.textContent = `Claude에게 기획을 요청하는 중…${sources.length ? ` (프레임 ${sources.reduce((a, s) => a + s.frames.length, 0)}장)` : ''} 1~2분 걸릴 수 있어요`;
+    const useQwen = document.querySelector('#llmModel').value === 'Qwen/Qwen3.8-27B';
     const res = await claudePlan({
       idea: el.idea.value,
       sources,
-      apiKey,
-      baseUrl: anthropicBase,
+      model:document.querySelector('#llmModel').value,
+      apiKey:useQwen?document.querySelector('#qwenLlmKey').value.trim():apiKey,
+      baseUrl:useQwen?document.querySelector('#qwenLlmUrl').value.trim():anthropicBase,
       signal: planAbort.signal,
       log: (t) => (el.planOut.textContent = t),
     });
