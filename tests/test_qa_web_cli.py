@@ -182,6 +182,53 @@ class CliFixesTest(CleanEnv):
         self.assertIn("작업 2/2(이야기-clip-02) 장면 1(video_7)", s)
         self.assertEqual(store.get("20261012-000002-bbbbbb").status, "failed")
 
+    def test_storybook_maker_zip_goes_to_json(self):
+        """동화책 만들기 '파일 받기' zip 이 영상 만들기(h3video json)에 그대로 들어가야 한다 (전에는 zip 을 프롬프트 글로 읽으려 했다)."""
+        import zipfile
+        os.environ["XDG_CACHE_HOME"] = str(self.tmp / "cache")
+        book = {"kind": "batch", "title": "달빛 토끼", "width": 1152, "height": 864, "items": [
+            {"id": "sheet-1", "kind": "sheet", "image": "images/sheet-1.png", "prompt": "sheet"},
+            {"id": "cover", "kind": "cover", "label": "표지", "image": "images/cover.png", "scene": "Cover"},
+            {"id": "page-01", "kind": "page", "label": "1쪽", "page": 1, "text": "토끼가 뛰었어요.", "image": "images/page-01.png", "scene": "A rabbit jumps"}]}
+        z = self.tmp / "달빛.zip"
+        with zipfile.ZipFile(z, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("book.json", json.dumps(book, ensure_ascii=False))
+            for n in ("sheet-1", "cover", "page-01"):
+                zf.writestr(f"images/{n}.png", png(self.tmp / f"{n}.png").read_bytes())
+            zf.writestr("index.html", "<html></html>")
+        code, out, err = run(str(z), "--list", "--output-dir", str(self.tmp / "o"))
+        self.assertEqual(code, 0, err)
+        self.assertIn("zip", err.splitlines()[0])
+        self.assertIn("장면 2개", err); self.assertIn("[cover]", out); self.assertIn("[page-01]", out)
+        self.assertIn("쓰지 않은 그림: sheet-1.png", err)
+        code, out, err = run(str(z), "--dry-run", "--output-dir", str(self.tmp / "o"))
+        self.assertEqual(code, 0, err)
+        self.assertIn(str(self.tmp / "cache" / "h3video" / "zip"), out)   # 푼 그림은 캐시에 (이어 하기에도 남게)
+        # 윈도우에서 만든 zip(이름 CP949, UTF-8 표시 없음)·deflate 도: 같은 길이의 영문 이름으로 쓰고 바이트를 CP949 이름으로 바꾼다
+        w = self.tmp / "win.zip"
+        names = {"aaaaaa.json": "이야기.json", "bbbb/1cc.png": "그림/1쪽.png"}
+        with zipfile.ZipFile(w, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("aaaaaa.json", json.dumps({"clips": [{"prompt": "고양이", "image": "1쪽.png"}]}))
+            zf.writestr("bbbb/1cc.png", png(self.tmp / "x.png").read_bytes())
+        raw = w.read_bytes()
+        for a, k in names.items():
+            self.assertEqual(len(a.encode()), len(k.encode("cp949")))
+            raw = raw.replace(a.encode(), k.encode("cp949"))
+        w.write_bytes(raw)
+        zw = story.unpack_zip(str(w))
+        self.assertEqual((Path(zw["json"]).name, [Path(p).name for p in zw["images"]]), ("이야기.json", ["1쪽.png"]))
+        st = story.load_story_file(str(w))
+        self.assertEqual(Path(st.clips[0].image).name, "1쪽.png")
+        z2 = story.unpack_zip(str(z))
+        self.assertTrue(z2["json"].endswith("book.json"))
+        self.assertEqual(sorted(Path(p).name for p in z2["images"]), ["cover.png", "page-01.png", "sheet-1.png"])
+        self.assertEqual(z2["skipped"], ["index.html"])
+        code, out, err = run(str(self.tmp / "nope.zip"))
+        self.assertEqual(code, 2); self.assertIn("zip 파일이 없다", err)
+        bad = self.tmp / "bad.zip"; bad.write_bytes(b"not a zip")
+        with self.assertRaises(H3Error):
+            story.unpack_zip(str(bad))
+
     def test_story_json_error_says_where(self):
         with self.assertRaises(H3Error) as e:
             story.load_story('{"clips": [\n  {"prompt": "a",}\n]}')

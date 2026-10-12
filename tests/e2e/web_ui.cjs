@@ -46,7 +46,7 @@ const visible = (page, sel) => page.locator(sel).first().isVisible();
 // 끌어다 놓기: 진짜 DataTransfer 로 drop 이벤트 (여러 파일·여러 종류를 한꺼번에)
 async function dropOn(page, sel, names) {
   const files = names.map(n => ({name: n, b64: fs.readFileSync(m(n)).toString('base64'),
-    type: n.endsWith('.png') ? 'image/png' : n.endsWith('.json') ? 'application/json' : n.endsWith('.wav') ? 'audio/wav' : n.endsWith('.mp4') ? 'video/mp4' : ''}));
+    type: n.endsWith('.png') ? 'image/png' : n.endsWith('.json') ? 'application/json' : n.endsWith('.wav') ? 'audio/wav' : n.endsWith('.mp4') ? 'video/mp4' : n.endsWith('.zip') ? 'application/zip' : ''}));
   await page.evaluate(({sel, files}) => {
     const dt = new DataTransfer();
     for (const f of files) {
@@ -239,6 +239,15 @@ async function dropOn(page, sel, names) {
     check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'story 장면 표: 가로 넘침 없음');
     await page.locator('.plan').scrollIntoViewIfNeeded();
     await page.screenshot({path: path.join(OUT, 'phone-story-plan.png')});
+    step = '동화책 만들기 zip';
+    await mode(page, 'text');
+    await dropOn(page, 'main', ['book.zip']);   // 글로 만들기 화면 아무 데나 놓아도 JSON 한번에로
+    await page.waitForFunction(() => document.querySelectorAll('.plan .srow').length === 2 && document.querySelector('.plan-head').textContent.includes('달빛 토끼'));
+    check(await page.getAttribute('.mode[data-mode="story"]', 'aria-selected') === 'true', 'zip 을 놓으면 JSON 한번에로 바뀐다');
+    check((await page.textContent('.drop[data-zone="json"] .nm')).includes('book.json') && await page.locator('#tiles-pages .tile').count() === 3, 'zip 안의 book.json 과 그림을 칸에 나눠 넣는다');
+    check(await page.locator('#tiles-pages .tile.unused').count() === 1, '쓰지 않는 그림(캐릭터 시트)은 흐리게');
+    check((await page.textContent('#toast-t')).includes('book.zip에서 4개를 꺼냈어요 (쓰지 않는 1개는 뺌)'), 'zip 안내: ' + await page.textContent('#toast-t'));
+    await page.screenshot({path: path.join(OUT, 'phone-zip.png')});
     await mode(page, 'text');
     await shot(page, 'phone-full');
     await page.close();

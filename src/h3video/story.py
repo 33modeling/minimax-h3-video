@@ -11,9 +11,13 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
 import re
+import shutil
+import zipfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -297,10 +301,78 @@ def load_story(data, images: list[str] | None = None, base: Path | None = None, 
     return Story(title=title, ratio=_ratio(ratio or jratio, any(c.image for c in clips)), clips=clips, source=source, unused_images=unused)
 
 
+MEDIA_EXTS = (".mp4", ".mov", ".webm", ".mkv", ".m4v", ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".oga", ".opus", ".flac")
+
+
+def _zip_name(info: zipfile.ZipInfo) -> str:
+    """zip 안의 이름: UTF-8 표시가 없으면 UTF-8 로 읽어 보고, 안 되면 윈도우 한글(CP949) — 웹 zip.js 와 같다."""
+    name = info.filename
+    if not info.flag_bits & 0x800:
+        raw = name.encode("cp437", errors="replace")
+        for enc in ("utf-8", "cp949"):
+            try:
+                name = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+    return name.replace("\\", "/")
+
+
+def unpack_zip(path: str) -> dict:
+    """동화책 만들기의 '파일 받기' zip(book.json + images/*, 압축 없이 담김)을 푼다 — 웹(숏폼 src/app/zip.js·영상 만들기 화면)과 같은 규칙:
+    폴더 경로는 버리고 이름만, 같은 이름은 처음 것, 숨김·__MACOSX·index.html 처럼 쓰지 않는 것은 뺀다. JSON 이 여럿이면 book.json.
+    푼 파일은 캐시 폴더($XDG_CACHE_HOME/h3video/zip/<zip 내용 해시>)에 둔다: 나중에 이어 하기(--resume)에도 그림이 남아 있게.
+    반환 {"json": 경로|None, "images": [...], "media": [영상·소리], "skipped": [zip 안 이름]}"""
+    p = Path(path).expanduser()
+    try:
+        zf = zipfile.ZipFile(p)
+    except zipfile.BadZipFile:
+        raise H3Error(f"zip 파일이 아니거나 끝이 잘렸다: {path}") from None
+    h = hashlib.sha1()
+    with p.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    out = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache").expanduser() / "h3video" / "zip" / h.hexdigest()[:16]
+    out.mkdir(parents=True, exist_ok=True)
+    jsons, images, media, skipped, seen = [], [], [], [], set()
+    with zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            full = _zip_name(info)
+            name = full.rsplit("/", 1)[-1]
+            low = name.lower()
+            junk = not name or name.startswith(".") or full.startswith("__MACOSX/")
+            usable = low.endswith(".json") or low.endswith(IMAGE_EXTS) or low.endswith(MEDIA_EXTS)
+            if junk or not usable or name in seen:
+                if not junk:
+                    skipped.append(full)
+                continue
+            if info.flag_bits & 0x1:
+                raise H3Error(f"{full}: 암호가 걸린 zip 은 열 수 없다. 풀어서 파일들을 넣어라")
+            seen.add(name)
+            dest = out / name
+            if not (dest.is_file() and dest.stat().st_size == info.file_size):
+                try:
+                    with zf.open(info) as src, open(dest, "wb") as fh:
+                        shutil.copyfileobj(src, fh)
+                except (zipfile.BadZipFile, NotImplementedError, RuntimeError) as e:
+                    raise H3Error(f"{full}: zip 안의 파일을 풀지 못했다 ({e})") from None
+            (jsons if low.endswith(".json") else images if low.endswith(IMAGE_EXTS) else media).append(str(dest))
+    book = next((j for j in jsons if Path(j).name.lower() == "book.json"), jsons[0] if jsons else None)
+    return {"json": book, "images": sorted(images, key=_natural), "media": media, "skipped": skipped}
+
+
 def load_story_file(path: str, images: list[str] | None = None, **kw) -> Story:
     p = Path(path).expanduser()
     if not p.is_file():
         raise H3Error(f"JSON 파일이 없다: {path}")
+    if p.suffix.lower() == ".zip":   # 동화책 만들기 '파일 받기' zip: 안의 book.json 과 그림을 그대로
+        z = unpack_zip(str(p))
+        if not z["json"]:
+            raise H3Error(f"zip 안에 JSON 이 없다: {path} (동화책 만들기의 '파일 받기' zip 에는 book.json 이 들어 있다)")
+        jp = Path(z["json"])
+        return load_story(jp.read_bytes(), z["images"] + expand_images(images or []), base=jp.parent, **kw)
     return load_story(p.read_bytes(), expand_images(images or []), base=p.resolve().parent, **kw)
 
 

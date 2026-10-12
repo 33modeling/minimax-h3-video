@@ -54,8 +54,8 @@ a{color:var(--acc)}
 .mode[aria-selected=true] svg{color:var(--acc)}
 .mode-desc{margin:10px 2px 0;font-size:13px;color:var(--mut)}
 .field{margin-top:14px}
-.lab{display:flex;align-items:baseline;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:6px}
-.lab .opt{font-weight:400;color:var(--mut);font-size:12.5px}
+.lab{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;font-size:13.5px;font-weight:600;margin-bottom:6px;word-break:keep-all}
+.lab .opt{font-weight:400;color:var(--mut);font-size:12.5px;word-break:normal}   /* 좁은 화면: 이름(JSON 파일)이 한 글자씩 끊기지 않고 설명이 아래로 */
 .help{font-size:12.5px;color:var(--mut);margin-top:5px}
 textarea,input[type=text],input[type=number],input[type=url],select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);min-height:40px}
 textarea{min-height:118px;resize:vertical;line-height:1.5}
@@ -91,6 +91,7 @@ details[open]>summary::before{transform:rotate(45deg)}
 .tile .cap{padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .cap b{font-weight:600}
 .tile .badge{position:absolute;left:5px;top:5px;background:rgba(0,0,0,.66);color:#fff;border-radius:6px;padding:1px 6px;font-size:11.5px}
+.tile.unused img{opacity:.4}
 .x{width:28px;height:28px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;display:grid;place-items:center;flex:none}
 .x svg{width:14px;height:14px}
 .tile .x{position:absolute;right:4px;top:4px}
@@ -286,7 +287,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
     </details>
     <div data-modes="story">
       <div class="field">
-        <div class="lab">JSON 파일 <span class="opt">동화책 콘티·동화책 만들기 book.json·장면 목록</span></div>
+        <div class="lab">JSON 파일 <span class="opt">동화책 콘티·동화책 만들기 book.json·zip·장면 목록</span></div>
         <div class="drop" data-zone="json" tabindex="0" role="button"></div>
       </div>
       <div class="field">
@@ -390,7 +391,7 @@ const ZONES = {
   first: {kinds: ['image'], multi: false, accept: 'image/*', big: '그림 넣기', small: '끌어다 놓거나 눌러서 고르기'},
   last: {kinds: ['image'], multi: false, accept: 'image/*', big: '그림 넣기', small: '끝 장면 (선택)'},
   ref: {kinds: ['image', 'video', 'audio'], multi: true, accept: 'image/*,video/*,audio/*', big: '사진·영상·소리 넣기', small: '여러 개를 끌어다 놓거나 눌러서 고르기 · 영상·소리는 2~15초'},
-  json: {kinds: ['json'], multi: false, accept: '.json,application/json', big: 'JSON 파일 넣기', small: '끌어다 놓거나 눌러서 고르기'},
+  json: {kinds: ['json'], multi: false, accept: '.json,.zip,application/json,application/zip', big: 'JSON 파일 넣기', small: 'JSON, 또는 동화책 만들기의 "파일 받기" zip (그림까지 한 번에)'},
   pages: {kinds: ['image'], multi: true, accept: 'image/*', big: '쪽 그림 넣기', small: '여러 장을 한꺼번에 끌어다 놓기'},
 };
 const LIMITS = {image: 9, video: 3, audio: 3, total: 12};
@@ -398,18 +399,79 @@ const KO = {image: '사진', video: '영상', audio: '소리', json: 'JSON'};
 const files = {first: [], last: [], ref: [], json: [], pages: []};
 function kindOf(f) {
   const t = f.type || '', n = (f.name || '').toLowerCase();
+  if (n.endsWith('.zip') || /^application\/(x-)?zip/.test(t)) return 'zip';
   if (t.includes('json') || n.endsWith('.json')) return 'json';
   if (t.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/.test(n)) return 'image';
   if (t.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)$/.test(n)) return 'audio';
   if (t.startsWith('video/') || /\.(mp4|mov|webm|mkv|m4v)$/.test(n)) return 'video';
   return 'other';
 }
-function addFiles(z, list) {   // 놓은 곳이 조금 달라도 제자리로: JSON+쪽 그림 한꺼번에, 첫 장면 칸에 그림 두 장
+// zip 풀기(동화책 만들기 '파일 받기': book.json + images/*, 압축 없이 담김). 저장(0)·deflate(8)만 — 숏폼 src/app/zip.js 와 같은 규칙:
+// 폴더 경로는 버리고 이름만, 같은 이름은 처음 것, 숨김·__MACOSX 는 빼고, JSON·그림이 아닌 것(index.html 등)은 센다.
+const IMG_TYPE = {png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp'};
+async function unzip(file) {
+  const u8 = new Uint8Array(await file.arrayBuffer()), dv = new DataView(u8.buffer);
+  const bad = what => new Error(`${file.name}: ${what}`);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 0xffff); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw bad('zip 파일이 아니거나 끝이 잘렸어요');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  if (count === 0xffff || p === 0xffffffff) throw bad('아주 큰 zip은 못 열어요. 풀어서 파일들을 넣어 주세요');
+  const files = [], seen = new Set();
+  let skipped = 0;
+  for (let k = 0; k < count; k++) {
+    if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) throw bad('zip 목록이 깨졌어요');
+    const flags = dv.getUint16(p + 8, true), method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true),
+      size = dv.getUint32(p + 24, true), off = dv.getUint32(p + 42, true), nlen = dv.getUint16(p + 28, true);
+    const nb = u8.subarray(p + 46, p + 46 + nlen);
+    p += 46 + nlen + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+    let full;
+    try { full = new TextDecoder('utf-8', {fatal: !(flags & 0x800)}).decode(nb); }
+    catch (e) { try { full = new TextDecoder('euc-kr').decode(nb); } catch (e2) { full = String.fromCharCode(...nb); } }
+    full = full.replace(/\\/g, '/');
+    const name = full.split('/').pop(), ext = (name.split('.').pop() || '').toLowerCase();
+    if (!name || name.startsWith('.') || full.startsWith('__MACOSX/')) continue;
+    const kind = ext === 'json' ? 'json' : IMG_TYPE[ext] ? 'image' : null;
+    if (!kind || seen.has(name)) { skipped++; continue; }
+    if (flags & 1) throw bad(`${name}: 암호가 걸린 zip은 열 수 없어요`);
+    if (off + 30 > u8.length || dv.getUint32(off, true) !== 0x04034b50) throw bad(`${name}: zip 안의 파일 위치가 깨졌어요`);
+    const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true);
+    const raw = u8.subarray(start, start + csize);
+    let data;
+    if (method === 0) data = raw.slice();
+    else if (method === 8 && typeof DecompressionStream === 'function') {
+      data = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    } else throw bad(`${name}: 이 압축 방식은 못 풀어요. zip을 풀어서 파일들을 넣어 주세요`);
+    if (data.length !== size) throw bad(`${name}: zip 안의 파일이 깨졌어요`);
+    seen.add(name);
+    files.push(new File([data], name, {type: kind === 'json' ? 'application/json' : IMG_TYPE[ext]}));
+  }
+  return {files, skipped};
+}
+async function addZips(list) {
+  let rest = list.filter(f => kindOf(f) !== 'zip');
+  const notes = [];
+  for (const zf of list.filter(f => kindOf(f) === 'zip')) {
+    try {
+      const r = await unzip(zf);
+      rest.push(...r.files);
+      notes.push(`${zf.name}에서 ${r.files.length}개를 꺼냈어요${r.skipped ? ` (쓰지 않는 ${r.skipped}개는 뺌)` : ''}`);
+    } catch (e) { toast(e.message); return; }
+  }
+  const js = rest.filter(f => kindOf(f) === 'json');   // JSON 이 여럿이면 book.json (동화책 만들기)
+  if (js.length > 1) { const keep = js.find(f => f.name.toLowerCase() === 'book.json') || js[0]; rest = rest.filter(f => kindOf(f) !== 'json' || f === keep); }
+  if (mode !== 'story') setMode('story');
+  if (rest.length) addFiles('json', rest);
+  toast(notes.join(' · ') || 'zip에 쓸 파일이 없어요');
+}
+function addFiles(z, list) {   // 놓은 곳이 조금 달라도 제자리로: JSON+쪽 그림 한꺼번에, 첫 장면 칸에 그림 두 장, zip 은 풀어서
   list = [...list];
+  if (list.some(f => kindOf(f) === 'zip')) { addZips(list); return; }
   const by = k => list.filter(f => kindOf(f) === k);
   if (z === 'json' || z === 'pages') {
     const js = by('json'), rest = list.filter(f => kindOf(f) !== 'json');
-    if (js.length && rest.length) { addTo('json', js); addTo('pages', rest); return; }
+    if (js.length && rest.length) { addTo('pages', rest); addTo('json', js); return; }   // 그림 먼저: 장면 표를 한 번에 맞게
     if (js.length) return addTo('json', js);
     if (z === 'json' && rest.length && by('image').length) return addTo('pages', rest);
   }
@@ -480,11 +542,13 @@ function renderZone(z) {
     for (const it of numbered('ref')) if (it.dur && (it.dur < 2 || it.dur > 15)) w.push(['', `${KO[it.kind]} ${it.no}은 ${it.dur.toFixed(1)}초예요. 2~15초가 좋아요.`]);
     $('#warns-ref').innerHTML = w.map(([c2, t]) => `<div class="warn ${c2}">${esc(t)}</div>`).join('');
   }
-  if (z === 'pages') $('#tiles-pages').innerHTML = list.map((it, i) => tile(z, it, i, '')).join('');
+  // 쪽 그림: 장면 표에서 맞는 쪽이 없는 그림(캐릭터 시트 등)은 흐리게 '안 씀'
+  if (z === 'pages') $('#tiles-pages').innerHTML = list.map((it, i) => tile(z, it, i, storyUnused.has(it.file.name.toLowerCase()) ? '안 씀' : '')).join('');
 }
+let storyUnused = new Set();
 function tile(z, it, i, badge) {
   const media = it.kind === 'image' ? `<img src="${it.url}" alt="" loading="lazy">` : `<span class="media">${icon(it.kind)}</span>`;
-  return `<div class="tile">${media}${badge ? `<span class="badge">${esc(badge)}</span>` : ''}
+  return `<div class="tile${badge === '안 씀' ? ' unused' : ''}">${media}${badge ? `<span class="badge">${esc(badge)}</span>` : ''}
     <button type="button" class="x" data-rm="${z}:${i}" aria-label="${esc(it.file.name)} 빼기">${icon('x')}</button>
     <div class="cap" title="${esc(it.file.name)}">${esc(it.file.name)}${it.kind !== 'image' ? `<br><b>${durText(it).slice(3) || (it.durErr ? '길이 모름' : '길이 확인 중')}</b>` : ''}</div></div>`;
 }
@@ -512,11 +576,11 @@ window.addEventListener('drop', e => {
   if (!list.length) return;
   const kinds = new Set(list.map(kindOf));
   if (mode === 'text') {
-    const to = kinds.has('json') ? 'story' : (kinds.has('video') || kinds.has('audio')) ? 'ref' : kinds.has('image') ? 'fl' : null;
-    if (!to) { toast('그림·영상·소리·JSON 파일만 넣을 수 있어요'); return; }
+    const to = kinds.has('json') || kinds.has('zip') ? 'story' : (kinds.has('video') || kinds.has('audio')) ? 'ref' : kinds.has('image') ? 'fl' : null;
+    if (!to) { toast('그림·영상·소리·JSON·zip 파일만 넣을 수 있어요'); return; }
     setMode(to);
   }
-  addFiles({fl: 'first', ref: 'ref', story: kinds.has('json') ? 'json' : 'pages'}[mode], list);
+  addFiles({fl: 'first', ref: 'ref', story: kinds.has('json') || kinds.has('zip') ? 'json' : 'pages'}[mode], list);
 });
 
 // ---------- 길이 → 장면 나누기 ----------
@@ -573,6 +637,7 @@ function storyForm(forPlan) {
 async function storyPlan() {
   const box = $('#plan');
   storyData = null; updateGo();
+  if (storyUnused.size) { storyUnused = new Set(); renderZone('pages'); }
   if (!files.json.length) { box.innerHTML = ''; return; }
   const seq = ++storySeq;
   box.innerHTML = '<div class="help">장면을 나누는 중…</div>';
@@ -593,6 +658,8 @@ async function storyPlan() {
   updateGo();
 }
 function renderStoryPlan(d) {
+  storyUnused = new Set((d.unused_images || []).map(n => n.toLowerCase()));
+  renderZone('pages');
   const byName = new Map(files.pages.map(it => [it.file.name.toLowerCase(), it.url]));
   const missing = d.clips.filter(c => !c.image);
   const rows = d.clips.map((c, i) => {

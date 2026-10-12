@@ -53,6 +53,17 @@ class WebBrowserTest(unittest.TestCase):
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\0\0" * 16000 * 3)
         (media / "clip.mp4").write_bytes(mock_server.fake_mp4())
         (media / "toto.json").write_text(json.dumps(CONTI, ensure_ascii=False), encoding="utf-8")
+        # 동화책 만들기 '파일 받기' zip 처럼: book.json + images/ (압축 없이), 캐릭터 시트·index.html 도 들어 있다
+        import zipfile
+        book = {"kind": "batch", "title": "달빛 토끼", "width": 1152, "height": 864, "items": [
+            {"id": "sheet-1", "kind": "sheet", "image": "images/sheet-1.png", "prompt": "sheet"},
+            {"id": "page-01", "kind": "page", "label": "1쪽", "page": 1, "text": "토끼가 뛰었어요.", "image": "images/page-01.png", "scene": "A rabbit jumps"},
+            {"id": "page-02", "kind": "page", "label": "2쪽", "page": 2, "text": "잘 자요.", "image": "images/page-02.png", "scene": "The rabbit sleeps"}]}
+        with zipfile.ZipFile(media / "book.zip", "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("book.json", json.dumps(book, ensure_ascii=False))
+            for n in ("sheet-1", "page-01", "page-02"):
+                zf.writestr(f"images/{n}.png", (media / "first.png").read_bytes())
+            zf.writestr("index.html", "<html></html>")
 
         fl, fl_state, fl_url = mock_server.start(steps=3)
         ref, _, ref_url = mock_server.start(steps=3)

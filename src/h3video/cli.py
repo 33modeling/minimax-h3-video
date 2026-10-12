@@ -126,6 +126,7 @@ CMD_EXAMPLES = {
               ("prompts.txt: 영상마다 --- 줄로 나누고, 블록 위쪽 'seconds: 8' 'first: a.png' 줄은 그 영상의 옵션", "")],
     "json": [("h3video json 토토.json --list", "만들지 않고 장면·길이·그림만 보기"),
              ("h3video json 토토.json pages/ -o 토토.mp4", "그림 폴더와 함께 → 이어 붙인 영상"),
+             ("h3video json 토토.zip", "동화책 만들기의 '파일 받기' zip 그대로 (book.json + 쪽 그림)"),
              ("h3video json --resume last", "실패한·안 된 장면만 다시 하고 이어 붙이기"),
              ("명령 없이도: h3video 토토.json pages/", "")],
     "plan": [("h3video plan 45", "45초 → 장면 몇 개로 나뉘는지")],
@@ -1062,7 +1063,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_video_opts(p)
 
     p = cmd("json", cmd_json, "JSON 하나 + 그림들로 한 번에: 장면마다 영상을 만들어 이어 붙인다 (장면 수·길이는 JSON 에서, -s 불필요)")
-    p.add_argument("file", nargs="?", help="동화책 콘티 JSON, 동화책 만들기 book.json, 또는 {\"clips\": [{\"prompt\", \"image\", \"text\", \"seconds\"}]}")
+    p.add_argument("file", nargs="?", help="동화책 콘티 JSON, 동화책 만들기 book.json(또는 '파일 받기' zip 그대로), "
+                   "또는 {\"clips\": [{\"prompt\", \"image\", \"text\", \"seconds\"}]}")
     p.add_argument("images", nargs="*", help="첫 프레임 그림 파일이나 폴더 (이름 page-03·03 → 3쪽, cover → 표지, 나머지는 순서대로)")
     g = p.add_argument_group("장면")
     g.add_argument("--list", action="store_true", help="만들지 않고 장면·길이·그림·프롬프트만 보기")
@@ -1140,15 +1142,18 @@ def route(argv: list[str]) -> tuple[list[str], str | None]:
         return head + ["gen", tok] + rest, "[자동] 명령 없이 옵션부터 써서 h3video gen (영상 만들기)으로 실행한다"
     p = Path(tok).expanduser()
     low = tok.lower()
-    media = IMAGE_EXTS + VIDEO_EXTS + AUDIO_EXTS + (".json",)
+    media = IMAGE_EXTS + VIDEO_EXTS + AUDIO_EXTS + (".json", ".zip")
     if not p.is_file() and low.endswith(media) and not any(c.isspace() for c in tok):
         # 그림·영상·소리·JSON 파일 이름인데 없다 → 오타일 것: 그 이름을 글로 영상을 만들거나 옵션 오류로 헷갈리게 하지 않는다
-        what = "JSON" if low.endswith(".json") else "그림" if low.endswith(IMAGE_EXTS) else "영상" if low.endswith(VIDEO_EXTS) else "소리"
+        what = ("JSON" if low.endswith(".json") else "zip" if low.endswith(".zip") else "그림" if low.endswith(IMAGE_EXTS)
+                else "영상" if low.endswith(VIDEO_EXTS) else "소리")
         raise UnknownCommand(f"{what} 파일이 없다: {tok}" + similar_files(tok)
                              + f"\n  글로 만들려면 따옴표로: h3video gen \"{tok}\"")
     if p.is_file():
         if low.endswith(".json"):
             return head + ["json", tok] + rest, "[자동] JSON 파일이라 h3video json (장면마다 만들어 이어 붙이기)으로 실행한다"
+        if low.endswith(".zip"):   # 동화책 만들기 '파일 받기' zip (book.json + 쪽 그림)
+            return head + ["json", tok] + rest, "[자동] zip 파일이라 안의 JSON 과 그림으로 h3video json 을 실행한다"
         if low.endswith(IMAGE_EXTS):
             extra, note = ["--first", tok], "[자동] 그림 파일이라 h3video gen --first (이 그림에서 시작)로 실행한다"
             if rest and Path(rest[0]).expanduser().is_file() and rest[0].lower().endswith(IMAGE_EXTS):
