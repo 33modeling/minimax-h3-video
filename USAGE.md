@@ -69,7 +69,9 @@ bash scripts/down.sh                 # 다른 창에서 H3 서버 끄기 (웹 UI
 ## 4. 웹 UI·숏폼
 
 - 웹 UI: 다른 창에서 `bash scripts/web.sh` (허브 숏폼 제작에서 부르면 `--cors https://33modeling.pages.dev`). 화면에 나오는 `ssh -N -L …` 를 PC 에서 실행 → 브라우저 `http://127.0.0.1:8790`. 영상은 H3 서버(`up.sh`)가 떠 있어야 만들어진다
-- JSON 한번에: 웹 UI 왼쪽 아래 "JSON 한번에"에 동화책 콘티 JSON 과 쪽 그림을 넣으면 장면마다 영상을 만들어 이어 붙인다(CLI 는 `h3video json`, [VIDEO.md](VIDEO.md#json-하나로-한-번에-그림책장면-목록))
+- 웹 UI 를 허브(https://33modeling.pages.dev)처럼 다른 주소에서 열면 위쪽 **서버 주소** 칸에 `http://localhost:8790` 처럼 적는다(브라우저에 기억됨). 이때 웹 UI 는 `bash scripts/web.sh --cors https://33modeling.pages.dev` 로 띄운다
+- 서버가 꺼져 있으면 웹 UI 위쪽에 무엇을 켜야 하는지 한 줄로 나온다. CLI 는 `h3video doctor`
+- JSON 한번에: 웹 UI 위쪽 "JSON 한번에"를 고르고 동화책 콘티 JSON 과 쪽 그림을 넣으면 장면 표가 나오고, 만들기를 누르면 장면마다 영상을 만들어 이어 붙인다(CLI 는 `h3video json`, [VIDEO.md](VIDEO.md#json-하나로-한-번에-그림책장면-목록))
 - 터미널 UI: `source scripts/cluster_env.sh && h3video tui`
 - 숏폼(자막·음악·템플릿 합성): [shortform/USAGE.md](shortform/USAGE.md)
 
@@ -95,6 +97,7 @@ bash scripts/down.sh                 # 다른 창에서 H3 서버 끄기 (웹 UI
 ## 6. 바꿀 수 있는 것 (환경 변수)
 
 리포 루트의 `.cluster_env.local.sh`(git 에 안 올라감)에 적으면 매번 적용된다.
+CLI 의 서버 주소·결과 폴더는 환경 변수 없이 한 번 저장해 둘 수도 있다: `h3video config set endpoint http://127.0.0.1:30010` (`ref-endpoint`, `output-dir`, `inbox-dir` 도). 파일은 `~/.config/h3video/config.json`, 순서는 명령 옵션 > 환경 변수 > 저장한 값 > 기본값. 지금 값은 `h3video config`.
 
 | 변수 | 기본 | 뜻 |
 |---|---|---|
@@ -110,3 +113,5 @@ bash scripts/down.sh                 # 다른 창에서 H3 서버 끄기 (웹 UI
 ```bash
 python3 -m unittest discover -s tests       # 모의 서버로 CLI·서버 요청 처리 전 구간
 ```
+
+웹 UI 브라우저 확인(`tests/test_web_browser.py`)은 node 와 Playwright 가 있을 때만 돈다(`H3_PLAYWRIGHT=<playwright 모듈 경로>`, 없으면 `shortform/node_modules/playwright-core` + google-chrome). 스크린샷을 남기려면 `H3_E2E_OUT=폴더`.

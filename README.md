@@ -38,9 +38,11 @@ scripts/stop.sh / health.sh / sync_to_cluster.sh
 src/h3video/spec.py      # 사양 상수, 장면 분할
 src/h3video/client.py    # /v1/videos 제출·폴링·다운로드
 src/h3video/jobs.py      # 작업 큐 + 장면 체인(마지막 프레임 → 다음 장면 첫 프레임, ffmpeg concat)
-src/h3video/web.py+ui.html  # 로컬호스트 웹 UI
+src/h3video/web.py+ui.html  # 로컬호스트 웹 UI (tests/e2e/web_ui.cjs 로 브라우저 확인)
+src/h3video/config.py    # h3video config: 서버 주소·결과 폴더 저장
+src/h3video/hints.py     # 서버가 꺼졌을 때 할 일, 쉬운 오류 문구, 작업 → CLI 명령 (웹·CLI 공용)
 src/h3video/tui.py       # 터미널 UI (curses) — tmux 안에서 h3video tui
-src/h3video/cli.py       # h3video spec|health|plan|gen|ref|status|fetch|web
+src/h3video/cli.py       # h3video gen|json|batch|ref|ir|plan|jobs|show|fetch|status|health|doctor|config|spec|web|tui
 tests/                   # 모의 SGLang 서버로 CPU 에서 전 구간 검증
 shortform/               # 숏폼 제작: shorts CLI(파이썬) + 웹(Vite, 허브 '숏폼 제작') — h3video shorts ...
 ```
@@ -85,6 +87,8 @@ pip install -e .            # 또는 PYTHONPATH=src
 h3video web --port 8790     # http://127.0.0.1:8790
 ```
 
+웹 UI: 위쪽에서 만드는 방법(글 · 그림으로 시작 · 참고 자료 · JSON 한번에)을 고르면 그 칸만 나오고, 오른쪽 카드에서 진행·재생·받기·같은 설정으로 다시·명령어로 보기를 한다. 자세한 것은 [VIDEO.md](VIDEO.md#웹-ui).
+
 주의: `fl2va` 의 첫/끝 프레임과 `ref2va` 레퍼런스는 `file://` 경로를 **서버 프로세스**가 읽는다. 로컬에서 UI 를 띄우면 업로드 파일이
 서버에 보이지 않으므로, 이미지·레퍼런스를 쓸 때는 웹 UI 를 클러스터 노드에서 띄우고(`h3video web` 후 8790 포트도 포워딩)
 `H3_INBOX_DIR` 이 group-volume 안이면 자동으로 그리로 복사된다. 텍스트만 쓰는 t2va 는 어디서 띄워도 된다.
@@ -114,6 +118,10 @@ source scripts/cluster_env.sh && h3video tui     # 클러스터 노드 tmux 안�
 ## CLI
 
 ```bash
+h3video                                       # 자주 쓰는 명령 몇 개 (전부는 h3video --help)
+h3video "프롬프트" -s 8                        # 명령 없이도: 글 → gen, 그림 → gen --first, .json → json
+h3video doctor                                # 서버·폴더·ffmpeg 점검, 안 되면 할 일
+h3video config set endpoint http://127.0.0.1:30010   # 서버 주소 한 번 저장 (환경 변수 없이)
 h3video health                                # 서버 확인
 h3video plan 45                               # 45초 → [9, 9, 9, 9, 9]
 h3video gen "프롬프트" -s 8 -r 16:9 -o out/     # 8초, out/ 에도 저장
@@ -128,7 +136,7 @@ h3video jobs / h3video show last              # 지난 작업, 마지막 작업 
 h3video fetch <video_id> [--ref] -o x.mp4     # 서버에서 받기 (ref2va 는 --ref)
 ```
 
-결과 mp4 경로만 표준 출력으로 나오고, 종료 코드는 0 성공·1 실패·2 옵션 오류·130 Ctrl+C. 자세한 것은 [VIDEO.md](VIDEO.md).
+결과 mp4 경로만 표준 출력으로 나오고(`--open` 이면 바로 재생), 종료 코드는 0 성공·1 실패·2 옵션 오류·130 Ctrl+C. 터미널에서는 진행이 한 줄로 고쳐 써지고, Ctrl+C 로 멈추면 이어 하는 명령(`h3video fetch …`, `h3video json --resume …`)을 알려 준다. 자세한 것은 [VIDEO.md](VIDEO.md).
 
 ## 프롬프트 요령
 
