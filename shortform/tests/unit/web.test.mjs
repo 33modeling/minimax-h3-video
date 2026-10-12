@@ -17,7 +17,7 @@ test('파일 맞추기: 이름이 맞는 파일은 그 자리, 남는 영상은 
   assert.deepEqual(m.spec.sources, ['a.mp4', 'extra.mov']);
   assert.equal(m.spec.bgm, 'song.mp3');
   assert.equal(m.roles['base.mp4'], '기본 영상');
-  assert.equal(m.roles['extra.mov'], '소스 2');
+  assert.equal(m.roles['extra.mov'], '클립 2');
   assert.deepEqual(m.missing, []);
   assert.deepEqual(matchFiles({ base: 'x.mp4' }, []).missing, ['x.mp4']);
 });

@@ -1,4 +1,4 @@
-// 두 번째 칸에서 고른 파일들을 명세에 맞춘다(순수 함수 — node 테스트가 직접 부른다).
+// 칸 2·3·4 에 넣은 파일들을 명세에 맞춘다(순수 함수 — node 테스트가 직접 부른다).
 // 명세가 이름으로 가리키는 파일은 그 자리(base/sources/bgm)에 쓰고, 이름이 안 맞는 영상은
 // sources 뒤에 붙이며, 이름이 안 맞는 음악 파일은 배경음이 비어 있을 때만 bgm 으로 쓴다.
 import { attachFiles, baseName, mediaPath, referencedPaths, isImagePath } from '../core/spec.js';
@@ -38,10 +38,10 @@ export function matchFiles(spec, files) {
     if (!roles[b]) roles[b] = role;
   };
   setRole(mediaPath(next.base), '기본 영상');
-  (next.sources || []).forEach((m, i) => setRole(mediaPath(m), next.prompt || next.scenes ? `AI 참조 ${i + 1}` : `소스 ${i + 1}`));
-  (next.scenes || []).forEach((s, i) => (s.sources || []).forEach((m) => setRole(mediaPath(m), `장면 ${i + 1} 참조`)));
+  (next.sources || []).forEach((m, i) => setRole(mediaPath(m), next.prompt || next.scenes ? `AI 참고 ${i + 1}` : `클립 ${i + 1}`));
+  (next.scenes || []).forEach((s, i) => (s.sources || []).forEach((m) => setRole(mediaPath(m), `장면 ${i + 1} 참고`)));
   (next.scenes || []).forEach((s, i) => setRole(s.image, `장면 ${i + 1} 첫 프레임`));
-  setRole(next.image, '첫 프레임 이미지');
+  setRole(next.image, '첫 장면 그림');
   setRole(next.bgm, '배경음');
   const missing = referencedPaths(next).map(baseName).filter((b) => !have.has(b));
   const unused = files.map((f) => baseName(f.name)).filter((b) => !roles[b]);

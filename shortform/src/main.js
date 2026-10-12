@@ -5,8 +5,9 @@ import { plan as claudePlan } from './core/claude.js';
 import { matchFiles, fileFor, outputName, kindOf } from './app/match.js';
 import { isStory, storyToSpec } from './core/story.js';
 import { EXAMPLE_JOB, EXAMPLES } from './app/example.js';
-import { StatusView, notifyDone } from './app/status.js';
-import { Tour, tourSeen, setupTips } from './app/tour.js';
+import { StatusView, notifyDone, fmtSec } from './app/status.js';
+import { Tour, tourSeen, setupTips, hintDismissed, dismissHint } from './app/tour.js';
+import { isJsonFile, isZipFile, isMediaFile, zipToFiles, pickJson, sortDropped } from './app/drop.js';
 import { checkDecodable, StillFrames, SequentialFrames, mixAudio } from './render/media.js';
 import { prepareSegments, drawFrame, frameCount } from './render/draw.js';
 import { pickEngine, exportVideo, Cancelled } from './render/export.js';
@@ -43,7 +44,9 @@ const LS = {
 
 const state = {
   jsonText: '',
+  jsonLabel: '', // 1번 칸에 보일 이름(파일 이름·직접 입력·예시 등)
   files: [],
+  match: null,
   job: null,
   mixed: null,
   still: null,
@@ -80,27 +83,111 @@ function fmtSize(n) {
   return `${Math.max(1, Math.round(n / 1024))}KB`;
 }
 
-function renderFileList(match) {
-  const items = [];
-  for (const f of state.files) {
-    const role = match ? match.roles[baseName(f.name)] : null;
-    items.push({ name: f.name, meta: fmtSize(f.size), role: role || (match ? '쓰지 않음' : ''), cls: role ? 'ok' : 'idle' });
+// ---------- 파일 칸 표시: 칸마다 파일 칩(그림·이름·쓰이는 곳·빼기) ----------
+const thumbs = new Map(); // File → { url, el } (설정을 바꿀 때마다 다시 읽지 않게 재사용)
+function thumbFor(f) {
+  let t = thumbs.get(f);
+  if (!t) {
+    const kind = kindOf(f);
+    t = { url: null, el: document.createElement('span') };
+    t.el.className = 'chip-thumb';
+    t.el.dataset.kind = kind;
+    if (kind === 'image' || kind === 'video') {
+      t.url = URL.createObjectURL(f);
+      const m = document.createElement(kind === 'image' ? 'img' : 'video');
+      if (kind === 'image') {
+        m.alt = '';
+        m.decoding = 'async';
+      } else {
+        m.muted = true;
+        m.preload = 'metadata';
+        m.tabIndex = -1;
+      }
+      m.src = kind === 'video' ? `${t.url}#t=0.5` : t.url;
+      m.addEventListener('error', () => m.remove(), { once: true });
+      t.el.append(m);
+    }
+    thumbs.set(f, t);
   }
-  for (const m of match ? match.missing : []) items.push({ name: m, meta: '', role: '파일 칸에 없음', cls: 'missing' });
-  el.fileList.replaceChildren(
-    ...items.map((it) => {
-      const li = document.createElement('li');
-      li.className = it.cls;
-      const name = document.createElement('span');
-      name.className = 'fname';
-      name.textContent = it.name;
-      const role = document.createElement('span');
-      role.className = 'frole';
-      role.textContent = [it.role, it.meta].filter(Boolean).join(' · ');
-      li.append(name, role);
-      return li;
-    }),
-  );
+  return t.el;
+}
+function pruneThumbs() {
+  const live = new Set([...slotFiles.media, ...slotFiles.image, ...slotFiles.refs]);
+  for (const [f, t] of thumbs) {
+    if (live.has(f)) continue;
+    if (t.url) URL.revokeObjectURL(t.url);
+    thumbs.delete(f);
+  }
+}
+
+function chipEl({ file = null, name, role = '', meta = '', cls = 'idle', slot, kind = null, removable = true }) {
+  const li = document.createElement('li');
+  li.className = `chip ${cls}`;
+  li.dataset.name = name;
+  let th;
+  if (file) th = thumbFor(file);
+  else {
+    th = document.createElement('span');
+    th.className = 'chip-thumb';
+    th.dataset.kind = kind || 'missing';
+  }
+  const body = document.createElement('span');
+  body.className = 'chip-body';
+  const nm = document.createElement('span');
+  nm.className = 'chip-name';
+  nm.textContent = name;
+  nm.title = name;
+  const rl = document.createElement('span');
+  rl.className = 'chip-role';
+  rl.textContent = [role, meta].filter(Boolean).join(' · ');
+  body.append(nm, rl);
+  li.append(th, body);
+  if (removable) {
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'chip-x';
+    x.textContent = '×';
+    x.setAttribute('aria-label', `${name} 빼기`);
+    x.title = '빼기';
+    x.addEventListener('click', () => removeFile(slot, file ? file.name : null));
+    li.append(x);
+  }
+  return li;
+}
+
+function roleOf(f, match) {
+  if (story.src && story.unused.has(f.name)) return { role: '쓰지 않음 · 맞는 쪽이 없어요', cls: 'idle' };
+  if (!match) return { role: state.jsonText.trim() ? '' : 'JSON을 넣으면 쓰일 곳이 정해져요', cls: 'idle' };
+  const r = match.roles[baseName(f.name)];
+  return r ? { role: r, cls: 'ok' } : { role: '쓰지 않음', cls: 'idle' };
+}
+
+function renderSlots(match = state.match) {
+  state.match = match;
+  const json = [];
+  if (state.jsonText.trim() || story.src) {
+    let role = '작업 JSON';
+    let cls = 'ok';
+    if (story.src) role = story.note && story.note.level === 'error' ? '이야기 JSON · 바꾸지 못함' : `이야기 JSON → 장면 ${story.scenes}개`;
+    try {
+      if (!story.src) parseJsonText();
+    } catch {
+      role = 'JSON 문법 오류';
+    }
+    if (/오류|못함/.test(role)) cls = 'missing';
+    json.push(chipEl({ name: state.jsonLabel || '직접 입력', role, cls, slot: 'json', kind: 'json' }));
+  }
+  const files = (slot) => slotFiles[slot].map((f) => chipEl({ file: f, name: f.name, meta: fmtSize(f.size), slot, ...roleOf(f, match) }));
+  const missing = (match ? match.missing : []).map((m) => chipEl({ name: m, role: '빠짐 · 이 칸에 같이 넣어 주세요', cls: 'missing', slot: 'media', removable: false }));
+  el.chipsJson.replaceChildren(...json);
+  el.chipsMedia.replaceChildren(...files('media'), ...missing);
+  el.chipsImage.replaceChildren(...files('image'));
+  el.chipsRefs.replaceChildren(...files('refs'));
+  for (const [id, n] of [['slotJson', json.length], ['slotMedia', slotFiles.media.length + missing.length], ['slotImage', slotFiles.image.length], ['slotRefs', slotFiles.refs.length]]) {
+    el[id].classList.toggle('filled', n > 0);
+  }
+  el.slotMedia.classList.toggle('has-missing', missing.length > 0);
+  pruneThumbs();
 }
 
 // ---------- 설정 ↔ JSON ----------
@@ -134,8 +221,18 @@ function showMode(mode) {
   document.querySelectorAll('input[name=aiMode]').forEach((r) => (r.checked = r.value === mode));
 }
 
+function setTemplateCard(v) {
+  document.querySelectorAll('input[name=tpl]').forEach((r) => (r.checked = r.value === v));
+  showTemplateNote();
+}
+// 좁은 화면에서는 카드 설명을 숨기고 고른 카드의 설명만 아래 한 줄로 보인다
+function showTemplateNote() {
+  const card = document.querySelector('input[name=tpl]:checked')?.closest('.tpl-card');
+  el.tplNow.textContent = card ? `${card.querySelector('.tpl-name').textContent}: ${card.querySelector('.tpl-desc').textContent}` : '';
+}
+
 function syncSettings(obj) {
-  el.setTemplate.value = obj.template || '';
+  setTemplateCard(obj.template || '');
   el.setFit.value = obj.fit || 'blur';
   const res = obj.resolution || '720x1280';
   if (PRESETS.includes(res)) {
@@ -187,24 +284,34 @@ function parseJsonText() {
 function setJsonText(text, name) {
   state.jsonText = text;
   el.jsonText.value = text;
-  if (name != null) el.jsonName.textContent = name;
+  if (name != null) state.jsonLabel = name;
 }
 
 // 화면 설정 하나를 JSON 에 써 넣는다(value 가 undefined 면 지움).
-function writeFields(changes) {
+function writeFields(changes, { quiet = false } = {}) {
   let obj;
   try {
     obj = parseJsonText();
   } catch (e) {
     setMessages([{ level: 'error', text: `JSON 문법 오류를 먼저 고치세요: ${e.message}` }]);
-    return;
+    return false;
   }
   for (const [k, v] of Object.entries(changes)) {
     if (v === undefined) delete obj[k];
     else obj[k] = v;
   }
   setJsonText(JSON.stringify(obj, null, 2) + '\n', state.jsonText.trim() ? undefined : '화면 설정에서 만듦');
-  analyze();
+  if (!quiet) analyze();
+  return true;
+}
+
+// 이야기 JSON 이 아닌 작업 JSON 을 바로 넣을 때(예시·Claude)
+function useJson(text, label) {
+  story.src = null;
+  story.note = null;
+  story.unused = new Set();
+  setJsonText(text, label);
+  syncFiles();
 }
 
 function saveConn() {
@@ -217,18 +324,30 @@ function saveConn() {
 // ---------- 분석(명세 → 계획) ----------
 let seq = 0;
 
+function setReady(on) {
+  el.makeBtn.disabled = !on;
+  el.againBtn.disabled = !on;
+  updateDock();
+}
+
+function setEmpty(text) {
+  el.previewEmpty.hidden = false;
+  el.previewEmptyText.innerHTML = text;
+  el.stageCard.classList.add('is-empty');
+}
+
 function clearPlan() {
   stopPlay();
   state.job = null;
   state.mixed = null;
   state.still = null;
-  el.makeBtn.disabled = true;
+  setReady(false);
   el.scrub.disabled = true;
   el.playBtn.disabled = true;
+  el.planSum.textContent = '아직 만들 것이 없어요';
   el.planLine.textContent = '아직 계획이 없습니다.';
-  el.previewEmpty.hidden = false;
-  el.previewEmpty.innerHTML = 'JSON과 영상을 고르면<br>여기에 미리보기가 나옵니다';
-  pctx.fillStyle = '#000';
+  setEmpty('파일을 넣으면<br>여기서 미리 봐요');
+  pctx.fillStyle = '#0d0f12';
   pctx.fillRect(0, 0, el.preview.width, el.preview.height);
 }
 
@@ -259,7 +378,7 @@ function sizePreview(W, H) {
     el.preview.width = pw;
     el.preview.height = ph;
   }
-  el.previewWrap.style.aspectRatio = `${W} / ${H}`;
+  el.previewWrap.style.setProperty('--ar', `${W} / ${H}`);
   el.resultVideo.style.aspectRatio = `${W} / ${H}`;
 }
 
@@ -268,22 +387,22 @@ async function analyze() {
   clearPlan();
   el.failBox.hidden = true;
   if (!state.jsonText.trim()) {
-    renderFileList(null);
-    setMessages([{ level: 'info', text: '먼저 파일 칸 1에 작업 JSON을 고르세요. 형식이 궁금하면 "예시 JSON 받기"나 ? 도움말을 보세요.' }]);
+    renderSlots(null);
+    setMessages([{ level: 'info', text: story.src ? '이야기 JSON을 바꾸지 못했어요. 위 안내를 보세요.' : '작업 JSON이 있어야 만들 수 있어요. 파일을 놓거나, 위에서 "예시로 해 보기"·"아이디어로 기획"을 골라 보세요.' }]);
     return;
   }
   let raw;
   try {
     raw = parseJsonText();
   } catch (e) {
-    renderFileList(null);
+    renderSlots(null);
     setMessages([{ level: 'error', text: e instanceof SyntaxError ? `JSON 문법 오류: ${e.message}` : e.message }]);
     return;
   }
   syncSettings(raw);
   const eff = effectiveSpec(raw);
   const match = matchFiles(eff, state.files);
-  renderFileList(match);
+  renderSlots(match);
   const { errors, warnings } = checkSpec(match.spec);
   if (errors.length) {
     setMessages(errors.map((text) => ({ level: 'error', text })));
@@ -291,7 +410,7 @@ async function analyze() {
   }
   const n = normalizeSpec(match.spec);
   if (match.missing.length) {
-    setMessages([{ level: 'error', text: `JSON이 가리키는 파일을 파일 칸 2에서 함께 골라 주세요: ${match.missing.join(', ')}` }]);
+    setMessages([{ level: 'error', text: `JSON에 적힌 파일이 아직 없어요: ${match.missing.join(', ')} — 2번 칸(내 영상·그림·음악)에 같이 넣어 주세요` }]);
     return;
   }
   if (n.usesAi) {
@@ -309,13 +428,14 @@ async function analyze() {
     state.job = base;
     const total = scenes.reduce((a, s) => a + s.duration, 0);
     const where = n.backend === 'sglang' ? `SGLang ${n.server}${scenes.some((s) => s.task === 'ref2va') ? ` · ref2va ${n.ref_server}` : ''}` : `${n.backend === 'auto' ? '자동 판별' : 'h3video'} ${n.server}`;
+    el.planSum.textContent = `AI 장면 ${scenes.length}개 · 합계 ${total}초`;
     el.planLine.textContent = `AI 장면 ${scenes.length}개(${scenes.map((s) => s.task).join(', ')}, 합계 ${total}초) 생성 → ${TEMPLATE_KO[n.template] || n.template} 합성`;
-    el.previewEmpty.innerHTML = 'AI 장면을 만든 뒤<br>여기에 미리보기가 나옵니다';
+    setEmpty('AI 장면을 만든 뒤<br>여기서 미리 봐요');
     setMessages([
       ...warnings.map((text) => ({ level: 'warn', text })),
-      { level: 'ok', text: `준비됐습니다. "만들기"를 누르면 ${where} 에 장면 생성을 요청하고 합성합니다.` },
+      { level: 'ok', text: `준비됐어요. "만들기"를 누르면 ${where} 에 장면 생성을 요청하고 합성해요.` },
     ]);
-    el.makeBtn.disabled = state.busy || !engine || engine.kind === 'none';
+    setReady(!state.busy && engine && engine.kind !== 'none');
     return;
   }
   await prepareCompose({ ai: false, spec: n, matchSpec: match.spec, warnings }, null, my);
@@ -363,13 +483,16 @@ async function prepareCompose(base, genFiles, my) {
   const notes = [...new Set([...base.warnings, ...plan.warnings])];
   setMessages([
     ...notes.map((text) => ({ level: 'warn', text })),
-    { level: 'ok', text: genFiles ? 'AI 장면이 준비됐습니다.' : `준비됐습니다. "만들기"를 누르면 ${outputName(base.spec, ext())} 파일을 만듭니다.` },
+    { level: 'ok', text: genFiles ? 'AI 장면이 준비됐어요.' : `준비됐어요. "만들기"를 누르면 ${outputName(base.spec, ext())} 파일을 만들어요.` },
   ]);
+  const clips = plan.segments.filter((x) => x.kind === 'clip').length;
+  el.planSum.textContent = `${plan.duration.toFixed(1)}초 · ${TEMPLATE_KO[plan.template] || plan.template}` + (genFiles ? ` · AI 장면 ${genFiles.length}개` : clips ? ` · 클립 ${clips}개` : '');
   el.planLine.textContent = describePlan(plan) + (genFiles ? ` · AI 장면 ${genFiles.length}개` : '');
   el.previewEmpty.hidden = true;
+  el.stageCard.classList.remove('is-empty');
   el.scrub.disabled = false;
   el.playBtn.disabled = false;
-  el.makeBtn.disabled = state.busy || !engine || engine.kind === 'none';
+  setReady(!state.busy && engine && engine.kind !== 'none');
   const k0 = Math.round(Math.min(1, plan.duration / 3) * plan.fps);
   el.scrub.value = String(Math.round((k0 / frameCount(plan)) * 1000));
   showStill(k0);
@@ -430,7 +553,8 @@ function stopPlay() {
     state.playing.actx?.close().catch(() => {});
     state.playing = null;
   }
-  el.playBtn.textContent = '미리보기 재생';
+  el.playBtn.textContent = '재생';
+  el.playBtn.setAttribute('aria-label', '미리보기 재생');
 }
 
 async function togglePlay() {
@@ -443,6 +567,7 @@ async function togglePlay() {
   const play = { stop: false, actx: null };
   state.playing = play;
   el.playBtn.textContent = '정지';
+  el.playBtn.setAttribute('aria-label', '미리보기 정지');
   const { plan, segs } = job;
   const scale = el.preview.width / plan.width;
   const N = frameCount(plan);
@@ -483,17 +608,27 @@ const ext = () => (engine && engine.container) || 'mp4';
 
 function setBusy(b) {
   state.busy = b;
-  for (const id of ['jsonFile', 'mediaFiles', 'firstImage', 'refFiles', 'jsonText', 'importFile', 'planBtn']) el[id].disabled = b;
-  document.querySelectorAll('#settingsPanel select, #settingsPanel input, #aiPanel input, #aiPanel select').forEach((x) => (x.disabled = b));
-  el.makeBtn.disabled = b || !state.job;
+  for (const id of ['jsonFile', 'mediaFiles', 'firstImage', 'refFiles', 'allFiles', 'jsonText', 'importFile', 'planBtn', 'pickAll', 'startExample', 'startStory', 'startIdea']) el[id].disabled = b;
+  document.querySelectorAll('#settingsPanel select, #settingsPanel input, #aiPanel input, #aiPanel select, .slot-pick').forEach((x) => (x.disabled = b));
+  document.body.classList.toggle('is-busy', b);
   el.makeBtn.textContent = b ? '만드는 중…' : '만들기';
   el.progressBox.hidden = !b;
   el.cancelBtn.disabled = !b;
+  setReady(!b && !!state.job);
 }
 
+// 진행률: 큰 숫자(%) + 막대 + 지금 하는 일 + 남은 시간(이 단계가 시작된 뒤 걸린 시간으로 어림)
+const phase = { t0: 0 };
+const newPhase = () => (phase.t0 = performance.now());
 function setProgress(frac, text) {
+  const pct = Math.max(0, Math.min(100, Math.floor(frac * 100)));
   el.progressBar.style.width = `${Math.round(frac * 1000) / 10}%`;
-  el.progressText.textContent = `${Math.floor(frac * 100)}% · ${text}`;
+  el.progressPct.textContent = `${pct}%`;
+  el.progressRole.setAttribute('aria-valuenow', String(pct));
+  el.progressText.textContent = String(text).replace(/ · 남은 시간 약 [^·]*/, '');
+  const spent = (performance.now() - phase.t0) / 1000;
+  el.progressEta.textContent = frac > 0.02 && frac < 1 && spent > 1 ? `남은 시간 약 ${fmtSec((spent * (1 - frac)) / frac)}` : frac >= 1 ? '마무리 중' : '';
+  updateDock();
 }
 
 function explain(e) {
@@ -520,7 +655,9 @@ async function make() {
   el.failBox.hidden = true;
   const abort = new AbortController();
   state.abort = abort;
+  newPhase();
   setProgress(0, '준비 중…');
+  requestAnimationFrame(() => el.progressBox.scrollIntoView({ block: 'nearest' }));
   const started = performance.now();
   status.start(!!job.ai);
   status.stage('validate');
@@ -567,6 +704,7 @@ async function make() {
       job = composed;
     }
     status.stage('compose');
+    newPhase();
     setProgress(0, '소리 섞는 중…');
     status.title('⏳ 합성 중');
     const { plan } = job;
@@ -577,6 +715,7 @@ async function make() {
     const mixed = await ensureMix();
     if (abort.signal.aborted) throw new Cancelled();
     status.stage('encode');
+    newPhase();
     const scale = el.preview.width / plan.width;
     const blob = await exportVideo({
       plan,
@@ -600,21 +739,24 @@ async function make() {
     el.resultVideo.src = url;
     el.downloadLink.href = url;
     el.downloadLink.download = name;
-    el.downloadLink.textContent = `내려받기 (${name})`;
+    el.downloadLink.textContent = '내려받기';
     const secs = ((performance.now() - started) / 1000).toFixed(1);
-    el.resultMeta.textContent = `${plan.width}×${plan.height} · ${plan.fps}fps · ${plan.duration.toFixed(1)}초 · ${fmtSize(blob.size)} · ${engine.label} · ${secs}초 걸림`;
+    el.resultName.textContent = name;
+    el.resultMeta.textContent = `${fmtSize(blob.size)} · ${plan.duration.toFixed(1)}초 · ${plan.width}×${plan.height} · ${plan.fps}fps`;
+    el.resultSub.textContent = `${engine.label} · ${secs}초 걸림 · 내려받기가 자동으로 시작돼요`;
     el.resultBox.hidden = false;
     el.resultEmpty.hidden = true;
     el.downloadLink.click();
-    status.finish(true, `완성했습니다: ${name}`);
+    requestAnimationFrame(() => el.resultBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    status.finish(true, `완성했어요: ${name}`);
     status.title('✅ 완료');
     notifyDone(`${name} 완성`, el.notifyChk.checked);
-    setMessages([{ level: 'ok', text: `완성했습니다: ${name}. 다운로드가 시작되지 않으면 "내려받기"를 누르세요.` }]);
+    setMessages([{ level: 'ok', text: `완성했어요: ${name}. 내려받기가 저절로 시작되지 않으면 "내려받기"를 누르세요.` }]);
   } catch (e) {
     if (e instanceof Cancelled || e.name === 'AbortError' || abort.signal.aborted) {
-      status.finish(false, '취소했습니다');
+      status.finish(false, '취소했어요');
       status.title(null);
-      setMessages([{ level: 'warn', text: '만들기를 취소했습니다. 이미 만든 AI 장면은 다음 번에 다시 씁니다.' }]);
+      setMessages([{ level: 'warn', text: '만들기를 취소했어요. 이미 만든 AI 장면은 다음에 다시 써요.' }]);
     } else {
       console.warn(e);
       const text = explain(e);
@@ -633,31 +775,23 @@ async function make() {
 }
 
 function showEngine() {
-  el.engineNote.textContent = `만들 형식: ${engine.label}${engine.note ? ` — ${engine.note}` : ''}`;
-  el.engineNote.className = `engine ${engine.kind === 'webcodecs' && engine.container === 'mp4' ? 'good' : 'warn'}`;
+  const good = engine.kind === 'webcodecs' && engine.container === 'mp4';
+  // 잘 되는 경우는 한 줄만(설명은 마우스를 올리면), 대신 쓰는 경우는 이유까지 보인다
+  el.engineNote.textContent = `만들 형식: ${engine.label}${engine.note && !good ? ` — ${engine.note}` : ''}`;
+  el.engineNote.title = engine.note || '';
+  el.engineNote.className = `engine ${good ? 'good' : 'warn'}`;
   document.body.dataset.engine = engine.kind;
 }
 
 // ---------- 입력 ----------
-async function loadJsonFile(f) {
-  if (!f) return;
-  const fromSlot = f === el.jsonFile.files[0];
-  if (!fromSlot) el.jsonFile.value = '';
-  const text = await f.text();
-  el.importFile.value = '';
-  if (takeStory(text, f.name)) return analyze();
-  setJsonText(text, fromSlot ? '' : f.name);
-  analyze();
-}
-
-// ---------- JSON 한번에: 이야기 JSON(동화책 콘티·동화책 만들기 book.json·clips 목록) ----------
+// JSON 한번에: 이야기 JSON(동화책 콘티·동화책 만들기 book.json·clips 목록)
 // 1번 칸에 넣으면 숏폼 명세로 바꿔 넣는다. 장면 수·길이(쪽 글 읽는 시간)는 JSON 에서 정하고,
-// 2번 칸에서 고른 그림을 쪽마다 첫 프레임으로 맞춘다(이름 page-03 → 3쪽, cover → 표지, 나머지는 순서대로).
+// 2번 칸의 그림을 쪽마다 첫 프레임으로 맞춘다(이름 page-03 → 3쪽, cover → 표지, 나머지는 순서대로).
 // CLI 의 shorts run 이야기.json 그림폴더/ 와 같다(src/core/story.js ↔ shorts/story.py).
 const KIND_KO = { conti: '동화책 콘티', book: '동화책 만들기 book.json', list: '장면 목록' };
 function takeStory(text, name) {
   let v;
-  try { v = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { story.src = null; return false; }
+  try { v = JSON.parse(text.replace(/^﻿/, '')); } catch { story.src = null; return false; }
   if (!isStory(v)) { story.src = null; return false; }
   story.src = { data: v, name };
   convertStory();
@@ -668,14 +802,16 @@ function convertStory() {
   const names = slotFiles.media.filter((f) => kindOf(f) === 'image').map((f) => f.name)
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   story.unused = new Set();
+  story.scenes = 0;
   try {
     const { spec, info } = storyToSpec(story.src.data, names);
     story.unused = new Set(info.unused_images);
+    story.scenes = info.clips.length;
     const linked = info.clips.filter((c) => c.image).length;
     story.note = { level: 'info', text: `${KIND_KO[info.source]} → 숏폼: ${info.title} · 장면 ${info.clips.length}개 · 합계 ${info.total}초(쪽 글 읽는 시간) · 그림 ${linked}장 연결`
-      + (linked < info.clips.length ? ` · 그림 없는 장면 ${info.clips.length - linked}개는 글로만 만듭니다(쪽 그림은 2번 칸에서 여러 장 고르기)` : '')
+      + (linked < info.clips.length ? ` · 그림 없는 장면 ${info.clips.length - linked}개는 글로만 만듭니다(쪽 그림은 2번 칸에 같이 넣기)` : '')
       + (story.unused.size ? ` · 쓰지 않는 그림: ${[...story.unused].join(', ')}` : '') };
-    setJsonText(JSON.stringify(spec, null, 2), `${story.src.name} → 숏폼 명세`);
+    setJsonText(JSON.stringify(spec, null, 2), story.src.name);
   } catch (e) {
     story.note = { level: 'error', text: `${story.src.name}: ${e.message}` };
     setJsonText('', story.src.name);
@@ -683,7 +819,14 @@ function convertStory() {
   syncFiles();
 }
 
-el.jsonFile.addEventListener('change', () => loadJsonFile(el.jsonFile.files[0]));
+async function loadJsonFile(f) {
+  if (!f) return;
+  const text = await f.text();
+  el.importFile.value = '';
+  if (takeStory(text, f.name)) return analyze();
+  setJsonText(text, f.name);
+  analyze();
+}
 el.importFile.addEventListener('change', () => loadJsonFile(el.importFile.files[0]));
 
 let typing = null;
@@ -692,12 +835,14 @@ el.jsonText.addEventListener('input', () => {
   typing = setTimeout(() => {
     if (takeStory(el.jsonText.value, '직접 입력')) return analyze();
     state.jsonText = el.jsonText.value;
-    el.jsonName.textContent = state.jsonText.trim() ? '직접 입력' : '';
+    const prev = state.jsonLabel;
+    state.jsonLabel = !state.jsonText.trim() ? '' : !prev || prev === '직접 입력' || prev.endsWith('(고침)') ? prev || '직접 입력' : `${prev} (고침)`;
     analyze();
   }, 400);
 });
 
-// 파일 칸: 2 소스(이름으로 JSON 과 짝), 3 첫 프레임 이미지, 4 참조 이미지·영상. 칸마다 따로 두고 합쳐서 쓴다.
+// 파일 칸: 1 작업 JSON, 2 내 영상·그림·음악(이름으로 JSON 과 짝), 3 첫 장면 그림(JSON image), 4 참고 자료(JSON sources).
+// 칸 3·4 는 CLI 의 --image / --ref 와 같다: 넣은 파일 이름을 JSON 에 써 넣고, 빼면 지운다. 칸마다 따로 두고 합쳐서 쓴다.
 const slotFiles = { media: [], image: [], refs: [] };
 function syncFiles() {
   const seen = new Set();
@@ -705,36 +850,242 @@ function syncFiles() {
   state.files = [...slotFiles.media, ...slotFiles.image, ...slotFiles.refs]
     .filter((f) => !seen.has(f.name) && seen.add(f.name) && !(story.src && story.unused.has(f.name)));
 }
+// 파일 하나는 한 칸에만: 같은 이름이 있으면 새 파일로 바꾼다
+function putFiles(slot, files) {
+  const names = new Set(files.map((f) => f.name));
+  for (const k of Object.keys(slotFiles)) slotFiles[k] = slotFiles[k].filter((f) => !names.has(f.name));
+  slotFiles[slot] = slot === 'image' ? files.slice(0, 1) : [...slotFiles[slot], ...files];
+}
+const sourceName = (m) => (typeof m === 'string' ? m : m && m.path);
+function jsonObj() {
+  try {
+    return parseJsonText();
+  } catch {
+    return null;
+  }
+}
+function refsToJson(files) {
+  const obj = jsonObj() || {};
+  const cur = Array.isArray(obj.sources) ? obj.sources : [];
+  const have = new Set(cur.map((m) => baseName(sourceName(m) || '')));
+  return writeFields({ sources: [...cur, ...files.map((f) => f.name).filter((n) => !have.has(n))] }, { quiet: true });
+}
+
+// 칩의 × : 칸에서 빼고, 3·4번 칸이면 JSON 에서도 그 이름을 지운다
+function removeFile(slot, name) {
+  if (state.busy) return;
+  showDropNote([]);
+  if (slot === 'json') {
+    story.src = null;
+    story.note = null;
+    story.unused = new Set();
+    setJsonText('', '');
+    el.jsonFile.value = '';
+  } else {
+    slotFiles[slot] = slotFiles[slot].filter((f) => f.name !== name);
+    const obj = jsonObj();
+    if (obj && slot === 'image' && obj.image && baseName(obj.image) === name) writeFields({ image: undefined }, { quiet: true });
+    if (obj && slot === 'refs' && Array.isArray(obj.sources)) {
+      const left = obj.sources.filter((m) => baseName(sourceName(m) || '') !== name);
+      if (left.length !== obj.sources.length) writeFields({ sources: left.length ? left : undefined }, { quiet: true });
+    }
+    if (slot === 'media') convertStory();
+  }
+  syncFiles();
+  analyze();
+}
+
+function showDropNote(lines, level = 'info') {
+  const list = (Array.isArray(lines) ? lines : [lines]).filter(Boolean);
+  el.dropNote.hidden = !list.length;
+  el.dropNote.className = `drop-note ${level}`;
+  el.dropNote.textContent = list.join(' · ');
+}
+
+// 지금 1번 칸의 내용: 이야기 JSON 인가, 작업 JSON 객체인가
+function currentCtx() {
+  if (story.src) return { story: true };
+  const o = jsonObj();
+  return o && Object.keys(o).length ? { spec: o } : {};
+}
+
+// 한꺼번에 놓기(또는 칸에 놓기·고르기). target 이 있으면 JSON 이 아닌 파일은 그 칸으로.
+// zip 은 풀어서 안의 파일을 하나씩 놓은 것처럼 다룬다.
+const SLOT_KO = { media: '내 영상·그림·음악', image: '첫 장면 그림', refs: '참고 자료' };
+async function takeDrop(list, target = null) {
+  let files = [...list];
+  if (!files.length) return;
+  if (state.busy) {
+    showDropNote('만드는 중에는 파일을 바꿀 수 없어요. 끝나거나 취소한 뒤 넣어 주세요.', 'warn');
+    return;
+  }
+  const zipNotes = [];
+  const notes = [];
+  let level = 'info';
+  const zips = files.filter(isZipFile);
+  if (zips.length) {
+    files = files.filter((f) => !isZipFile(f));
+    for (const z of zips) {
+      try {
+        const got = await zipToFiles(z);
+        files.push(...got.files);
+        zipNotes.push(`${z.name}에서 ${got.files.length}개를 꺼냈어요${got.skipped.length ? ` (쓰지 않는 ${got.skipped.length}개는 뺌)` : ''}`);
+      } catch (e) {
+        zipNotes.push(`${z.name}: ${e.message}`);
+        level = 'error';
+      }
+    }
+    target = null; // zip 안의 파일은 늘 알아서 나눈다
+  }
+  const { json, others } = pickJson(files);
+  if (others.length) notes.push(`JSON은 하나만 써요: ${json.name}을 쓰고 ${others.map((f) => f.name).join(', ')}은 뺐어요`);
+  const rest = files.filter((f) => !isJsonFile(f));
+  let text = null;
+  let ctx = currentCtx();
+  if (json) {
+    text = await json.text();
+    let v;
+    try {
+      v = JSON.parse(text.replace(/^﻿/, ''));
+    } catch {
+      v = null;
+    }
+    ctx = v && typeof v === 'object' ? (isStory(v) ? { story: true } : Array.isArray(v) ? {} : { spec: v }) : {};
+  }
+  let sorted;
+  if (target && target !== 'json') {
+    sorted = { media: [], image: [], refs: [], skipped: rest.filter((f) => !isMediaFile(f)) };
+    let ok = rest.filter(isMediaFile);
+    if (target === 'image') {
+      const imgs = ok.filter((f) => kindOf(f) === 'image');
+      if (imgs.length !== ok.length || imgs.length > 1) notes.push('3번 칸에는 그림 한 장만 들어가요');
+      ok = imgs.slice(0, 1);
+    }
+    sorted[target] = ok;
+  } else sorted = sortDropped(rest, { ...ctx, hasImage: slotFiles.image.length > 0 });
+  if (sorted.skipped.length) notes.push(`쓸 수 없는 파일은 뺐어요: ${sorted.skipped.map((f) => f.name).join(', ')}`);
+  if (sorted.media.length) putFiles('media', sorted.media);
+  if (json) {
+    if (!takeStory(text, json.name)) setJsonText(text, json.name);
+  } else if (sorted.media.length) convertStory();
+  if (sorted.image.length) {
+    putFiles('image', sorted.image);
+    writeFields({ image: sorted.image[0].name }, { quiet: true });
+  }
+  if (sorted.refs.length) {
+    putFiles('refs', sorted.refs);
+    refsToJson(sorted.refs);
+  }
+  syncFiles();
+  const placed = [json ? '작업 JSON 1개' : '', ...['media', 'image', 'refs'].map((k) => (sorted[k].length ? `${SLOT_KO[k]} ${sorted[k].length}개` : ''))].filter(Boolean);
+  if (placed.length && (!target || zips.length || files.length > 1)) notes.unshift(`${target ? '넣었어요' : '나눠 넣었어요'}: ${placed.join(', ')}`);
+  showDropNote([...zipNotes, ...notes], level);
+  analyze();
+}
+
+// 칸마다 고르기: 고른 파일을 그 칸에 더한다(빈 선택은 그 칸 비우기)
+el.jsonFile.addEventListener('change', () => {
+  const f = el.jsonFile.files[0];
+  el.jsonFile.value = '';
+  if (f) takeDrop([f], 'json');
+});
 el.mediaFiles.addEventListener('change', () => {
-  slotFiles.media = [...el.mediaFiles.files];
+  const picked = [...el.mediaFiles.files];
+  el.mediaFiles.value = '';
+  if (picked.length) return takeDrop(picked, 'media');
+  if (state.busy) return;
+  slotFiles.media = [];
   syncFiles();
   convertStory();
-  el.mediaName.textContent = '';
   analyze();
 });
-// 칸 3·4 는 CLI 의 --image / --ref 와 같다: 고른 파일 이름을 JSON 의 image / sources 에 써 넣는다.
 el.firstImage.addEventListener('change', () => {
   const f = el.firstImage.files[0];
-  if (!f) return;
-  slotFiles.image = [f];
-  syncFiles();
-  el.firstImageName.textContent = f.name;
-  writeFields({ image: f.name });
+  el.firstImage.value = '';
+  if (f) takeDrop([f], 'image');
 });
 el.refFiles.addEventListener('change', () => {
   const picked = [...el.refFiles.files];
-  if (!picked.length) return;
-  slotFiles.refs = picked;
-  syncFiles();
-  el.refFilesName.textContent = picked.map((f) => f.name).join(', ');
-  let obj = {};
-  try { obj = parseJsonText(); } catch { /* writeFields 가 문법 오류를 알려 준다 */ }
-  const cur = Array.isArray(obj.sources) ? obj.sources : [];
-  const names = new Set(cur.map((s) => (typeof s === 'string' ? s : s && s.path)));
-  writeFields({ sources: [...cur, ...picked.map((f) => f.name).filter((n) => !names.has(n))] });
+  el.refFiles.value = '';
+  if (picked.length) takeDrop(picked, 'refs');
+});
+el.allFiles.addEventListener('change', () => {
+  const picked = [...el.allFiles.files];
+  el.allFiles.value = '';
+  if (picked.length) takeDrop(picked);
+});
+el.pickAll.addEventListener('click', () => el.allFiles.click());
+el.dropZone.addEventListener('click', (e) => {
+  if (!e.target.closest('button') && !state.busy) el.allFiles.click();
+});
+document.querySelectorAll('.slot-pick').forEach((b) => b.addEventListener('click', () => el[b.dataset.input].click()));
+
+// 끌어 놓기: 페이지 어디에 놓아도 되고, 칸 위에 놓으면 그 칸으로. 폴더를 놓으면 안의 파일을 모두 꺼낸다.
+const hasFiles = (e) => !!e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
+let dragDepth = 0;
+function markDrop(target) {
+  const zone = target && target.closest ? target.closest('[data-slot], #dropZone') : null;
+  document.querySelectorAll('.drop-hover').forEach((x) => x !== zone && x.classList.remove('drop-hover'));
+  if (zone) zone.classList.add('drop-hover');
+}
+function endDrag() {
+  dragDepth = 0;
+  document.body.classList.remove('dragging');
+  markDrop(null);
+}
+async function readEntries(entries) {
+  const out = [];
+  const walk = async (en, depth) => {
+    if (en.isFile) out.push(await new Promise((res, rej) => en.file(res, rej)));
+    else if (en.isDirectory && depth < 4) {
+      const reader = en.createReader();
+      for (;;) {
+        const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const c of batch) await walk(c, depth + 1);
+      }
+    }
+  };
+  for (const en of entries) await walk(en, 0);
+  return out;
+}
+window.addEventListener('dragenter', (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth += 1;
+  document.body.classList.add('dragging');
+});
+window.addEventListener('dragleave', (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) endDrag();
+});
+window.addEventListener('dragover', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = state.busy ? 'none' : 'copy';
+  markDrop(e.target);
+});
+window.addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  endDrag();
+  const slotEl = e.target && e.target.closest ? e.target.closest('[data-slot]') : null;
+  // DataTransfer 는 이 이벤트 안에서만 읽힌다: 폴더 항목과 파일 목록을 먼저 잡아 둔다
+  const entries = [...(e.dataTransfer.items || [])].filter((it) => it.kind === 'file').map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null));
+  const plain = [...(e.dataTransfer.files || [])];
+  const useEntries = entries.length && entries.every(Boolean) && entries.some((en) => en.isDirectory);
+  (useEntries ? readEntries(entries) : Promise.resolve(plain))
+    .then((files) => takeDrop(files, slotEl ? slotEl.dataset.slot : null))
+    .catch((err) => showDropNote(`파일을 읽지 못했어요: ${err.message}`, 'error'));
 });
 
-el.setTemplate.addEventListener('change', () => writeFields({ template: el.setTemplate.value || undefined }));
+document.querySelectorAll('input[name=tpl]').forEach((r) =>
+  r.addEventListener('change', () => {
+    if (!r.checked) return;
+    showTemplateNote();
+    writeFields({ template: r.value || undefined });
+  }),
+);
 el.setFit.addEventListener('change', () => writeFields({ fit: el.setFit.value }));
 el.setFps.addEventListener('change', () => writeFields({ fps: Number(el.setFps.value) }));
 el.setQuality.addEventListener('change', () => writeFields({ quality: el.setQuality.value }));
@@ -794,6 +1145,7 @@ el.scrub.addEventListener('input', () => {
 el.playBtn.addEventListener('click', togglePlay);
 el.makeBtn.addEventListener('click', make);
 el.retryBtn.addEventListener('click', make);
+el.againBtn.addEventListener('click', make);
 el.cancelBtn.addEventListener('click', () => state.abort && state.abort.abort());
 el.notifyChk.addEventListener('change', () => {
   if (el.notifyChk.checked && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
@@ -825,7 +1177,7 @@ el.apiKey.addEventListener('change', () => LS.set('shorts.anthropicKey', el.apiK
 el.keyClear.addEventListener('click', () => {
   LS.set('shorts.anthropicKey', null);
   el.apiKey.value = '';
-  el.planOut.textContent = '키를 지웠습니다.';
+  el.planOut.textContent = '키를 지웠어요.';
 });
 let planAbort = null;
 el.planBtn.addEventListener('click', async () => {
@@ -848,7 +1200,7 @@ el.planBtn.addEventListener('click', async () => {
         console.warn(e);
       }
     }
-    el.planOut.textContent = `Claude에게 기획을 요청하는 중…${sources.length ? ` (프레임 ${sources.reduce((a, s) => a + s.frames.length, 0)}장)` : ''} 1~2분 걸릴 수 있습니다`;
+    el.planOut.textContent = `Claude에게 기획을 요청하는 중…${sources.length ? ` (프레임 ${sources.reduce((a, s) => a + s.frames.length, 0)}장)` : ''} 1~2분 걸릴 수 있어요`;
     const res = await claudePlan({
       idea: el.idea.value,
       sources,
@@ -857,13 +1209,13 @@ el.planBtn.addEventListener('click', async () => {
       signal: planAbort.signal,
       log: (t) => (el.planOut.textContent = t),
     });
-    setJsonText(JSON.stringify(res.spec, null, 2) + '\n', 'Claude 기획');
+    useJson(JSON.stringify(res.spec, null, 2) + '\n', 'Claude 기획');
     el.jsonDetails.open = true;
-    el.planOut.textContent = `작업 JSON을 채웠습니다(시도 ${res.attempts}회). 확인하고 "만들기"를 누르세요.`;
+    el.planOut.textContent = `작업 JSON을 채웠어요(시도 ${res.attempts}회). 확인하고 "만들기"를 누르세요.`;
     el.planOut.className = 'check-out ok';
     analyze();
   } catch (e) {
-    el.planOut.textContent = e.name === 'AbortError' ? '기획 요청을 취소했습니다.' : e.message;
+    el.planOut.textContent = e.name === 'AbortError' ? '기획 요청을 취소했어요.' : e.message;
     el.planOut.className = 'check-out bad';
   } finally {
     planAbort = null;
@@ -888,7 +1240,7 @@ el.helpExamples.replaceChildren(
     b.querySelector('strong').textContent = ex.name;
     b.querySelector('small').textContent = ex.note;
     b.addEventListener('click', () => {
-      setJsonText(JSON.stringify(ex.job, null, 2) + '\n', `예시: ${ex.name}`);
+      useJson(JSON.stringify(ex.job, null, 2) + '\n', `예시: ${ex.name}`);
       el.jsonDetails.open = true;
       el.helpDialog.close();
       analyze();
@@ -902,15 +1254,94 @@ setupTips();
 fillResolutionOptions();
 syncSettings({});
 
+// ---------- 시작 방법 3가지 ----------
+// 예시로 해 보기: 예시 영상 3개 + 배경음을 이 브라우저에서 만들고 예시 작업 JSON 과 함께 칸에 넣는다.
+el.startExample.addEventListener('click', async () => {
+  if (state.busy) return;
+  const btn = el.startExample;
+  btn.disabled = true;
+  btn.classList.add('working');
+  try {
+    showDropNote('예시 영상을 만드는 중… (몇 초)');
+    const eng = await enginePick;
+    const { makeDemo } = await import('./app/demo.js');
+    const { job, files } = await makeDemo(eng, (t) => showDropNote(`예시 만드는 중 · ${t}`));
+    slotFiles.media = [];
+    slotFiles.image = [];
+    slotFiles.refs = [];
+    story.src = null;
+    const jsonFile = new File([JSON.stringify(job, null, 2) + '\n'], 'example-job.json', { type: 'application/json' });
+    await takeDrop([jsonFile, ...files]);
+    showDropNote('예시 파일을 넣었어요: 작업 JSON 1개, 내 영상(가로) 1개, 클립 2개, 배경음 1개. 미리보기를 보고 "만들기"를 눌러 보세요.', 'ok');
+    el.filesPanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  } catch (e) {
+    console.warn(e);
+    useJson(JSON.stringify(EXAMPLE_JOB, null, 2) + '\n', '예시 작업 JSON');
+    analyze();
+    showDropNote(`${e.message} 예시 작업 JSON만 넣어 뒀어요.`, 'warn');
+  } finally {
+    btn.disabled = state.busy;
+    btn.classList.remove('working');
+  }
+});
+// 이야기 JSON + 그림: 동화책 콘티 JSON·동화책 만들기 zip·쪽 그림을 고르게 한다(놓기와 같은 규칙)
+el.startStory.addEventListener('click', () => {
+  showDropNote('동화책 콘티의 "JSON" 내보내기 파일이나 동화책 만들기의 "파일 받기" zip을 고르세요. 쪽 그림을 같이 골라도 돼요.');
+  el.allFiles.click();
+});
+// 아이디어로 기획: Claude 칸을 열고 아이디어 칸으로
+el.startIdea.addEventListener('click', () => {
+  el.claudePanel.open = true;
+  el.claudePanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  el.idea.focus({ preventScroll: true });
+});
+
+// ---------- 폰 아래 고정 만들기 단추: 준비되면, 만들기 단추가 화면 밖일 때만 ----------
+const dock = { makeVisible: true };
+function updateDock() {
+  const ready = !el.makeBtn.disabled;
+  const show = (ready || state.busy) && !dock.makeVisible;
+  el.dock.hidden = !show;
+  document.body.classList.toggle('has-dock', show);
+  if (!show) return;
+  el.dockBtn.textContent = state.busy ? `진행 보기 ${el.progressPct.textContent}` : '만들기';
+  el.dockText.textContent = state.busy ? el.progressText.textContent : el.planSum.textContent;
+}
+if ('IntersectionObserver' in window) {
+  new IntersectionObserver((ents) => {
+    dock.makeVisible = ents[ents.length - 1].isIntersecting;
+    updateDock();
+  }).observe(el.makeBtn);
+}
+el.dockBtn.addEventListener('click', () => {
+  if (!state.busy) make();
+  el.makeArea.scrollIntoView({ block: 'center', behavior: 'smooth' });
+});
+
+// ---------- 둘러보기: 저절로 열지 않고 작은 안내만(닫으면 다시 안 보임) ----------
+function showHint() {
+  el.tourHint.hidden = tourSeen() || hintDismissed() || params.has('notour');
+}
+el.tourHintGo.addEventListener('click', () => {
+  el.tourHint.hidden = true;
+  tour.start(0);
+});
+el.tourHintClose.addEventListener('click', () => {
+  dismissHint();
+  el.tourHint.hidden = true;
+});
+tour.onClose = showHint;
+showHint();
+
 // ---------- 시작 ----------
-(async () => {
+const enginePick = (async () => {
   try {
     engine = { ...(await pickEngine(720, 1280, forceEngine)), width: 720, height: 1280 };
   } catch (e) {
     engine = { kind: 'none', label: '확인 실패', note: String(e.message || e) };
   }
   showEngine();
-  if (state.job) el.makeBtn.disabled = state.busy || engine.kind === 'none';
+  if (state.job) setReady(!state.busy && engine.kind !== 'none');
+  return engine;
 })();
 analyze();
-if (!tourSeen() && !params.has('notour')) setTimeout(() => tour.start(0), 400);

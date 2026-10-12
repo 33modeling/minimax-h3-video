@@ -12,209 +12,288 @@
   <header class="top">
     <a class="home" href="/">← Home</a>
     <span class="top-title">숏폼 제작</span>
-    <span class="local-badge" title="파일은 업로드되지 않습니다">기기 안에서만 처리</span>
+    <span class="local-badge" title="고른 파일은 업로드하지 않습니다">기기 안에서만 처리</span>
     <button type="button" class="help-btn" id="helpBtn" aria-label="도움말" aria-haspopup="dialog">?</button>
   </header>
-  <main id="app">
-    <section class="intro">
-      <span class="kicker">SHORT-FORM STUDIO</span>
-      <h1>작업 JSON 하나로 9:16 숏폼 만들기</h1>
-      <p>가로 영상은 가운데를 자르거나 흐린 배경으로 채우고, 제목 훅·자막·배경음을 얹어 MP4로 내려받습니다.</p>
-      <p class="privacy" id="privacy">고른 파일은 이 기기 밖으로 보내지 않습니다. 합성과 인코딩은 모두 이 브라우저 안에서 합니다. (AI 생성·Claude 기획을 직접 켰을 때만 내가 지정한 서버로 보냅니다)</p>
-    </section>
-
-    <section class="panel" aria-labelledby="inputs-h">
-      <h2 id="inputs-h" class="sr-only">파일 고르기</h2>
-      <div class="slots">
-        <label class="slot" id="slotJson" for="jsonFile">
-          <span class="slot-num">1</span>
-          <span class="slot-text"><strong>작업 JSON <button type="button" class="tip" data-tip="prompt(AI 생성) 또는 base·sources(내 영상 합성) 중 하나는 있어야 합니다. 파일 이름은 2번 칸에서 고른 파일과 이름으로 맞춥니다.">ⓘ</button></strong><small>프롬프트·템플릿·자막을 적은 명세 파일 · 동화책 콘티 JSON도 됨(장면 수·길이 자동)</small></span>
-          <input id="jsonFile" type="file" accept=".json,application/json">
-          <span class="slot-file" id="jsonName"></span>
-        </label>
-        <label class="slot" id="slotMedia" for="mediaFiles">
-          <span class="slot-num">2</span>
-          <span class="slot-text"><strong>소스 영상 <em class="optional">선택 · 없어도 됨</em> <button type="button" class="tip" data-tip="소스 영상은 없어도 됩니다. JSON에 prompt가 있으면 AI가 장면을 만들고, 있으면 참조(ref2va)로 함께 보냅니다.">ⓘ</button></strong><small>JSON이 가리키는 영상·배경음을 함께 고르세요. 여러 개 가능 · 동화책 콘티 JSON이면 쪽 그림을 여기에</small></span>
-          <input id="mediaFiles" type="file" accept="video/*,audio/*,image/*" multiple>
-          <span class="slot-file" id="mediaName"></span>
-        </label>
-        <label class="slot" id="slotImage" for="firstImage">
-          <span class="slot-num">3</span>
-          <span class="slot-text"><strong>첫 프레임 이미지 <em class="optional">선택</em> <button type="button" class="tip" data-tip="AI 영상이 이 이미지에서 시작합니다(fl2va). 고르면 JSON의 image에 이름이 들어갑니다. 참조(칸 4)를 함께 넣으면 이 이미지도 참조로 보냅니다.">ⓘ</button></strong><small>AI 영상의 시작 장면 · JSON의 image</small></span>
-          <input id="firstImage" type="file" accept="image/*">
-          <span class="slot-file" id="firstImageName"></span>
-        </label>
-        <label class="slot" id="slotRefs" for="refFiles">
-          <span class="slot-num">4</span>
-          <span class="slot-text"><strong>참조 이미지·영상 <em class="optional">선택 · 여러 개</em> <button type="button" class="tip" data-tip="인물·동작·목소리를 참고해 AI 영상을 만듭니다(ref2va). 이미지 최대 9·영상 3·오디오 3. 고르면 JSON의 sources에 이름이 들어갑니다. JSON에 prompt가 있을 때 씁니다.">ⓘ</button></strong><small>인물·동작·목소리 참고 · JSON의 sources</small></span>
-          <input id="refFiles" type="file" accept="image/*,video/*,audio/*" multiple>
-          <span class="slot-file" id="refFilesName"></span>
-        </label>
-      </div>
-      <div class="row-links">
-        <button type="button" class="link" id="exampleBtn">예시 JSON 받기</button>
-        <button type="button" class="link" id="exportBtn">설정 내보내기(JSON)</button>
-        <label class="link" for="importFile">설정 불러오기<input id="importFile" type="file" accept=".json,application/json" hidden></label>
-      </div>
-      <details class="json-edit" id="jsonDetails">
-        <summary>JSON 직접 보기·고치기</summary>
-        <textarea id="jsonText" spellcheck="false" rows="12" aria-label="작업 JSON 내용" placeholder='{ "base": "base.mp4", "sources": ["clip1.mp4"], "template": "cutaway", "title": "제목", "captions": ["첫 자막"] }'></textarea>
-      </details>
-      <ul class="file-list" id="fileList" aria-live="polite"></ul>
-      <div class="messages" id="messages" aria-live="polite"></div>
-    </section>
-
-    <section class="panel" id="settingsPanel" aria-labelledby="settings-h">
-      <h2 id="settings-h" class="panel-title">출력 설정 <small>바꾸면 JSON에 바로 반영됩니다</small></h2>
-      <div class="settings">
-        <label><span class="lab">템플릿 <button type="button" class="tip" data-tip="컷어웨이: 기본 영상 사이사이에 소스. 분할: 위 기본·아래 소스. PIP: 기본 영상 위 작은 창. 몽타주: 소스를 이어 붙임(기본 영상 없을 때).">ⓘ</button></span>
-          <select id="setTemplate">
-            <option value="">자동 (기본 영상이 있으면 컷어웨이)</option>
-            <option value="cutaway">컷어웨이 — 기본 영상 사이사이 소스</option>
-            <option value="split">위아래 분할</option>
-            <option value="pip">PIP — 작은 창</option>
-            <option value="montage">몽타주 — 소스 이어 붙이기</option>
-          </select>
-        </label>
-        <label>가로 영상 맞춤
-          <select id="setFit">
-            <option value="blur">흐린 배경으로 채우기</option>
-            <option value="crop">가운데 잘라 채우기</option>
-          </select>
-        </label>
-        <label><span class="lab">출력 해상도 <button type="button" class="tip" data-tip="세로 숏폼은 720×1280(기본)이나 1080×1920. 정사각·4:5·가로도 됩니다. 직접 입력은 짝수, 짧은 변 240~2160.">ⓘ</button></span>
-          <select id="setResolution"></select>
-          <input id="setResolutionCustom" type="text" inputmode="numeric" placeholder="예: 720x1280" hidden aria-label="해상도 직접 입력(가로x세로)">
-        </label>
-        <label>프레임레이트
-          <select id="setFps">
-            <option value="24">24fps</option>
-            <option value="25">25fps</option>
-            <option value="30">30fps</option>
-            <option value="60">60fps</option>
-          </select>
-        </label>
-        <label>품질
-          <select id="setQuality">
-            <option value="low">낮음 (파일 작게)</option>
-            <option value="medium">보통</option>
-            <option value="high">높음</option>
-          </select>
-        </label>
-      </div>
-      <p class="hint">기본은 720×1280·30fps입니다. GPU가 약하면 해상도를 올리지 마세요(1080 이상은 시간이 오래 걸립니다).</p>
-    </section>
-
-    <details class="panel fold" id="aiPanel">
-      <summary><span class="panel-title">AI 생성 연결</span> <small>JSON에 prompt·scenes가 있을 때 씁니다</small></summary>
-      <div class="fold-body">
-        <div class="seg" role="radiogroup" aria-label="연결 방식">
-          <label><input type="radio" name="aiMode" value="h3video" checked> h3video 웹 서버 <small>(기본)</small></label>
-          <label><input type="radio" name="aiMode" value="sglang"> SGLang 직접 <small>(고급)</small></label>
+  <main id="app" class="layout">
+    <div class="col-main">
+      <section class="intro" id="intro">
+        <h1>세로 숏폼 만들기</h1>
+        <p>영상·그림·글을 넣으면 제목·자막·배경음을 얹은 9:16 영상을 이 브라우저에서 만들어요.</p>
+        <div class="tour-hint" id="tourHint" hidden>
+          <button type="button" class="tour-hint-go" id="tourHintGo">처음이세요? <b>1분 둘러보기</b></button>
+          <button type="button" class="tour-hint-x" id="tourHintClose" aria-label="둘러보기 안내 닫기">×</button>
         </div>
-        <div class="settings" id="h3Fields">
-          <label class="wide">h3video 웹 서버 주소
-            <input id="aiServer" type="url" placeholder="http://localhost:8790" spellcheck="false">
-          </label>
+      </section>
+
+      <section class="start" id="startArea" aria-labelledby="start-h">
+        <h2 id="start-h" class="sec-title">어떻게 시작할까요?</h2>
+        <div class="start-grid">
+          <button type="button" class="start-card" id="startExample">
+            <svg class="start-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+            <strong>예시로 해 보기</strong>
+            <small>예시 영상을 바로 만들어 봐요. 파일이 없어도 돼요.</small>
+          </button>
+          <button type="button" class="start-card" id="startStory">
+            <svg class="start-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C6.5 4.3 9.3 4.3 12 6c2.7-1.7 5.5-1.7 8-.5v13c-2.5-1.2-5.3-1.2-8 .5-2.7-1.7-5.5-1.7-8-.5z" fill="none" stroke-width="1.8"/><path d="M12 6v13" fill="none" stroke-width="1.8"/></svg>
+            <strong>이야기 JSON + 그림</strong>
+            <small>동화책 콘티·동화책 만들기에서 받은 JSON이나 zip, 쪽 그림</small>
+          </button>
+          <button type="button" class="start-card" id="startIdea">
+            <svg class="start-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-3.5 10.9V17h7v-3.1A6 6 0 0 0 12 3zM9.5 20h5" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <strong>아이디어로 기획 (Claude)</strong>
+            <small>아이디어를 적으면 Claude가 작업 JSON을 써 줘요. API 키가 필요해요.</small>
+          </button>
         </div>
-        <div class="settings" id="sgFields" hidden>
-          <label>fl2va 주소 <small>(소스 없을 때)</small>
-            <input id="aiFl2va" type="url" placeholder="http://localhost:30010" spellcheck="false">
-          </label>
-          <label>ref2va 주소 <small>(소스 영상을 참조로 쓸 때)</small>
-            <input id="aiRef2va" type="url" placeholder="http://localhost:30011" spellcheck="false">
-          </label>
+        <p class="term"><b>작업 JSON</b>은 무엇을 만들지(영상·자막·제목·음악) 적어 둔 설정 파일이에요. 직접 쓰지 않아도 돼요.</p>
+      </section>
+
+      <section class="panel files" id="filesPanel" aria-labelledby="files-h">
+        <h2 id="files-h" class="sec-title">파일 넣기</h2>
+        <div class="dropzone" id="dropZone">
+          <svg class="drop-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="drop-text">
+            <strong>파일을 한꺼번에 놓으세요</strong>
+            <small>작업 JSON·영상·그림·음악·zip을 같이 놓으면 알맞은 칸에 나눠 넣어요</small>
+          </div>
+          <button type="button" class="ghost small" id="pickAll">파일 고르기</button>
+          <input id="allFiles" type="file" multiple hidden accept=".json,.zip,application/json,application/zip,video/*,audio/*,image/*">
         </div>
+        <p class="drop-note" id="dropNote" aria-live="polite" hidden></p>
+        <div class="slots" id="slots">
+          <div class="slot" id="slotJson" data-slot="json">
+            <div class="slot-head">
+              <span class="slot-num" aria-hidden="true">1</span>
+              <div class="slot-text"><strong>작업 JSON</strong><small>무엇을 만들지 적은 파일 · 이야기 JSON도 돼요</small></div>
+              <button type="button" class="slot-pick" data-input="jsonFile" aria-label="1번 칸 작업 JSON 고르기">고르기</button>
+            </div>
+            <input id="jsonFile" type="file" accept=".json,application/json" hidden>
+            <ul class="chips" id="chipsJson" aria-label="1번 칸 작업 JSON" data-empty="비어 있어요"></ul>
+          </div>
+          <div class="slot" id="slotMedia" data-slot="media">
+            <div class="slot-head">
+              <span class="slot-num" aria-hidden="true">2</span>
+              <div class="slot-text"><strong>내 영상·그림·음악</strong><small>JSON에 적힌 파일, 쪽 그림, 배경음 · 없어도 돼요</small></div>
+              <button type="button" class="slot-pick" data-input="mediaFiles" aria-label="2번 칸 내 영상·그림·음악 고르기">고르기</button>
+            </div>
+            <input id="mediaFiles" type="file" accept="video/*,audio/*,image/*" multiple hidden>
+            <ul class="chips" id="chipsMedia" aria-label="2번 칸 내 영상·그림·음악" data-empty="비어 있어요"></ul>
+          </div>
+          <div class="slot" id="slotImage" data-slot="image">
+            <div class="slot-head">
+              <span class="slot-num" aria-hidden="true">3</span>
+              <div class="slot-text"><strong>첫 장면 그림 <em class="optional">선택</em></strong><small>AI 영상이 이 그림에서 시작해요 (JSON의 image)</small></div>
+              <button type="button" class="slot-pick" data-input="firstImage" aria-label="3번 칸 첫 장면 그림 고르기">고르기</button>
+            </div>
+            <input id="firstImage" type="file" accept="image/*" hidden>
+            <ul class="chips" id="chipsImage" aria-label="3번 칸 첫 장면 그림" data-empty="비어 있어요"></ul>
+          </div>
+          <div class="slot" id="slotRefs" data-slot="refs">
+            <div class="slot-head">
+              <span class="slot-num" aria-hidden="true">4</span>
+              <div class="slot-text"><strong>참고 자료 <em class="optional">선택</em></strong><small>인물·동작·목소리를 참고해 AI가 만들어요 (JSON의 sources)</small></div>
+              <button type="button" class="slot-pick" data-input="refFiles" aria-label="4번 칸 참고 자료 고르기">고르기</button>
+            </div>
+            <input id="refFiles" type="file" accept="image/*,video/*,audio/*" multiple hidden>
+            <ul class="chips" id="chipsRefs" aria-label="4번 칸 참고 자료" data-empty="비어 있어요"></ul>
+          </div>
+        </div>
+        <div class="row-links">
+          <button type="button" class="link" id="exampleBtn">예시 JSON 받기</button>
+          <button type="button" class="link" id="exportBtn">설정 내보내기(JSON)</button>
+          <label class="link" for="importFile">설정 불러오기<input id="importFile" type="file" accept=".json,application/json" hidden></label>
+        </div>
+        <details class="json-edit" id="jsonDetails">
+          <summary>JSON 직접 보기·고치기</summary>
+          <textarea id="jsonText" spellcheck="false" rows="12" aria-label="작업 JSON 내용" placeholder='{ "base": "base.mp4", "sources": ["clip1.mp4"], "template": "cutaway", "title": "제목", "captions": ["첫 자막"] }'></textarea>
+        </details>
+        <div class="messages" id="messages" aria-live="polite"></div>
+      </section>
+
+      <section class="panel" id="settingsPanel" aria-labelledby="settings-h">
+        <h2 id="settings-h" class="sec-title">모양·화질 <small>바꾸면 JSON에 바로 들어가요</small></h2>
+        <fieldset class="tpl-field">
+          <legend>템플릿 (화면 배치)</legend>
+          <div class="tpl-cards" id="setTemplate">
+            <label class="tpl-card"><input type="radio" name="tpl" value="" checked>
+              <span class="mini mini-auto" aria-hidden="true"><i class="m-word">자동</i></span>
+              <span class="tpl-name">자동</span><span class="tpl-desc">내 영상이 있으면 컷어웨이, 없으면 몽타주</span></label>
+            <label class="tpl-card"><input type="radio" name="tpl" value="cutaway">
+              <span class="mini" aria-hidden="true"><i class="m-base"></i><i class="m-cut"></i><i class="m-title"></i><i class="m-cap"></i><i class="m-strip m-strip-cut"></i></span>
+              <span class="tpl-name">컷어웨이</span><span class="tpl-desc">내 영상 사이사이에 클립이 끼어들어요</span></label>
+            <label class="tpl-card"><input type="radio" name="tpl" value="split">
+              <span class="mini" aria-hidden="true"><i class="m-top"></i><i class="m-bottom"></i><i class="m-title"></i><i class="m-cap m-cap-mid"></i></span>
+              <span class="tpl-name">위아래 분할</span><span class="tpl-desc">위는 내 영상, 아래는 클립</span></label>
+            <label class="tpl-card"><input type="radio" name="tpl" value="pip">
+              <span class="mini" aria-hidden="true"><i class="m-base"></i><i class="m-pip"></i><i class="m-title"></i><i class="m-cap"></i></span>
+              <span class="tpl-name">PIP</span><span class="tpl-desc">내 영상 위 작은 창에 클립</span></label>
+            <label class="tpl-card"><input type="radio" name="tpl" value="montage">
+              <span class="mini" aria-hidden="true"><i class="m-clipfull"></i><i class="m-title"></i><i class="m-cap"></i><i class="m-strip m-strip-mon"></i></span>
+              <span class="tpl-name">몽타주</span><span class="tpl-desc">클립·AI 장면을 차례로 이어 붙여요</span></label>
+          </div>
+          <p class="tpl-now" id="tplNow" aria-hidden="true"></p>
+          <p class="tpl-legend" aria-hidden="true"><span><i class="sw sw-base"></i>내 영상</span><span><i class="sw sw-clip"></i>클립·AI 장면</span><span><i class="sw sw-title"></i>제목</span><span><i class="sw sw-cap"></i>자막</span></p>
+        </fieldset>
         <div class="settings">
-          <label><span class="lab">생성 크기(짧은 변) <button type="button" class="tip" data-tip="AI 서버가 만들 영상의 짧은 변입니다. 로컬 H3는 768이 상한입니다. 합성할 때 출력 해상도로 맞춥니다.">ⓘ</button></span>
-            <select id="aiGenSize">
-              <option value="480">480p</option>
-              <option value="576">576p</option>
-              <option value="720">720p</option>
-              <option value="768">768p (H3 상한)</option>
+          <label>가로 영상 맞춤
+            <select id="setFit">
+              <option value="blur">흐린 배경으로 채우기</option>
+              <option value="crop">가운데 잘라 채우기</option>
             </select>
           </label>
-          <div class="check-row"><button type="button" class="ghost small" id="aiCheck">연결 확인</button><span id="aiCheckOut" class="check-out" aria-live="polite"></span></div>
-        </div>
-        <ul class="notes">
-          <li><b>서버 켜기</b>: GPU 서버에서 <code>h3video web --cors-origin <span class="origin">https://33modeling.pages.dev</span></code> 처럼 이 페이지 주소를 CORS로 허용해 띄웁니다.</li>
-          <li><b>SSH 터널</b>: 내 PC에서 <code>ssh -L 8790:localhost:8790 사용자@GPU서버</code> 후 주소를 <code>http://localhost:8790</code>으로 둡니다.</li>
-          <li><b>혼합 콘텐츠</b>: https 페이지는 다른 PC의 http 주소를 부를 수 없습니다. localhost(터널)만 됩니다.</li>
-          <li>JSON에 소스 영상이 있으면 참조 입력(ref2va)으로 함께 보냅니다. SGLang 직접 연결은 참조 파일을 data: URI로 보냅니다(SGLang H3가 받는 형식). 서버가 이 페이지를 CORS로 허용해야 하고, 안 되면 h3video 웹 서버를 쓰세요.</li>
-        </ul>
-      </div>
-    </details>
-
-    <details class="panel fold" id="claudePanel">
-      <summary><span class="panel-title">Claude로 기획하기</span> <small>선택 · 아이디어로 작업 JSON 쓰기</small></summary>
-      <div class="fold-body">
-        <label class="block">아이디어
-          <textarea id="idea" rows="3" placeholder="예: 비 오는 날 창가에서 커피 내리는 30초 브이로그, 잔잔한 분위기"></textarea>
-        </label>
-        <div class="settings">
-          <label class="wide"><span class="lab">Anthropic API 키 <small>(이 브라우저의 localStorage에만 저장)</small> <button type="button" class="tip" data-tip="키는 이 브라우저에만 저장되고 Anthropic API로만 보냅니다. 공용 PC라면 다 쓴 뒤 '키 지우기'를 누르세요.">ⓘ</button></span>
-            <span class="key-row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."><button type="button" class="ghost small" id="keyClear">키 지우기</button></span>
+          <label><span class="lab">출력 해상도 <button type="button" class="tip" data-tip="세로 숏폼은 720×1280(기본)이나 1080×1920. 정사각·4:5·가로도 돼요. 직접 입력은 짝수, 짧은 변 240~2160.">ⓘ</button></span>
+            <select id="setResolution"></select>
+            <input id="setResolutionCustom" type="text" inputmode="numeric" placeholder="예: 720x1280" hidden aria-label="해상도 직접 입력(가로x세로)">
+          </label>
+          <label>프레임레이트
+            <select id="setFps">
+              <option value="24">24fps</option>
+              <option value="25">25fps</option>
+              <option value="30">30fps</option>
+              <option value="60">60fps</option>
+            </select>
+          </label>
+          <label>품질
+            <select id="setQuality">
+              <option value="low">낮음 (파일 작게)</option>
+              <option value="medium">보통</option>
+              <option value="high">높음</option>
+            </select>
           </label>
         </div>
-        <div class="check-row"><button type="button" class="ghost" id="planBtn">Claude에게 기획 요청</button><span id="planOut" class="check-out" aria-live="polite"></span></div>
-        <p class="hint">claude-opus-5-5가 작업 JSON을 써서 파일 칸 1을 채웁니다. 파일 칸 2의 영상이 있으면 프레임 몇 장을 함께 보냅니다. 키와 프레임은 Anthropic API로만 갑니다.</p>
-      </div>
-    </details>
+        <p class="hint">기본은 720×1280·30fps예요. 컴퓨터가 느리면 해상도를 올리지 마세요(1080 이상은 오래 걸려요).</p>
+      </section>
 
-    <section class="panel stage" aria-labelledby="preview-h">
-      <div class="preview-wrap" id="previewWrap">
-        <canvas id="preview" width="270" height="480" aria-label="저해상도 미리보기"></canvas>
-        <div class="preview-empty" id="previewEmpty">JSON과 영상을 고르면<br>여기에 미리보기가 나옵니다</div>
-      </div>
-      <div class="stage-side">
-        <h2 id="preview-h">미리보기 <small>저해상도</small></h2>
-        <p class="plan-line" id="planLine">아직 계획이 없습니다.</p>
+      <details class="panel fold" id="aiPanel">
+        <summary><span class="panel-title">AI 서버 연결</span> <small>글(prompt)로 장면을 만들 때 · 내 GPU 서버</small></summary>
+        <div class="fold-body">
+          <div class="seg" role="radiogroup" aria-label="연결 방식">
+            <label><input type="radio" name="aiMode" value="h3video" checked> h3video 웹 서버 <small>(기본)</small></label>
+            <label><input type="radio" name="aiMode" value="sglang"> SGLang 직접 <small>(고급)</small></label>
+          </div>
+          <div class="settings" id="h3Fields">
+            <label class="wide">h3video 웹 서버 주소
+              <input id="aiServer" type="url" placeholder="http://localhost:8790" spellcheck="false">
+            </label>
+          </div>
+          <div class="settings" id="sgFields" hidden>
+            <label>fl2va 주소 <small>(참고 자료 없을 때)</small>
+              <input id="aiFl2va" type="url" placeholder="http://localhost:30010" spellcheck="false">
+            </label>
+            <label>ref2va 주소 <small>(참고 자료가 있을 때)</small>
+              <input id="aiRef2va" type="url" placeholder="http://localhost:30011" spellcheck="false">
+            </label>
+          </div>
+          <div class="settings">
+            <label><span class="lab">생성 크기(짧은 변) <button type="button" class="tip" data-tip="AI 서버가 만들 영상의 짧은 변이에요. 로컬 H3는 768이 상한이에요. 합성할 때 출력 해상도로 맞춰요.">ⓘ</button></span>
+              <select id="aiGenSize">
+                <option value="480">480p</option>
+                <option value="576">576p</option>
+                <option value="720">720p</option>
+                <option value="768">768p (H3 상한)</option>
+              </select>
+            </label>
+            <div class="check-row"><button type="button" class="ghost small" id="aiCheck">연결 확인</button><span id="aiCheckOut" class="check-out" aria-live="polite"></span></div>
+          </div>
+          <ul class="notes">
+            <li><b>서버 켜기</b>: GPU 서버에서 <code>h3video web --cors-origin <span class="origin">https://33modeling.pages.dev</span></code> 처럼 이 페이지 주소를 허용해 띄워요.</li>
+            <li><b>SSH 터널</b>: 내 PC에서 <code>ssh -L 8790:localhost:8790 사용자@GPU서버</code> 뒤 주소를 <code>http://localhost:8790</code>으로 둬요.</li>
+            <li><b>혼합 콘텐츠</b>: https 페이지는 다른 PC의 http 주소를 부를 수 없어요. localhost(터널)만 돼요.</li>
+            <li>참고 자료(4번 칸)가 있으면 ref2va로 함께 보내요. SGLang 직접 연결은 파일을 data: URI로 보내요(SGLang H3가 받는 형식). 안 되면 h3video 웹 서버를 쓰세요.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="panel fold" id="claudePanel">
+        <summary><span class="panel-title">아이디어로 기획 (Claude)</span> <small>선택 · 아이디어로 작업 JSON 쓰기</small></summary>
+        <div class="fold-body">
+          <label class="block">아이디어
+            <textarea id="idea" rows="3" placeholder="예: 비 오는 날 창가에서 커피 내리는 30초 브이로그, 잔잔한 분위기"></textarea>
+          </label>
+          <div class="settings">
+            <label class="wide"><span class="lab">Anthropic API 키 <small>(이 브라우저에만 저장)</small> <button type="button" class="tip" data-tip="키는 이 브라우저(localStorage)에만 저장되고 Anthropic API로만 보내요. 공용 PC라면 다 쓴 뒤 '키 지우기'를 누르세요.">ⓘ</button></span>
+              <span class="key-row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."><button type="button" class="ghost small" id="keyClear">키 지우기</button></span>
+            </label>
+          </div>
+          <div class="check-row"><button type="button" class="ghost" id="planBtn">Claude에게 기획 요청</button><span id="planOut" class="check-out" aria-live="polite"></span></div>
+          <p class="hint">claude-opus-5-5가 작업 JSON을 써서 1번 칸을 채워요. 2번 칸에 영상이 있으면 프레임 몇 장을 함께 보내요. 키와 프레임은 Anthropic API로만 가요.</p>
+        </div>
+      </details>
+    </div>
+
+    <aside class="col-stage" id="stageCol" aria-labelledby="preview-h">
+      <div class="stage-card is-empty" id="stageCard">
+        <div class="stage-head"><h2 id="preview-h">미리보기</h2><span class="stage-sub">저해상도</span></div>
+        <div class="phone" id="previewWrap">
+          <canvas id="preview" width="270" height="480" aria-label="저해상도 미리보기"></canvas>
+          <div class="preview-empty" id="previewEmpty">
+            <span class="sk sk-title" aria-hidden="true"></span>
+            <span class="pe-text" id="previewEmptyText">파일을 넣으면<br>여기서 미리 봐요</span>
+            <span class="sk sk-cap" aria-hidden="true"></span>
+          </div>
+        </div>
         <div class="scrub">
+          <button type="button" id="playBtn" class="ghost small" disabled aria-label="미리보기 재생">재생</button>
           <input id="scrub" type="range" min="0" max="1000" value="0" disabled aria-label="미리보기 시각">
           <span id="scrubTime">0.0초</span>
         </div>
-        <button type="button" id="playBtn" class="ghost" disabled>미리보기 재생</button>
-        <div class="engine" id="engineNote"></div>
+        <p class="plan-sum" id="planSum">아직 만들 것이 없어요</p>
+        <p class="plan-line" id="planLine">아직 계획이 없습니다.</p>
         <div id="makeArea" class="make-area">
-          <button type="button" id="makeBtn" class="primary" disabled>만들기</button>
+          <button type="button" id="makeBtn" class="primary big" disabled>만들기</button>
           <label class="notify"><input type="checkbox" id="notifyChk"> 끝나면 알림(소리·브라우저 알림)</label>
+          <div class="progress" id="progressBox" hidden>
+            <div class="progress-top"><strong id="progressPct">0%</strong><span id="progressEta"></span></div>
+            <div class="bar" id="progressRole" role="progressbar" aria-label="만들기 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progressBar"></div></div>
+            <div class="progress-row"><span id="progressText">준비 중…</span><button type="button" id="cancelBtn" class="ghost small">취소</button></div>
+          </div>
           <div class="status" id="statusBox" hidden></div>
           <p class="sr-only" id="liveStatus" aria-live="polite"></p>
-        <div class="progress" id="progressBox" hidden>
-          <div class="bar"><div id="progressBar"></div></div>
-          <div class="progress-row"><span id="progressText">준비 중…</span><button type="button" id="cancelBtn" class="ghost small">취소</button></div>
+          <div class="fail-box" id="failBox" hidden role="alert"><p id="failText"></p><button type="button" class="ghost small" id="retryBtn">다시 시도</button></div>
         </div>
-        <div class="fail-box" id="failBox" hidden role="alert"><p id="failText"></p><button type="button" class="ghost small" id="retryBtn">다시 시도</button></div>
+        <div id="resultArea" class="result-area">
+          <div class="result" id="resultBox" hidden>
+            <div class="result-head"><strong>완성했어요</strong><span id="resultName"></span></div>
+            <video id="resultVideo" controls playsinline></video>
+            <p class="result-meta" id="resultMeta"></p>
+            <p class="result-sub" id="resultSub"></p>
+            <div class="result-btns"><a id="downloadLink" class="primary as-button" download>내려받기</a><button type="button" class="ghost" id="againBtn">다시 만들기</button></div>
+          </div>
+          <p class="result-empty" id="resultEmpty">완성된 영상은 여기에 나와요.</p>
         </div>
-        <div id="resultArea"><div class="result" id="resultBox" hidden>
-          <video id="resultVideo" controls playsinline></video>
-          <a id="downloadLink" class="primary as-button" download>내려받기</a>
-          <p class="result-meta" id="resultMeta"></p>
-        </div><p class="result-empty" id="resultEmpty">완성된 영상은 여기에 나옵니다.</p></div>
+        <div class="engine" id="engineNote"></div>
       </div>
-    </section>
+    </aside>
   </main>
+
+  <div class="dock" id="dock" hidden>
+    <span class="dock-text" id="dockText"></span>
+    <button type="button" class="primary" id="dockBtn">만들기</button>
+  </div>
 
   <dialog id="helpDialog" class="help" aria-labelledby="helpTitle">
     <div class="help-head"><h2 id="helpTitle">도움말</h2><button type="button" class="ghost tiny" id="helpClose" aria-label="닫기">닫기</button></div>
-    <button type="button" class="primary small" id="tourBtn">화면 둘러보기 다시 보기</button>
+    <button type="button" class="primary small" id="tourBtn">화면 둘러보기</button>
     <h3>화면 영역</h3>
     <ul>
-      <li><b>1. 작업 JSON</b> — 무엇을 만들지 적은 명세. 직접 고치거나 Claude가 쓰게 할 수 있습니다.</li>
-      <li><b>2. 소스 영상</b> — JSON이 이름으로 가리키는 영상·배경음. 없어도 됩니다.</li>
-      <li><b>출력 설정</b> — 템플릿, 가로 영상 맞춤(흐린 배경/잘라 채우기), 해상도, fps, 품질.</li>
-      <li><b>AI 생성 연결</b> — prompt·scenes가 있을 때 내 H3 서버로 장면을 만듭니다.</li>
-      <li><b>미리보기·만들기</b> — 저해상도 미리보기, 단계별 진행 상태, 취소, 결과 내려받기.</li>
+      <li><b>파일을 한꺼번에 놓기</b> — JSON·영상·그림·음악·zip을 같이 놓으면 알맞은 칸에 나눠 넣어요. 칸마다 직접 놓거나 고를 수도 있어요.</li>
+      <li><b>1. 작업 JSON</b> — 무엇을 만들지 적은 설정 파일. 직접 고치거나 Claude가 쓰게 할 수 있어요. 동화책 콘티·동화책 만들기 JSON도 돼요.</li>
+      <li><b>2. 내 영상·그림·음악</b> — JSON이 이름으로 가리키는 영상·배경음, 이야기의 쪽 그림. 파일마다 어디에 쓰이는지 붙어요.</li>
+      <li><b>3. 첫 장면 그림 · 4. 참고 자료</b> — AI 영상의 시작 그림과 인물·동작·목소리 참고. 넣으면 JSON에 이름이 들어가요.</li>
+      <li><b>모양·화질</b> — 템플릿 카드, 가로 영상 맞춤, 해상도, fps, 품질.</li>
+      <li><b>미리보기·만들기</b> — 저해상도 미리보기, 진행률과 남은 시간, 취소, 결과 내려받기.</li>
+      <li><b>AI 서버 연결 · Claude</b> — 글(prompt)로 내 H3 서버가 장면을 만들고, Claude가 기획을 써 줘요.</li>
     </ul>
-    <h3>JSON 예시 <small>(누르면 1번 칸에 불러옵니다)</small></h3>
+    <h3>JSON 예시 <small>(누르면 1번 칸에 넣어요)</small></h3>
     <div class="examples" id="helpExamples"></div>
     <h3>자주 겪는 문제</h3>
     <ul>
       <li><b>서버에 연결하지 못함(CORS)</b> — 서버를 <code>h3video web --cors-origin <span class="origin">https://33modeling.pages.dev</span></code>로 띄워 이 페이지 주소를 허용하세요.</li>
-      <li><b>원격 GPU 서버</b> — https 페이지는 다른 PC의 http 주소를 막습니다(혼합 콘텐츠). <code>ssh -L 8790:localhost:8790 사용자@서버</code>로 터널을 열고 <code>http://localhost:8790</code>을 쓰세요.</li>
-      <li><b>"WebCodecs가 없어 실시간 녹화"</b> — 오래된 브라우저입니다. 최신 크롬·엣지에서 열면 MP4(H.264+AAC)로 빠르게 만듭니다.</li>
-      <li><b>영상 코덱을 풀지 못함</b> — HEVC·ProRes 같은 영상은 브라우저가 못 풀 수 있습니다. H.264 MP4로 바꿔 넣으세요.</li>
-      <li><b>파일 이름이 안 맞음</b> — JSON의 <code>base</code>·<code>sources</code>·<code>bgm</code> 이름과 2번 칸의 파일 이름이 같아야 합니다(폴더는 무시).</li>
+      <li><b>원격 GPU 서버</b> — https 페이지는 다른 PC의 http 주소를 막아요(혼합 콘텐츠). <code>ssh -L 8790:localhost:8790 사용자@서버</code>로 터널을 열고 <code>http://localhost:8790</code>을 쓰세요.</li>
+      <li><b>"WebCodecs가 없어 실시간 녹화"</b> — 오래된 브라우저예요. 최신 크롬·엣지에서 열면 MP4(H.264+AAC)로 빠르게 만들어요.</li>
+      <li><b>영상 코덱을 풀지 못함</b> — HEVC·ProRes 같은 영상은 브라우저가 못 풀 수 있어요. H.264 MP4로 바꿔 넣으세요.</li>
+      <li><b>파일 이름이 안 맞음</b> — JSON의 <code>base</code>·<code>sources</code>·<code>bgm</code> 이름과 2번 칸의 파일 이름이 같아야 해요(폴더는 무시). 빠진 파일은 빨간 칸으로 보여요.</li>
+      <li><b>zip이 안 열림</b> — 암호가 걸렸거나 아주 큰(4GB 넘는) zip은 못 열어요. 풀어서 파일들을 넣으세요.</li>
     </ul>
   </dialog>
   <footer class="foot">MP4 인코딩: mediabunny(MPL-2.0) · WebCodecs. 라이선스는 저장소의 THIRD_PARTY_NOTICES.md에 있습니다.</footer>

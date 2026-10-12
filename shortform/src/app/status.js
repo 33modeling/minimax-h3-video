@@ -25,7 +25,7 @@ const STATE_KO = {
   reused: '이전 결과 재사용',
 };
 
-const fmtSec = (s) => (s >= 60 ? `${Math.floor(s / 60)}분 ${Math.round(s % 60)}초` : `${Math.max(0, Math.round(s))}초`);
+export const fmtSec = (s) => (s >= 60 ? `${Math.floor(s / 60)}분 ${Math.round(s % 60)}초` : `${Math.max(0, Math.round(s))}초`);
 
 export class StatusView {
   constructor(root, live) {

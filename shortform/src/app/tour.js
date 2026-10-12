@@ -1,14 +1,15 @@
-// 화면 안내: 첫 방문 둘러보기(강조 상자 + 말풍선)와 ⓘ 도움말 토글.
+// 화면 안내: 둘러보기(강조 상자 + 말풍선)와 ⓘ 도움말 토글. 둘러보기는 저절로 열지 않고, 처음 온 사람에게 작은 안내만 보인다.
 const SEEN_KEY = 'shorts.tourSeen.v1';
+const HINT_KEY = 'shorts.tourHint.v1';
 
 export const TOUR_STEPS = [
-  { sel: '#slotJson', title: '1. 작업 JSON', text: '프롬프트·템플릿·제목·자막을 적은 명세 파일을 고릅니다. 형식은 "예시 JSON 받기"나 ? 도움말의 예시를 보세요.' },
-  { sel: '#slotMedia', title: '2. 소스 영상 (없어도 됨)', text: 'JSON이 가리키는 영상·배경음을 함께 고릅니다. 이름이 안 맞는 영상은 소스로, 음악은 배경음으로 씁니다.' },
-  { sel: '#settingsPanel', title: '3. 템플릿·해상도', text: '컷어웨이·분할·PIP·몽타주와 해상도·fps·품질을 고릅니다. 바꾸면 JSON에 바로 반영됩니다.' },
-  { sel: '#aiPanel', title: '4. AI 생성 서버 연결', text: 'JSON에 prompt가 있으면 내가 띄운 H3 서버(h3video 웹 서버 또는 SGLang)에 장면 생성을 맡깁니다.' },
-  { sel: '#claudePanel', title: '5. Claude로 기획 (선택)', text: '아이디어와 API 키를 넣으면 Claude가 작업 JSON을 써서 1번 칸을 채웁니다.' },
-  { sel: '#makeArea', title: '6. 만들기와 진행 상태', text: '"만들기"를 누르면 단계와 장면별 진행률이 나옵니다. 언제든 취소할 수 있습니다.' },
-  { sel: '#resultArea', title: '7. 결과 내려받기', text: '완성되면 자동으로 내려받고, 여기서 다시 보거나 받을 수 있습니다. 파일은 이 기기 밖으로 나가지 않습니다.' },
+  { sel: '#startArea', title: '1. 시작 방법 고르기', text: '처음이면 "예시로 해 보기"를 눌러 보세요. 파일이 없어도 예시 영상을 만들어 볼 수 있어요.' },
+  { sel: '#dropZone', title: '2. 파일 한꺼번에 넣기', text: '작업 JSON·영상·그림·음악·zip을 여기에 같이 놓으면 알맞은 칸에 나눠 넣어요. 칸 위에 바로 놓아도 돼요.' },
+  { sel: '#slots', title: '3. 칸마다 들어간 파일', text: '파일마다 어디에 쓰이는지(기본 영상·배경음·장면 첫 프레임·쓰지 않음) 붙어요. ×로 뺄 수 있어요.' },
+  { sel: '#settingsPanel', title: '4. 모양·화질', text: '템플릿 카드로 화면 배치를 고르고 해상도·fps·품질을 정해요. 바꾸면 JSON에 바로 들어가요.' },
+  { sel: '#previewWrap', title: '5. 미리보기', text: '만들기 전에 저해상도로 미리 봐요. 막대를 끌거나 "미리보기 재생"을 눌러요.' },
+  { sel: '#makeArea', title: '6. 만들기', text: '"만들기"를 누르면 진행률과 남은 시간이 나와요. 언제든 취소할 수 있고, 끝나면 바로 내려받아요.' },
+  { sel: '#aiPanel', title: '7. AI 서버·Claude (선택)', text: '글(prompt)로 장면을 만들려면 내 GPU 서버를 연결해요. 아이디어만 있으면 Claude에게 기획을 맡겨요.' },
 ];
 
 function storage(fn) {
@@ -21,6 +22,15 @@ function storage(fn) {
 
 export function tourSeen() {
   return storage((s) => s.getItem(SEEN_KEY)) === '1';
+}
+
+// "처음이세요? 1분 둘러보기" 안내를 닫았나
+export function hintDismissed() {
+  return storage((s) => s.getItem(HINT_KEY)) === '1';
+}
+
+export function dismissHint() {
+  storage((s) => s.setItem(HINT_KEY, '1'));
 }
 
 export class Tour {
@@ -144,6 +154,7 @@ export class Tour {
     window.removeEventListener('scroll', this.onMove, true);
     if (markSeen) storage((s) => s.setItem(SEEN_KEY, '1'));
     if (this.prevFocus && this.prevFocus.focus) this.prevFocus.focus();
+    if (this.onClose) this.onClose();
   }
 }
 

@@ -8,6 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { startH3video, startSglang, startAnthropic, jsonReply } from './fake-servers.mjs';
+import { makeZip } from '../fixtures/zip.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = join(ROOT, '.tmp/e2e');
@@ -19,7 +20,7 @@ const arg = (name, def) => {
 const ONLY = arg('only', '');
 const PORT = Number(arg('port', 4290));
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
-const VP = { desktop: { width: 1280, height: 900 }, phone: { width: 390, height: 844 }, narrow: { width: 320, height: 640 } };
+const VP = { desktop: { width: 1280, height: 900 }, wide: { width: 1400, height: 900 }, phone: { width: 390, height: 844 }, narrow: { width: 320, height: 640 } };
 const media = (...names) => names.map((n) => join(MEDIA, n));
 
 mkdirSync(OUT, { recursive: true });
@@ -123,6 +124,35 @@ async function makeAndDownload(page, tag, timeout = 180000) {
   results.push(`${tag}: ${info.vcodec} ${info.w}x${info.h} ${info.fps}fps + ${info.acodec || '오디오 없음'} · ${info.dur.toFixed(2)}초 · ${((Date.now() - t0) / 1000).toFixed(1)}초`);
   return { file, info };
 }
+
+// 끌어 놓기 흉내: 파일을 숨은 input 으로 페이지에 넣고 DataTransfer 에 담아 drop 이벤트를 보낸다
+async function dropFiles(page, files, sel = '#dropZone') {
+  await page.evaluate(() => {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.multiple = true;
+    i.id = '__stash';
+    i.hidden = true;
+    document.body.append(i);
+  });
+  await page.setInputFiles('#__stash', files);
+  await page.evaluate((sel) => {
+    const stash = document.getElementById('__stash');
+    const dt = new DataTransfer();
+    for (const f of stash.files) dt.items.add(f);
+    stash.remove();
+    const t = document.querySelector(sel);
+    t.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }));
+    t.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    t.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, sel);
+}
+const chips = (page, id) => page.$$eval(`#${id} li`, (ls) => ls.map((l) => l.innerText.replace(/\s+/g, ' ').trim()));
+const png = (name, color, size = '320x240') => {
+  const f = join(MEDIA, name);
+  if (!existsSync(f)) execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', `color=c=${color}:s=${size}`, '-frames:v', '1', f]);
+  return f;
+};
 
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 const frame = (file, t, out) => execFileSync('ffmpeg', ['-y', '-v', 'error', '-ss', String(t), '-i', file, '-frames:v', '1', '-vf', 'scale=240:-2', out]);
@@ -249,7 +279,8 @@ const scenarios = {
     check(/중 하나여야 합니다/.test(m) && /혹시 'title'/.test(m), `invalid: 스키마 오류 문구 이상 — ${m}`);
     await page.fill('#jsonText', '{ "base": "base.mp4" }');
     await page.waitForTimeout(700);
-    check(/파일 칸 2에서 함께 골라/.test(await page.locator('#messages').innerText()), 'invalid: 빠진 파일 안내 없음');
+    check(/2번 칸\(내 영상·그림·음악\)에 같이 넣어/.test(await page.locator('#messages').innerText()), 'invalid: 빠진 파일 안내 없음');
+    check((await chips(page, 'chipsMedia')).some((c) => /base\.mp4 빠짐/.test(c)), 'invalid: 빠진 파일이 2번 칸에 빨간 칩으로 안 나옴');
     await done();
   },
 
@@ -258,7 +289,12 @@ const scenarios = {
     const a = await newPage('roundtrip-a');
     await loadJob(a.page, 'roundtrip', composeJob('cutaway'), composeFiles('cutaway'));
     await waitReady(a.page, 'roundtrip');
-    await a.page.selectOption('#setTemplate', 'pip');
+    // 템플릿 카드: 누르기 + 키보드(라디오 묶음이라 화살표로 옮김)
+    await a.page.click('#setTemplate label:has(input[value=split])');
+    await a.page.focus('#setTemplate input[value=split]');
+    await a.page.keyboard.press('ArrowRight');
+    await a.page.waitForTimeout(200);
+    check(/"template": "pip"/.test(await a.page.inputValue('#jsonText')) && (await a.page.evaluate(() => document.activeElement.value)) === 'pip', 'roundtrip: 템플릿 카드 키보드 선택이 JSON 에 안 들어감');
     await a.page.selectOption('#setFit', 'crop');
     await a.page.selectOption('#setResolution', '1080x1350');
     const [dl] = await Promise.all([a.page.waitForEvent('download'), a.page.click('#exportBtn')]);
@@ -270,7 +306,7 @@ const scenarios = {
     const b = await newPage('roundtrip-b');
     await b.page.setInputFiles('#importFile', p);
     await b.page.waitForTimeout(300);
-    const v = await b.page.evaluate(() => [document.getElementById('setTemplate').value, document.getElementById('setFit').value, document.getElementById('setResolution').value]);
+    const v = await b.page.evaluate(() => [document.querySelector('input[name=tpl]:checked').value, document.getElementById('setFit').value, document.getElementById('setResolution').value]);
     check(v.join() === 'pip,crop,1080x1350', `roundtrip: 불러온 설정 이상 ${v}`);
     await b.done();
   },
@@ -329,9 +365,10 @@ const scenarios = {
     check(/동화책 콘티 → 숏폼: 토토의 우산 · 장면 3개 · 합계 21초\(쪽 글 읽는 시간\) · 그림 3장 연결 · 쓰지 않는 그림: extra-99\.png/.test(msg), `ai_story: 안내 이상 ${msg}`);
     const spec = JSON.parse(await page.locator('#jsonText').inputValue());
     check(spec.scenes.map((x) => `${x.image}:${x.duration}`).join(',') === 'page-01.png:10,page-02.png:5,page-03.png:6' && spec.ratio === '4:3', `ai_story: 명세 이상 ${JSON.stringify(spec.scenes)}`);
-    check(!/extra-99/.test(await page.locator('#fileList').innerText()), 'ai_story: 안 쓰는 그림이 파일 목록(참조)에 남음');
-    const list = await page.locator('#fileList').innerText();
-    check(/page-01\.png\s*장면 1 첫 프레임/.test(list) && /page-03\.png\s*장면 3 첫 프레임/.test(list), `ai_story: 파일 목록 역할 이상 ${list}`);
+    const list = (await chips(page, 'chipsMedia')).join(' / ');
+    check(!spec.sources && /extra-99\.png 쓰지 않음/.test(list), `ai_story: 안 쓰는 그림이 참고로 붙거나 '쓰지 않음' 표시가 없음 ${list}`);
+    check(/page-01\.png 장면 1 첫 프레임/.test(list) && /page-03\.png 장면 3 첫 프레임/.test(list), `ai_story: 파일 칩 역할 이상 ${list}`);
+    check(/이야기 JSON → 장면 3개/.test((await chips(page, 'chipsJson')).join()), 'ai_story: 1번 칸에 이야기 JSON 표시 없음');
     await page.screenshot({ path: join(OUT, 'ai-story-ready.png') });
     const { info } = await makeAndDownload(page, 'ai-story', 240000);
     check(info.w === 720 && info.h === 1280 && info.acodec, `ai_story: 결과 이상 ${JSON.stringify(info)}`);
@@ -430,7 +467,7 @@ const scenarios = {
     await page.fill('#apiKey', 'sk-ant-test-123');
     await page.setInputFiles('#mediaFiles', media('src1.mp4'));
     await page.click('#planBtn');
-    await page.waitForFunction(() => /채웠습니다|실패|오류|연결/.test(document.getElementById('planOut').textContent), null, { timeout: 30000 });
+    await page.waitForFunction(() => /채웠어요|실패|오류|연결/.test(document.getElementById('planOut').textContent), null, { timeout: 30000 });
     const out = await page.locator('#planOut').innerText();
     const txt = await page.inputValue('#jsonText');
     check(/시도 2회/.test(out) && /아침 커피/.test(txt), `claude: 결과 이상 — ${out}`);
@@ -464,36 +501,57 @@ const scenarios = {
     const j = JSON.parse(await page.inputValue('#jsonText'));
     check(j.image === 'first.png', `slots: JSON image ${j.image}`);
     check(JSON.stringify(j.sources) === JSON.stringify(['src1.mp4', 'src2.mp4']), `slots: JSON sources ${JSON.stringify(j.sources)}`);
-    const roles = await page.$$eval('#fileList li', (ls) => ls.map((l) => l.textContent));
-    check(roles.some((r) => /src1\.mp4.*AI 참조/.test(r)), `slots: 파일 목록 역할 ${roles.join(' / ')}`);
+    const roles = await chips(page, 'chipsRefs');
+    check(roles.some((r) => /src1\.mp4 AI 참고 1/.test(r)), `slots: 4번 칸 역할 ${roles.join(' / ')}`);
+    check((await chips(page, 'chipsImage')).some((r) => /first\.png 첫 장면 그림/.test(r)), 'slots: 3번 칸 역할 이상');
+    // × 로 빼면 JSON 에서도 지운다
+    await page.click('#chipsRefs li[data-name="src1.mp4"] .chip-x');
+    await page.click('#chipsImage li[data-name="first.png"] .chip-x');
+    await page.waitForTimeout(300);
+    const k = JSON.parse(await page.inputValue('#jsonText'));
+    check(k.image === undefined && JSON.stringify(k.sources) === JSON.stringify(['src2.mp4']), `slots: 뺀 파일이 JSON 에 남음 ${JSON.stringify(k)}`);
     await done();
   },
 
-  // 둘러보기(320 폭): 말풍선이 화면 안, 키보드 조작, Esc, 다시 안 뜸 + 도움말 예시 불러오기
+  // 둘러보기(320 폭): 저절로 안 뜨고 '처음이세요?' 안내로 연다 → 말풍선이 화면 안, 키보드 조작, Esc, 다시 안 뜸 + 도움말 예시 불러오기
   async tour() {
     const { page, done } = await newPage('tour', { vp: 'narrow', tour: true });
+    await page.waitForTimeout(800);
+    check((await page.locator('.tour-box').count()) === 0, 'tour: 처음 열 때 둘러보기가 저절로 뜸');
+    check(await page.locator('#tourHint').isVisible(), 'tour: 처음이세요? 안내가 안 보임');
+    await page.screenshot({ path: join(OUT, 'hint-320.png') });
+    await page.click('#tourHintGo');
     await page.waitForSelector('.tour-box', { timeout: 5000 });
-    for (let i = 0; i < 7; i++) {
+    const total = Number((await page.locator('.tour-count').innerText()).split('/')[1]);
+    check(total >= 6, `tour: 단계 수 ${total}`);
+    for (let i = 0; i < total; i++) {
       await page.waitForTimeout(80);
       const r = await page.evaluate(() => {
         const b = document.querySelector('.tour-box').getBoundingClientRect();
         return { l: b.left, r: b.right, t: b.top, b: b.bottom, vw: document.documentElement.clientWidth, vh: innerHeight, n: document.querySelector('.tour-count').textContent };
       });
       check(r.l >= 0 && r.r <= r.vw && r.t >= 0 && r.b <= r.vh, `tour: ${r.n} 말풍선이 화면 밖 ${JSON.stringify(r)}`);
-      if (i === 0) await page.screenshot({ path: join(OUT, 'tour-320.png') });
-      if (i < 6) await page.keyboard.press('ArrowRight');
+      if (i === 1) await page.screenshot({ path: join(OUT, 'tour-320.png') });
+      if (i < total - 1) await page.keyboard.press('ArrowRight');
     }
     await page.keyboard.press('Escape');
     check((await page.locator('.tour-box').count()) === 0, 'tour: Esc 로 안 닫힘');
     await page.reload();
     await page.waitForTimeout(800);
-    check((await page.locator('.tour-box').count()) === 0, 'tour: 한 번 본 뒤에도 다시 뜸');
+    check((await page.locator('.tour-box').count()) === 0 && !(await page.locator('#tourHint').isVisible()), 'tour: 한 번 본 뒤에도 둘러보기·안내가 다시 뜸');
     await page.click('#helpBtn');
     await page.locator('#helpExamples .example').nth(1).click();
     await page.waitForTimeout(300);
     check(/tabby cat/.test(await page.inputValue('#jsonText')), 'tour: 도움말 예시 불러오기 안 됨');
     check((await overflow(page)) <= 0, `tour: 320 가로 넘침 ${await overflow(page)}px`);
     await done();
+    // 안내 × 로 닫으면 다시 안 보인다(localStorage)
+    const h = await newPage('hint', { tour: true });
+    await h.page.click('#tourHintClose');
+    await h.page.reload();
+    await h.page.waitForTimeout(500);
+    check(!(await h.page.locator('#tourHint').isVisible()) && (await h.page.locator('.tour-box').count()) === 0, 'hint: 닫은 안내가 다시 보임');
+    await h.done();
   },
 
   // WebCodecs 없는 브라우저 대체 경로(강제): MediaRecorder 실시간 녹화
@@ -505,6 +563,179 @@ const scenarios = {
     const { info } = await makeAndDownload(page, 'recorder-cutaway', 60000);
     check(info.w === 720 && info.h === 1280 && info.acodec && Math.abs(info.dur - 8) < 0.5, `recorder: 결과 이상 ${JSON.stringify(info)}`);
     await done();
+  },
+
+  // 한꺼번에 놓기: JSON + 영상·음악·그림을 한 번에 → 칸마다 칩과 역할, 칸 위에 놓기, 쓸 수 없는 파일, AI 명세면 3·4번 칸으로
+  async drop() {
+    const { page, done } = await newPage('drop', { vp: 'wide' });
+    await page.screenshot({ path: join(OUT, 'ui-desktop-empty.png') });
+    const jp = join(OUT, 'job-drop.json');
+    writeFileSync(jp, JSON.stringify(composeJob('cutaway', { output: 'drop.mp4' }), null, 2));
+    const note = join(OUT, 'notes.txt');
+    writeFileSync(note, 'x');
+    await dropFiles(page, [jp, ...composeFiles('cutaway'), media('first.png')[0], note]);
+    await waitReady(page, 'drop');
+    const m = (await chips(page, 'chipsMedia')).join(' / ');
+    check(/base\.mp4 기본 영상/.test(m) && /src1\.mp4 클립 1/.test(m) && /src2\.mp4 클립 2/.test(m) && /bgm\.m4a 배경음/.test(m) && /first\.png 쓰지 않음/.test(m), `drop: 2번 칸 역할 이상 ${m}`);
+    check(/job-drop\.json 작업 JSON/.test((await chips(page, 'chipsJson')).join()), 'drop: 1번 칸에 JSON 이 안 들어감');
+    const dn = await page.locator('#dropNote').innerText();
+    check(/나눠 넣었어요: 작업 JSON 1개, 내 영상·그림·음악 5개/.test(dn) && /쓸 수 없는 파일은 뺐어요: notes\.txt/.test(dn), `drop: 안내 이상 ${dn}`);
+    check(await page.locator('#chipsMedia li[data-name="base.mp4"] .chip-thumb video').count() === 1 && await page.locator('#chipsMedia li[data-name="first.png"] .chip-thumb img').count() === 1, 'drop: 영상·그림 미리보기 그림 없음');
+    await page.screenshot({ path: join(OUT, 'ui-desktop-loaded.png') });
+    // 넓은 화면: 미리보기는 오른쪽 칸, 끝까지 내려도 화면 안(붙어 있음)
+    const lay = await page.evaluate(() => {
+      scrollTo(0, document.documentElement.scrollHeight);
+      const a = document.querySelector('.col-main').getBoundingClientRect();
+      const b = document.getElementById('previewWrap').getBoundingClientRect();
+      const mk = document.getElementById('makeBtn').getBoundingClientRect();
+      return { mainRight: a.right, left: b.left, top: b.top, bottom: b.bottom, mk: mk.bottom, vh: innerHeight, y: scrollY };
+    });
+    check(lay.y > 300 && lay.left > lay.mainRight && lay.top >= 0 && lay.bottom <= lay.vh && lay.mk <= lay.vh, `drop: 넓은 화면 미리보기가 오른쪽에 붙어 있지 않음 ${JSON.stringify(lay)}`);
+    // 칩 × 로 빼면 JSON 이 가리키는 파일은 빨간 '빠짐' 칩이 된다
+    await page.click('#chipsMedia li[data-name="src1.mp4"] .chip-x');
+    await page.waitForTimeout(300);
+    check((await chips(page, 'chipsMedia')).some((c) => /src1\.mp4 빠짐/.test(c)) && (await page.locator('#makeBtn').isDisabled()), 'drop: 뺀 파일이 빠짐으로 안 바뀜');
+    await dropFiles(page, media('src1.mp4'), '#slotMedia');
+    await waitReady(page, 'drop-again');
+    // 놓는 칸 아무 데나 눌러도 고르기 창, 1번 칸 × 는 JSON 비우기
+    const [fc] = await Promise.all([page.waitForEvent('filechooser', { timeout: 5000 }), page.click('#dropZone .drop-text')]);
+    check(fc.isMultiple(), 'drop: 놓는 칸을 눌러도 여러 파일 고르기 창이 안 뜸');
+    await page.click('#chipsJson .chip-x');
+    await page.waitForTimeout(300);
+    check((await chips(page, 'chipsJson')).length === 0 && (await page.locator('#makeBtn').isDisabled()) && /작업 JSON이 있어야/.test(await page.locator('#messages').innerText()), 'drop: 1번 칸 × 로 JSON 이 안 비워짐');
+    await done();
+
+    // AI 명세: 이름 없는 첫 그림 → 3번 칸(JSON image), 영상 → 4번 칸(JSON sources), 음악 → 2번 칸(배경음)
+    const b = await newPage('drop-ai');
+    const ai = join(OUT, 'job-drop-ai.json');
+    writeFileSync(ai, JSON.stringify({ prompt: 'a cat jumps', duration: 4, backend: 'h3video', server: 'http://127.0.0.1:9' }));
+    await dropFiles(b.page, [ai, ...media('first.png', 'src1.mp4', 'bgm.m4a')]);
+    await waitReady(b.page, 'drop-ai');
+    const j = JSON.parse(await b.page.inputValue('#jsonText'));
+    check(j.image === 'first.png' && JSON.stringify(j.sources) === '["src1.mp4"]', `drop-ai: JSON 에 안 들어감 ${JSON.stringify(j)}`);
+    const roles = [await chips(b.page, 'chipsImage'), await chips(b.page, 'chipsRefs'), await chips(b.page, 'chipsMedia')].map((x) => x.join());
+    check(/first\.png 첫 장면 그림/.test(roles[0]) && /src1\.mp4 AI 참고 1/.test(roles[1]) && /bgm\.m4a 배경음/.test(roles[2]), `drop-ai: 칸·역할 이상 ${roles.join(' | ')}`);
+    // 4번 칸 위에 직접 놓기 → 그 칸으로
+    await dropFiles(b.page, [png('page-01.png', 'red')], '#slotRefs');
+    await b.page.waitForTimeout(400);
+    const j2 = JSON.parse(await b.page.inputValue('#jsonText'));
+    check(JSON.stringify(j2.sources) === '["src1.mp4","page-01.png"]', `drop-ai: 4번 칸에 놓은 그림 ${JSON.stringify(j2.sources)}`);
+    await b.done();
+  },
+
+  // zip: 동화책 만들기 '파일 받기'(저장 방식) zip 을 놓기 / deflate zip 을 고르기 → book.json + 그림을 따로 놓은 것과 같이
+  async zip() {
+    const pages = [['cover.png', 'yellow'], ['page-01.png', 'red'], ['page-02.png', 'green'], ['page-03.png', 'blue'], ['sheet-1.png', 'white']].map(([n, c]) => [n, png(n, c)]);
+    const book = { kind: 'batch', title: '토토의 우산', style: 'watercolor', width: 1152, height: 864, items: [
+      { id: 'sheet-1', kind: 'sheet', image: 'images/sheet-1.png', prompt: 'character sheet' },
+      { id: 'cover', kind: 'cover', label: '표지', image: 'images/cover.png', scene: 'Book cover: Toto' },
+      ...[1, 2, 3].map((n) => ({ id: `page-0${n}`, kind: 'page', label: `${n}쪽`, page: n, text: ['토토는 늘 혼자 놀았어요.', '같이 쓰자!', ''][n - 1], image: `images/page-0${n}.png`, scene: `scene ${n}` })),
+    ] };
+    const entries = [{ name: 'book.json', data: JSON.stringify(book) }, { name: 'images/', data: '' }, ...pages.map(([n, f]) => ({ name: `images/${n}`, data: readFileSync(f) })), { name: 'index.html', data: '<!doctype html>' }];
+    for (const [method, how] of [[0, 'drop'], [8, 'pick']]) {
+      const zp = join(OUT, `book-${method}.zip`);
+      writeFileSync(zp, makeZip(entries, { method }));
+      const { page, done } = await newPage(`zip-${method}`);
+      if (how === 'drop') await dropFiles(page, [zp]);
+      else await page.setInputFiles('#allFiles', zp);
+      await waitReady(page, `zip-${method}`);
+      const dn = await page.locator('#dropNote').innerText();
+      const msg = await page.locator('#messages').innerText();
+      check(/^book-\d\.zip에서 6개를 꺼냈어요 \(쓰지 않는 1개는 뺌\) · 나눠 넣었어요: 작업 JSON 1개, 내 영상·그림·음악 5개/.test(dn), `zip ${method}: 꺼낸 안내 이상 ${dn}`);
+      check(/동화책 만들기 book\.json → 숏폼: 토토의 우산 · 장면 4개 .* 그림 4장 연결 · 쓰지 않는 그림: sheet-1\.png/.test(msg), `zip ${method}: 이야기 안내 이상 ${msg}`);
+      const spec = JSON.parse(await page.inputValue('#jsonText'));
+      check(spec.scenes.map((x) => x.image).join() === 'cover.png,page-01.png,page-02.png,page-03.png', `zip ${method}: 장면 그림 ${spec.scenes.map((x) => x.image)}`);
+      const list = (await chips(page, 'chipsMedia')).join(' / ');
+      check(/cover\.png 장면 1 첫 프레임/.test(list) && /page-03\.png 장면 4 첫 프레임/.test(list) && /sheet-1\.png 쓰지 않음/.test(list), `zip ${method}: 칩 ${list}`);
+      if (method === 0) await page.screenshot({ path: join(OUT, 'ui-zip.png') });
+      await done();
+    }
+  },
+
+  // 시작 3가지: 예시로 해 보기(브라우저에서 예시 영상을 만들어 끝까지 만들기), 이야기 JSON + 그림(파일 고르기), 아이디어(Claude 칸)
+  async start() {
+    const { page, done } = await newPage('start', { vp: 'wide' });
+    await page.click('#startExample');
+    await waitReady(page, 'start-example');
+    const m = (await chips(page, 'chipsMedia')).join(' / ');
+    check(/base\.mp4 기본 영상/.test(m) && /src1\.mp4 클립 1/.test(m) && /src2\.mp4 클립 2/.test(m) && /bgm\.m4a 배경음/.test(m), `start: 예시 파일 칩 ${m}`);
+    check(/예시 파일을 넣었어요/.test(await page.locator('#dropNote').innerText()), 'start: 예시 안내 없음');
+    const { info } = await makeAndDownload(page, 'start-example');
+    check(info.vcodec === 'h264' && info.acodec === 'aac' && info.w === 720 && info.h === 1280 && Math.abs(info.dur - 6) < 0.2, `start: 예시 결과 이상 ${JSON.stringify(info)}`);
+    check(await page.locator('#resultBox').isVisible() && /MB|KB/.test(await page.locator('#resultMeta').innerText()) && !(await page.locator('#againBtn').isDisabled()), 'start: 결과 카드(크기·다시 만들기) 없음');
+    await page.click('#startIdea');
+    await page.waitForTimeout(300);
+    check((await page.evaluate(() => document.getElementById('claudePanel').open && document.activeElement.id)) === 'idea', 'start: 아이디어 → Claude 칸이 안 열림');
+    const conti = join(OUT, 'start-conti.json');
+    writeFileSync(conti, JSON.stringify({ book: { title: '짧은 이야기', style: { prompt: 'crayon' }, characters: [], pages: [{ page: 1, text: '하나', scene: 'a' }, { page: 2, text: '둘', scene: 'b' }] } }));
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#startStory')]);
+    check(chooser.isMultiple(), 'start: 이야기 고르기가 여러 파일을 못 고름');
+    await chooser.setFiles([conti, png('page-02.png', 'green')]);
+    await page.waitForTimeout(500);
+    check(/동화책 콘티 → 숏폼: 짧은 이야기 · 장면 2개 .* 그림 1장 연결/.test(await page.locator('#messages').innerText()), `start: 이야기 고르기 결과 ${await page.locator('#messages').innerText()}`);
+    await done();
+  },
+
+  // 배치: 320~1440 가로 넘침 없음, 폰은 준비되면 아래 고정 만들기 단추(만들기 단추가 화면 밖일 때), 그 단추로 끝까지
+  async layout() {
+    for (const w of [320, 390, 768, 1024, 1440]) {
+      const { page, done } = await newPage(`layout-${w}`);
+      await page.setViewportSize({ width: w, height: 800 });
+      await loadJob(page, `layout-${w}`, composeJob('split'), composeFiles('split'));
+      await waitReady(page, `layout-${w}`);
+      await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
+      await page.waitForTimeout(200);
+      check((await overflow(page)) <= 0, `layout ${w}: 가로 넘침 ${await overflow(page)}px`);
+      await done();
+    }
+    const { page, done } = await newPage('dock', { vp: 'phone' });
+    await page.screenshot({ path: join(OUT, 'ui-phone-empty.png') });
+    check(!(await page.locator('#dock').isVisible()), 'dock: 준비 전인데 아래 단추가 보임');
+    await loadJob(page, 'dock', composeJob('cutaway', { resolution: '1080x1920', output: 'dock.mp4' }), composeFiles('cutaway'));
+    await waitReady(page, 'dock');
+    await page.evaluate(() => scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const b = document.getElementById('dock').getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom, vh: innerHeight, shown: !document.getElementById('dock').hidden, text: document.getElementById('dockBtn').textContent };
+    });
+    check(r.shown && Math.abs(r.bottom - r.vh) < 1 && r.text === '만들기', `dock: 아래 고정 단추 이상 ${JSON.stringify(r)}`);
+    await page.screenshot({ path: join(OUT, 'ui-phone-loaded.png') });
+    const t0 = Date.now();
+    const [dl] = await Promise.all([
+      page.waitForEvent('download', { timeout: 120000 }),
+      (async () => {
+        await page.click('#dockBtn');
+        await page.waitForFunction(() => parseInt(document.getElementById('progressPct').textContent, 10) >= 20, null, { timeout: 60000 });
+        await page.evaluate(() => scrollTo(0, 0));
+        await page.waitForTimeout(200);
+        check(/진행 보기 \d+%/.test(await page.locator('#dockBtn').innerText()) && /남은 시간 약/.test(await page.locator('#progressEta').innerText()), 'dock: 만드는 중 표시(진행 보기·남은 시간) 없음');
+        await page.screenshot({ path: join(OUT, 'ui-phone-rendering.png') });
+      })(),
+    ]);
+    const file = join(OUT, 'dock.mp4');
+    await dl.saveAs(file);
+    const info = probe(file);
+    results.push(`dock: ${info.vcodec} ${info.w}x${info.h} ${info.fps}fps + ${info.acodec} · ${info.dur.toFixed(2)}초 · ${((Date.now() - t0) / 1000).toFixed(1)}초`);
+    check(info.w === 1080 && info.h === 1920 && info.acodec === 'aac', `dock: 결과 이상 ${JSON.stringify(info)}`);
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: join(OUT, 'ui-phone-done.png') });
+    await done();
+    // 넓은 화면: 만드는 중·끝난 화면
+    const d = await newPage('wide-render', { vp: 'wide' });
+    await loadJob(d.page, 'wide-render', composeJob('cutaway', { resolution: '1080x1920', output: 'wide.mp4' }), composeFiles('cutaway'));
+    await waitReady(d.page, 'wide-render');
+    await Promise.all([
+      d.page.waitForEvent('download', { timeout: 120000 }),
+      (async () => {
+        await d.page.click('#makeBtn');
+        await d.page.waitForFunction(() => parseInt(document.getElementById('progressPct').textContent, 10) >= 20, null, { timeout: 60000 });
+        await d.page.screenshot({ path: join(OUT, 'ui-desktop-rendering.png') });
+      })(),
+    ]);
+    await d.page.waitForTimeout(800);
+    await d.page.screenshot({ path: join(OUT, 'ui-desktop-done.png') });
+    await d.done();
   },
 };
 
