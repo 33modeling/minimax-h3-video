@@ -1230,9 +1230,14 @@ def main(argv=None):
         print("\n중단했다 (Ctrl+C).", file=sys.stderr)
         sys.exit(130)
     except FileNotFoundError as e:
-        sys.exit(f"오류: 파일이 없다: {e.filename or e}")
+        sys.exit(f"오류: 파일이나 폴더가 없다: {e.filename or e}")
+    except PermissionError as e:
+        sys.exit(f"오류: 권한이 없어 읽거나 쓸 수 없다: {e.filename or e}\n"
+                 "  결과 폴더라면 쓸 수 있는 곳으로: --output-dir ~/videos   (한 번 저장: h3video config set output-dir ~/videos)")
     except UnicodeDecodeError:
         sys.exit("오류: 글자를 읽을 수 없는 파일이다 (UTF-8 글 파일인지 확인)")
+    except OSError as e:   # 디스크가 꽉 참 등: traceback 대신 한 줄
+        sys.exit(f"오류: {e.strerror or e}" + (f": {e.filename}" if getattr(e, "filename", None) else ""))
 
 
 if __name__ == "__main__":

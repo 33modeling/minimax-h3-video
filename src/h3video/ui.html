@@ -159,7 +159,7 @@ dl.spec ul{margin:0;padding-left:18px}
 .chip.completed{background:var(--ok-soft);color:var(--ok)}.chip.failed{background:var(--bad-soft);color:var(--bad)}.chip.running,.chip.in_progress{background:var(--acc-soft);color:var(--acc)}
 .thumbs{display:flex;gap:6px;flex-wrap:wrap}
 .thumbs img,.thumbs .ph{width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:grid;place-items:center;font-size:10.5px;color:var(--mut);background:var(--soft)}
-.job video{width:100%;border-radius:10px;background:#000;max-height:420px;display:block;aspect-ratio:16/9;object-fit:contain}
+.job video{width:100%;border-radius:10px;background:#000;max-height:420px;display:block;aspect-ratio:16/9;object-fit:contain;margin:0 auto}
 .actions{display:flex;flex-wrap:wrap;gap:6px}
 .btn{padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);font-size:13px;cursor:pointer;text-decoration:none;color:var(--ink);display:inline-flex;align-items:center;gap:6px;line-height:1.2;min-height:34px}
 .btn svg{width:15px;height:15px}
@@ -949,7 +949,9 @@ function cardHtml(it) {
   const settings = story ? '' : `<details class="set" ${o.set ? 'open' : ''} data-open="set"><summary>설정 보기</summary><div class="set-body">
       <div class="p">${esc(it.prompt)}</div>${it.negative ? `<div>넣지 않을 것: ${esc(it.negative)}</div>` : ''}
       <div class="help">작업 ${esc(it.id)}${it.output ? ` · <code>${esc(it.output)}</code>` : ''}</div></div></details>`;
-  const media = it.video_url ? `<div class="c-media"><video controls preload="metadata" playsinline src="${esc(full(it.video_url))}"></video></div>` : '';
+  // 영상 칸 비율: 세로(9:16) 영상이 16:9 칸 안에서 아주 작게 보이지 않게 작업의 화면비로, 읽히면 실제 크기로
+  const ar = /^(\d+):(\d+)$/.exec((story ? it.ratio : it.aspect_ratio) || '');
+  const media = it.video_url ? `<div class="c-media"><video controls preload="metadata" playsinline style="aspect-ratio:${ar ? `${ar[1]} / ${ar[2]}` : '16 / 9'}" src="${esc(full(it.video_url))}"></video></div>` : '';
   return `<div class="c-head"><div class="job-top"><h3>${esc(titleOf(it))}</h3><span class="tag ${story ? 'story' : ''}">${TAG[story ? 'story' : it.task] || it.task}</span></div>
     <div class="meta">${meta}</div>${inputsHtml(it)}
     <div class="state"><span class="st ${it.status}">${st}</span>${detail ? `<span class="detail">${esc(detail)}</span>` : ''}<span class="el" ${live ? `data-live="${it.elapsed || 0}"` : ''}>${elapsed}</span></div></div>
@@ -990,6 +992,10 @@ setInterval(() => {   // 경과 시간은 1초마다 화면에서만 올린다 (
   for (const e of $$('.el[data-live]')) { const b = +e.dataset.live; if (b) e.textContent = `경과 ${fmt(b + dt)}`; }
 }, 1000);
 function focusCard(id) { const c = cards.get(id); if (c) { c.el.scrollIntoView({behavior: 'smooth', block: 'center'}); c.el.animate([{outline: '2px solid var(--acc)'}, {outline: '2px solid transparent'}], 1600); } }
+$('#feed').addEventListener('loadedmetadata', e => {
+  const v = e.target;
+  if (v.tagName === 'VIDEO' && v.videoWidth && v.videoHeight) v.style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`;
+}, true);
 $('#feed').addEventListener('toggle', e => {
   const d = e.target.closest('details[data-open]'); if (!d) return;
   const id = d.closest('[data-id]').dataset.id; opened.set(id, {...(opened.get(id) || {}), [d.dataset.open]: d.open});

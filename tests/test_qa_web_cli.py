@@ -107,6 +107,19 @@ class WebFixesTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(f"포트 {port} 를 이미 다른 프로그램이 쓰고 있다", err); self.assertNotIn("Traceback", err)
 
+    def test_unexpected_server_errors_come_back_as_json(self):
+        """업로드 폴더에 쓸 수 없을 때 연결을 그냥 끊어 화면이 '웹 서버에 연결하지 못했어요'로 잘못 알리던 것 → 500 + 쉬운 말."""
+        if os.geteuid() == 0:
+            self.skipTest("root 는 권한 오류가 안 난다")
+        img = png(self.tmp / "a.png")
+        self.app.upload_dir.chmod(0o500)
+        self.addCleanup(self.app.upload_dir.chmod, 0o700)
+        import contextlib
+        with contextlib.redirect_stderr(io.StringIO()):
+            code, r = self.post("/api/jobs", [("prompt", None, "고양이"), ("first_image", "a.png", img.read_bytes())])
+        self.assertEqual(code, 500)
+        self.assertIn("권한이 없어", r["error"])
+
     def test_ui_has_offline_defaults_and_download_param(self):
         html = (ROOT / "src/h3video/ui.html").read_text(encoding="utf-8")
         self.assertIn("fillSelects(['16:9'", html)                 # 서버 연결 전에도 화면비·크기 칸이 비지 않는다

@@ -318,6 +318,33 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             if preflight:
                 self.send_header("Access-Control-Max-Age", "600")
 
+        def send_response(self, code, message=None):
+            self._started = True
+            super().send_response(code, message)
+
+        def _safe(self, fn):
+            """처리 중 예상 못 한 오류(디스크·권한 등): 연결을 그냥 끊으면 화면은 '연결하지 못했어요'로 잘못 알린다 → 500 + 쉬운 말."""
+            self._started = False
+            try:
+                fn()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                traceback.print_exc()
+                if not self._started:
+                    try:
+                        msg = f"권한이 없어 쓸 수 없어요: {e.filename}" if isinstance(e, PermissionError) else f"{type(e).__name__}: {e}"
+                        self._json({"error": f"웹 서버 안에서 오류가 났어요 — {msg}"}, 500)
+                    except OSError:
+                        pass
+
+        def do_GET(self):
+            self._safe(self._do_get)
+
+        def do_POST(self):
+            self._safe(self._do_post)
+
         def do_OPTIONS(self):
             self.send_response(204 if cors_origins else 405)
             self._cors(preflight=True)
@@ -377,7 +404,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
         def _json(self, obj, code=200):
             self._send(code, json.dumps(obj, ensure_ascii=False).encode())
 
-        def do_GET(self):
+        def _do_get(self):
             u = urllib.parse.urlparse(self.path)
             p = u.path
             if p in ("/", "/index.html"):
@@ -470,7 +497,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             except (H3Error, ValueError) as e:
                 return self._json({"error": str(e)}, 400)
 
-        def do_POST(self):
+        def _do_post(self):
             p = urllib.parse.urlparse(self.path).path
             if p in ("/api/story", "/api/story/plan"):
                 return self._story_post()
