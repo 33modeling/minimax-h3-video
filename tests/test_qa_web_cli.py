@@ -101,6 +101,12 @@ class WebFixesTest(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertIn("1줄 2번째 글자", r["error"])
 
+    def test_web_port_in_use_says_what_to_do(self):
+        port = self.web.server_address[1]
+        code, out, err = run("web", "--port", str(port), "--output-dir", str(self.tmp / "w2"), "--endpoint", self.url)
+        self.assertEqual(code, 1)
+        self.assertIn(f"포트 {port} 를 이미 다른 프로그램이 쓰고 있다", err); self.assertNotIn("Traceback", err)
+
     def test_ui_has_offline_defaults_and_download_param(self):
         html = (ROOT / "src/h3video/ui.html").read_text(encoding="utf-8")
         self.assertIn("fillSelects(['16:9'", html)                 # 서버 연결 전에도 화면비·크기 칸이 비지 않는다
@@ -228,6 +234,16 @@ class CliFixesTest(CleanEnv):
         bad = self.tmp / "bad.zip"; bad.write_bytes(b"not a zip")
         with self.assertRaises(H3Error):
             story.unpack_zip(str(bad))
+
+    def test_json_only_is_success_when_chosen_scenes_are_done(self):
+        httpd, state, url = mock_server.start(steps=1)
+        self.addCleanup(lambda: (httpd.shutdown(), httpd.server_close()))
+        f = self.tmp / "s.json"
+        f.write_text(json.dumps({"clips": ["고양이", "강아지", "토끼"]}, ensure_ascii=False), encoding="utf-8")
+        code, out, err = run("json", str(f), "--only", "clip-02", "--endpoint", url, "--output-dir", str(self.tmp / "o"), "--poll", "0.02")
+        self.assertEqual(code, 0, err)
+        self.assertIn("고른 장면 1개를 만들었다", err); self.assertNotIn("실패한", err)
+        self.assertTrue(out.strip().endswith(".mp4") and len(out.strip().splitlines()) == 1)
 
     def test_story_json_error_says_where(self):
         with self.assertRaises(H3Error) as e:

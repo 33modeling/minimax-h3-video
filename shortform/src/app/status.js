@@ -23,6 +23,7 @@ export const STATE_KO = {
   cancelled: '취소됨',
   downloading: '받는 중',
   reused: '이전 결과 재사용',
+  stopped: '멈춤',
 };
 
 export const fmtSec = (s) => (s >= 60 ? `${Math.floor(s / 60)}분 ${Math.round(s % 60)}초` : `${Math.max(0, Math.round(s))}초`);
@@ -90,15 +91,21 @@ export class StatusView {
     this.current = key;
   }
 
-  finish(ok, text) {
+  // cancelled: 사용자가 취소 — 단계는 '취소'로, 만들던 장면 카드는 '취소됨'으로 (전에는 '실패'로 보이고 '생성 중'·남은 시간이 멈춘 채 남았다)
+  finish(ok, text, cancelled = false) {
     clearInterval(this.timer);
     if (ok) {
       this.stage('done');
       this.items.get('done').className = 'done';
     } else {
       const li = this.items.get(this.current) || this.items.get('validate');
-      li.className = 'fail';
-      li.querySelector('.lbl').textContent += ' — 실패';
+      li.className = cancelled ? 'fail cancel' : 'fail';
+      li.querySelector('.lbl').textContent += cancelled ? ' — 취소' : ' — 실패';
+      for (const [i, c] of this.cards.entries()) {
+        if (!c || c.done) continue;
+        this.updateScene(i, { state: cancelled ? 'cancelled' : c.started ? 'failed' : 'stopped' });
+      }
+      this.tick();
     }
     this.announce(text);
   }
@@ -171,9 +178,9 @@ export class StatusView {
       bar.firstElementChild.style.width = '100%';
       c.done = true;
     }
-    if (['failed', 'error', 'cancelled'].includes(c.state)) {
+    if (['failed', 'error', 'cancelled', 'stopped'].includes(c.state)) {
       bar.classList.remove('indeterminate');
-      bar.classList.add('failed');
+      bar.classList.add(['cancelled', 'stopped'].includes(c.state) ? 'cancelled' : 'failed');
       c.done = true;
     }
     card.querySelector('.sc-retry').textContent = st.retry ? `재시도 중(${st.retry}/${st.maxRetry})` : '';

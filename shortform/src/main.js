@@ -276,6 +276,24 @@ function effectiveSpec(raw) {
   return s;
 }
 
+// JSON.parse 의 영어 오류(브라우저마다 다름) → 몇 줄 몇 번째 글자인지 쉬운 말로. 원래 메시지는 괄호에.
+function jsonErrorText(text, e) {
+  const msg = String((e && e.message) || e);
+  if (!(e instanceof SyntaxError)) return msg;
+  let line = null, col = null;
+  const lc = /line (\d+) column (\d+)/.exec(msg);
+  const pos = /position (\d+)/.exec(msg);
+  if (lc) [line, col] = [Number(lc[1]), Number(lc[2])];
+  else if (pos) {
+    const before = String(text).slice(0, Number(pos[1]));
+    line = before.split('\n').length;
+    col = before.length - before.lastIndexOf('\n');
+  }
+  if (line) return `JSON 문법 오류: ${line}줄 ${col}번째 글자 근처 — 따옴표·쉼표·괄호를 확인하세요 (${msg})`;
+  if (/end of (JSON|data)|unexpected EOF/i.test(msg)) return `JSON 문법 오류: 중간에 끝났어요 — 닫는 괄호 } ] 나 따옴표가 빠졌는지 확인하세요 (${msg})`;
+  return `JSON 문법 오류: 따옴표·쉼표·괄호를 확인하세요 (${msg})`;
+}
+
 function parseJsonText() {
   if (!state.jsonText.trim()) return {};
   const v = JSON.parse(state.jsonText);
@@ -295,7 +313,7 @@ function writeFields(changes, { quiet = false } = {}) {
   try {
     obj = parseJsonText();
   } catch (e) {
-    setMessages([{ level: 'error', text: `JSON 문법 오류를 먼저 고치세요: ${e.message}` }]);
+    setMessages([{ level: 'error', text: `먼저 고치세요 — ${jsonErrorText(state.jsonText, e)}` }]);
     return false;
   }
   for (const [k, v] of Object.entries(changes)) {
@@ -398,7 +416,7 @@ async function analyze() {
     raw = parseJsonText();
   } catch (e) {
     renderSlots(null);
-    setMessages([{ level: 'error', text: e instanceof SyntaxError ? `JSON 문법 오류: ${e.message}` : e.message }]);
+    setMessages([{ level: 'error', text: jsonErrorText(state.jsonText, e) }]);
     return;
   }
   syncSettings(raw);
@@ -756,7 +774,7 @@ async function make() {
     setMessages([{ level: 'ok', text: `완성했어요: ${name}. 내려받기가 저절로 시작되지 않으면 "내려받기"를 누르세요.` }]);
   } catch (e) {
     if (e instanceof Cancelled || e.name === 'AbortError' || abort.signal.aborted) {
-      status.finish(false, '취소했어요');
+      status.finish(false, '취소했어요', true);
       status.title(null);
       setMessages([{ level: 'warn', text: '만들기를 취소했어요. 이미 만든 AI 장면은 다음에 다시 써요.' }]);
     } else {

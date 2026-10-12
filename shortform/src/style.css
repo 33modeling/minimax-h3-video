@@ -338,6 +338,8 @@ label.block textarea { resize: vertical; font: inherit; }
 .stages li.now .dot { background: var(--on-accent); animation: pulse 1s ease-in-out infinite; }
 .stages li.fail { color: var(--error); background: var(--error-soft); border-color: var(--error); }
 .stages li.fail .dot { background: var(--error); }
+.stages li.fail.cancel { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); }
+.stages li.fail.cancel .dot { background: var(--warn); }
 .stages li.skip { display: none; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 .scene-cards { display: grid; gap: 8px; }
@@ -348,6 +350,7 @@ label.block textarea { resize: vertical; font: inherit; }
 .badge[data-state="in_progress"], .badge[data-state="running"] { background: var(--accent-soft); color: var(--accent); }
 .badge[data-state="completed"], .badge[data-state="succeeded"], .badge[data-state="reused"] { background: var(--accent); color: var(--on-accent); }
 .badge[data-state="failed"], .badge[data-state="error"] { background: var(--error-soft); color: var(--error); }
+.badge[data-state="cancelled"], .badge[data-state="stopped"] { background: var(--warn-soft); color: var(--warn); }
 .sc-prompt { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .sc-retry { color: var(--warn); }
@@ -355,6 +358,7 @@ label.block textarea { resize: vertical; font: inherit; }
 .sc-bar { height: 6px; }
 .bar.indeterminate > div { width: 30% !important; animation: slide 1.2s ease-in-out infinite; }
 .bar.failed > div { background: var(--error); width: 100% !important; }
+.bar.cancelled > div { background: var(--warn); }
 @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 @media (prefers-reduced-motion: reduce) { .bar.indeterminate > div { animation: none; width: 100% !important; opacity: 0.4; } .stages li.now .dot { animation: none; } }
 .fail-box { border: 1px solid var(--error); background: var(--error-soft); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; }

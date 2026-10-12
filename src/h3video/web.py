@@ -554,7 +554,21 @@ def serve(host: str = "127.0.0.1", port: int = 8790, endpoint: str = DEFAULT_END
           poll: float = 3.0, cors_origin: str | None = None):
     app = App(endpoint, ref_endpoint, Path(output_dir), inbox_dir, poll)
     origins = parse_origins(cors_origin if cors_origin is not None else os.environ.get("H3_CORS_ORIGIN"))
-    httpd = ThreadingHTTPServer((host, port), make_handler(app, origins))
+    try:
+        httpd = ThreadingHTTPServer((host, port), make_handler(app, origins))
+    except OSError as e:   # 파이썬 traceback 대신 할 일을 한 줄로
+        import errno
+        import socket
+        if isinstance(e, socket.gaierror):
+            raise H3Error(f"--host {host} 를 찾을 수 없다 (이 컴퓨터에서만: 127.0.0.1, 다른 컴퓨터에서도: 0.0.0.0)") from None
+        if e.errno == errno.EADDRINUSE:
+            raise H3Error(f"포트 {port} 를 이미 다른 프로그램이 쓰고 있다. 웹 UI 가 벌써 켜져 있으면 http://{host}:{port} 를 열면 된다. "
+                          f"다른 포트로: h3video web --port {port + 1}   (scripts/web.sh 는 전에 띄운 웹 UI 를 끄고 다시 켠다)") from None
+        if e.errno in (errno.EACCES, errno.EPERM):
+            raise H3Error(f"포트 {port} 는 관리자 권한이 있어야 쓸 수 있다. 1024 이상으로: h3video web --port 8790") from None
+        if e.errno == errno.EADDRNOTAVAIL:
+            raise H3Error(f"이 컴퓨터에 {host} 주소가 없다 (이 컴퓨터에서만: 127.0.0.1, 다른 컴퓨터에서도: 0.0.0.0)") from None
+        raise H3Error(f"웹 서버를 열지 못했다 ({host}:{port}): {e.strerror or e}") from None
     if origins:
         print(f"[h3video web] CORS 허용: {', '.join(origins)}", flush=True)
     print(f"[h3video web] http://{host}:{port}  (H3 서버: {endpoint} / ref: {ref_endpoint}, 출력: {output_dir})", flush=True)

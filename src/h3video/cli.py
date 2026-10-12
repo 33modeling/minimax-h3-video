@@ -810,7 +810,16 @@ def cmd_json(a):
     for c in state["clips"]:
         if c.get("error"):
             print(f"실패 {c['label']}: {c['error']}", file=sys.stderr)
-    print(f"장면 {s['done']}/{s['total']}개 완료. 실패한 장면만 다시: h3video json --resume {d.name}", file=sys.stderr)
+    out_opt = f" --output-dir {a.output_dir}" if given(a, "output-dir") else ""
+    if only and all(c.get("output") for c in state["clips"] if c["id"] in only):
+        # --only 로 고른 장면은 다 됐다: 실패가 아니다 (전에는 '실패한 장면만 다시'라며 종료 코드 1)
+        print(f"고른 장면 {len(only)}개를 만들었다 (전체 {s['total']}개 중 {s['done']}개 완료). "
+              f"나머지도 만들고 이어 붙이기: h3video json --resume {d.name}{out_opt}", file=sys.stderr)
+        for c in state["clips"]:
+            if c["id"] in only:
+                print(c["output"], flush=True)
+        return
+    print(f"장면 {s['done']}/{s['total']}개 완료. 실패한·안 된 장면만 다시: h3video json --resume {d.name}{out_opt}", file=sys.stderr)
     sys.exit(1)
 
 

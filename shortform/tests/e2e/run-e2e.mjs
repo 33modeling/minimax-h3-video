@@ -272,7 +272,7 @@ const scenarios = {
     await page.click('#jsonDetails summary');
     await page.fill('#jsonText', '{ "base": "base.mp4", ');
     await page.waitForTimeout(700);
-    check(/JSON 문법 오류/.test(await page.locator('#messages').innerText()), 'invalid: 문법 오류 문구 없음');
+    check(/JSON 문법 오류: .*(1줄 \d+번째 글자|중간에 끝났어요)/.test(await page.locator('#messages').innerText()), `invalid: 문법 오류 위치를 쉬운 말로 안 알림 — ${await page.locator('#messages').innerText()}`);
     await page.fill('#jsonText', '{ "base": "base.mp4", "template": "zoom", "tittle": "x" }');
     await page.waitForTimeout(700);
     const m = await page.locator('#messages').innerText();
@@ -445,6 +445,9 @@ const scenarios = {
     const s2 = fl.log.find((x) => x.kind === 'submit');
     check(s2 && s2.body.task === 't2va' && s2.body.conditions.length === 0, `ai_sglang: t2va 요청 이상 ${JSON.stringify(s2)}`);
     check(fl.log.some((x) => x.kind === 'delete'), 'ai_sglang: 취소 때 DELETE 를 안 보냄');
+    // 취소는 '실패'가 아니라 '취소'로, 만들던 장면 카드도 '취소됨'으로 (전에는 '생성 중'·남은 시간이 멈춘 채 남았다)
+    const st = await page.locator('#statusBox').innerText();
+    check(/— 취소/.test(st) && !/— 실패/.test(st) && /취소됨/.test(await page.locator('.scene-card .badge').innerText()), `ai_sglang: 취소 표시 이상 — ${st}`);
     await done();
     fl.close();
     ref.close();
