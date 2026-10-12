@@ -1115,7 +1115,7 @@ addEventListener('message',event=>{
  const trusted=event.origin==='https://frame-storyboard-33.glassytune4.chatgpt.site'||event.origin==='https://33modeling.pages.dev'||/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(event.origin);
  if(!trusted||event.source!==window.opener||event.data?.type!=='creative-conti-handoff')return;
  const data=event.data.project;if(!data?.board?.scenes)return;
- files.json=[new File([JSON.stringify(data)],'frame-storyboard.json',{type:'application/json'})];setMode('story');renderZone('json');storyPlan();toast('영상 콘티를 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');
+ setMode('story');addFiles('json',[new File([JSON.stringify(data)],'frame-storyboard.json',{type:'application/json'})]);toast('영상 콘티를 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');
 });
 if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');
 </script></body></html>
