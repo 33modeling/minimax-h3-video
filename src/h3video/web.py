@@ -49,13 +49,29 @@ def parse_seed(v) -> int:
     s = str(v if v is not None else "").strip().lower()
     if s in ("random", "rand", "r"):
         return random.randrange(2 ** 31)
+    if s and not re.fullmatch(r"-?\d+", s):
+        raise H3Error(f"시드는 숫자만 적어요 (비우면 매번 다르게): {s}")
     return int(s or 0)
 
 
+def parse_int(v, name: str, default: int | None = None) -> int | None:
+    """폼 값 → 정수. '8.0' 같은 것도 받고, 숫자가 아니면 쉬운 말로 (파이썬 int() 의 영어 오류 대신)."""
+    s = str(v if v is not None else "").strip()
+    if not s:
+        return default
+    try:
+        f = float(s)
+    except ValueError:
+        raise H3Error(f"{name}에는 숫자를 적어 주세요: {s}") from None
+    if f != f or f in (float("inf"), float("-inf")):
+        raise H3Error(f"{name}에는 숫자를 적어 주세요: {s}")
+    return int(round(f))
+
+
 def parse_size(v) -> int:
-    size = int(v or spec.SHORT_EDGE_DEFAULT)
+    size = parse_int(v, "크기", spec.SHORT_EDGE_DEFAULT)
     if size not in SIZES:
-        raise H3Error("size 는 512·576·640·704·768 중 하나")
+        raise H3Error("크기(size)는 512·576·640·704·768 중 하나")
     return size
 
 
@@ -126,15 +142,15 @@ class App:
 
     def plan(self, q: dict) -> dict:
         g = lambda k, d=None: (q.get(k) or [d])[0]  # noqa: E731
-        seconds = max(spec.DURATION_MIN, int(float(g("seconds", 8) or 8)))
+        seconds = max(spec.DURATION_MIN, parse_int(g("seconds"), "길이(초)", 8))
         task = g("task", "t2va") or "t2va"
         aspect = g("aspect", "16:9") or "16:9"
         if aspect not in spec.ASPECT_RATIOS:
             raise H3Error(f"aspect 는 {spec.ASPECT_RATIOS} 중 하나")
         size = parse_size(g("size"))
         keyframes = 0 if task == "ref2va" else (2 if parse_bool(g("last", "0")) else 1)
-        m = self.max_scene(task, aspect, size, keyframes, int(g("images", 0) or 0), float(g("video_seconds", 0) or 0))
-        scenes = spec.plan_scenes(seconds, int(g("scene_seconds", 10) or 10), m or None)
+        m = self.max_scene(task, aspect, size, keyframes, parse_int(g("images"), "images", 0), float(parse_int(g("video_seconds"), "video_seconds", 0)))
+        scenes = spec.plan_scenes(seconds, parse_int(g("scene_seconds"), "장면 길이", 10) or 10, m or None)
         return {"seconds": seconds, "scenes": scenes, "max_scene": m or None,
                 "limit": max(spec.SCENE_MIN, min(spec.DURATION_MAX, m)) if m else spec.DURATION_MAX}
 
@@ -251,6 +267,12 @@ def story_fields(fields: dict) -> dict:
             "ratio": ratio, "seed": parse_seed(g("seed")), "size": parse_size(g("size"))}
 
 
+def attachment(name: str) -> str:
+    """Content-Disposition: 한글 파일 이름도 깨지지 않게 (RFC 6266/5987)."""
+    ascii_name = re.sub(r'[^A-Za-z0-9._-]+', "_", name).strip("_") or "video.mp4"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{urllib.parse.quote(name)}"
+
+
 def parse_multipart(content_type: str, body: bytes) -> dict[str, list[tuple[str | None, bytes]]]:
     """multipart/form-data → {field: [(filename|None, bytes), ...]} (cgi 모듈 없이)."""
     msg = email.message_from_bytes(b"Content-Type: " + content_type.encode() + b"\r\nMIME-Version: 1.0\r\n\r\n" + body,
@@ -312,9 +334,10 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             self.end_headers()
             self.wfile.write(body)
 
-        def _send_file(self, f: Path):
+        def _send_file(self, f: Path, download: bool = False):
             """Range 요청을 받는다: 브라우저 <video> 가 구간 이동을 하고, Safari·iOS 는 Range 없이는 재생하지 않는다.
-            큰 mp4 를 메모리에 다 올리지 않고 나눠 보낸다."""
+            큰 mp4 를 메모리에 다 올리지 않고 나눠 보낸다. download=True(?download=1)면 내려받기로 보낸다
+            (허브처럼 다른 주소에서 연 화면은 <a download> 가 먹지 않아 영상 페이지로 넘어가 버린다)."""
             size = f.stat().st_size
             start, end, code = 0, size - 1, 200
             m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range", "").strip())
@@ -332,6 +355,8 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             self._cors()
             self.send_header("Content-Type", mimetypes.guess_type(f.name)[0] or "application/octet-stream")
             self.send_header("Accept-Ranges", "bytes")
+            if download:
+                self.send_header("Content-Disposition", attachment(f.name))
             self.send_header("Content-Length", str(end - start + 1))
             if code == 206:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
@@ -400,7 +425,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 f = (app.store.root / rel).resolve()
                 if app.store.root.resolve() not in f.parents or not f.is_file():
                     return self._json({"error": "없음"}, 404)
-                return self._send_file(f)
+                return self._send_file(f, download=parse_bool((urllib.parse.parse_qs(u.query).get("download") or ["0"])[0]))
             self._json({"error": "not found"}, 404)
 
         def _story_post(self):
@@ -428,7 +453,8 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                         dest.write_bytes(data)
                         paths.append(str(dest))
                 st = ST.load_story(f["json"], paths, narration=f["narration"], ratio=f["ratio"], seed=f["seed"], local_paths=False)
-                state = SR.initial_state(st, {"size": f["size"], "narration": f["narration"], "seed": f["seed"]})
+                # ratio: 화면에서 고른 화면비(없으면 JSON 대로) — '같은 설정으로 다시'가 그대로 채운다
+                state = SR.initial_state(st, {"size": f["size"], "narration": f["narration"], "seed": f["seed"], "ratio": f["ratio"]})
                 # 올린 JSON 도 같이 둔다: 화면의 '명령어로 보기'·'같은 설정으로 다시'가 같은 파일을 쓴다
                 folder.mkdir(parents=True, exist_ok=True)
                 jname = Path(f["json_name"] or "story.json").name
@@ -497,11 +523,20 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                     for path in [first, last] + [r["path"] for r in refs]:
                         if path and not app.allowed_input(str(path)):
                             raise H3Error(f"로컬 파일 경로는 업로드(multipart)로 보내라: {path}")
-                job = new_job(prompt=str(g("prompt", "")).strip(), seconds=int(g("seconds", 8)),
-                              aspect_ratio=str(g("aspect_ratio", "16:9")), seed=parse_seed(g("seed", 0)),
+                seconds = parse_int(g("seconds"), "길이(초)", 8)
+                if seconds < spec.DURATION_MIN:
+                    raise H3Error(f"길이는 {spec.DURATION_MIN}초 이상으로 적어 주세요")
+                steps = parse_int(g("steps"), "스텝")
+                if steps is not None and not (1 <= steps <= 200):
+                    raise H3Error("스텝은 1~200 (비우면 서버 기본)")
+                aspect = str(g("aspect_ratio") or "16:9")
+                if aspect not in spec.ASPECT_RATIOS:
+                    raise H3Error(f"화면비는 {', '.join(spec.ASPECT_RATIOS)} 중 하나")
+                job = new_job(prompt=str(g("prompt", "")).strip(), seconds=seconds,
+                              aspect_ratio=aspect, seed=parse_seed(g("seed", 0)),
                               task=(g("task") or None), first_image=first, last_image=last, refs=refs,
-                              scene_seconds=int(g("scene_seconds", 10) or 10),
-                              steps=(int(g("steps")) if g("steps") else None), title=str(g("title", "") or ""),
+                              scene_seconds=parse_int(g("scene_seconds"), "장면 길이", 10) or 10,
+                              steps=steps, title=str(g("title", "") or ""),
                               negative=(str(g("negative") or "").strip() or None), raw=parse_bool(g("raw", "")),
                               short_edge=parse_size(g("size")))
                 if not job.prompt:

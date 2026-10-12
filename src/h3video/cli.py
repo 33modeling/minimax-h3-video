@@ -25,14 +25,14 @@ from .client import H3Client, H3Error, stage_input
 from .jobs import Job, JobStore, Worker, build_request, fit_to_server, new_job, plan_job
 
 SERVER_DOWN = (
-    "서버가 응답하지 않는다: {ep}\n"
-    "  · 클러스터: 서버 켜기 bash scripts/up.sh (참고 자료는 --ref), 떠 있는지는 bash scripts/status.sh\n"
-    "  · PC 에서 쓸 때: SSH 터널  ssh -N -L 30010:127.0.0.1:30010 -L 30011:127.0.0.1:30011 user@host\n"
-    "  · 주소가 다르면 한 번 저장: h3video config set endpoint http://주소:포트 (참고 자료는 ref-endpoint)\n"
-    "    또는 --endpoint / --ref-endpoint, H3_ENDPOINT / H3_REF_ENDPOINT\n"
+    "{name}가 응답하지 않는다: {ep}\n"
+    "  · 클러스터: 서버 켜기 {up}, 떠 있는지는 bash scripts/status.sh\n"
+    "{tunnel}"
+    "  · 주소가 다르면 한 번 저장: h3video config set {key} http://주소:포트   (또는 --{key}, {env})\n"
     "  · 서버 없이 요청만 확인: --dry-run   · 한 번에 점검: h3video doctor"
 )
-STATUS_KO = {"pending": "대기", "running": "진행", "completed": "완료", "failed": "실패"}
+# 작업(pending·running·…)과 장면(queued·in_progress·…) 상태를 한국어로
+STATUS_KO = {"pending": "대기", "running": "진행", "completed": "완료", "failed": "실패", "queued": "서버 대기열", "in_progress": "진행"}
 EXAMPLES = [
     ('h3video "비 오는 서울 밤거리, 네온 반사" -s 8', "글로 8초 영상"),
     ("h3video gen prompt.txt -s 40 -r 9:16 -o out/", "40초(장면 4개 이어 붙임), 세로, out/ 에도 저장"),
@@ -235,10 +235,32 @@ def preview(job: Job) -> None:
         print(json.dumps(r.to_json(), ensure_ascii=False, indent=2))
 
 
+def server_down(kind: str, ep: str) -> str:
+    key = "ref-endpoint" if kind == "ref2va" else "endpoint"
+    tunnel = f"  · PC 에서 쓸 때: SSH 터널  {HN.tunnel_command(ep)}\n" if HN.is_local(ep) else ""
+    return SERVER_DOWN.format(name=HN.SERVER_NAME[kind], ep=ep, up=HN.up_command(kind), tunnel=tunnel, key=key, env=C.KEYS[key][0])
+
+
 def preflight(a, needs_ref: bool) -> None:
     ep = a.ref_endpoint if needs_ref else a.endpoint
     if not H3Client(ep, timeout=5).healthy():
-        raise H3Error(SERVER_DOWN.format(ep=ep))
+        raise H3Error(server_down("ref2va" if needs_ref else "fl2va", ep))
+
+
+def server_error(e: H3Error, video_id: str = "", ref: bool = False) -> H3Error:
+    """서버가 돌려준 HTTP 오류(영어·JSON)를 쉬운 말로. 원래 메시지는 뒤에 붙인다."""
+    s = str(e)
+    tail = f"\n  (원래 메시지: {s})"
+    flag = " --ref" if ref else ""
+    if "HTTP 404" in s and video_id:
+        return H3Error(f"서버에 그런 영상이 없다: {video_id}. id 를 확인하고(h3video show last), 참고 자료로 만든 것이면 --ref 를 붙인다."
+                       f" 서버를 다시 켰으면 지난 영상은 사라진다{tail}")
+    if "HTTP 409" in s and video_id:
+        return H3Error(f"아직 다 만들지 않았다: {video_id}. 진행은 h3video status {video_id}{flag} 로 보고, 끝난 뒤 다시 받는다{tail}")
+    if "HTTP 404" in s and "/v1/prompts/rewrite" in s:
+        return H3Error("이 서버는 다듬은 프롬프트만 보기(ir)를 하지 못한다 (sglang 엔진이거나 옛 서버)."
+                       f" 서버를 최신 코드로 다시 켜거나(bash scripts/up.sh), gen 으로 바로 만든다{tail}")
+    return e
 
 
 def copy_out(final: str, out: str | None, many: bool = False, job_id: str = "") -> str:
@@ -450,23 +472,26 @@ def execute_jobs(a, jobs: list[Job], on_tick=None, resume: str | None = None) ->
 
 def interrupted(store: JobStore, jobs: list[Job], resume: str | None = None) -> None:
     print("\n중단했다 (Ctrl+C). 이 터미널의 작업 처리는 멈췄다.", file=sys.stderr)
-    on_server = False
-    for job in jobs:
+    on_server, stopped = False, []
+    for k, job in enumerate(jobs):
         jb = store.get(job.id)
         for sc in jb.scenes:
             if sc.video_id and sc.status not in ("completed", "failed"):
                 on_server = True
                 ref = " --ref" if sc.task == "ref2va" else ""
-                print(f"  서버에서는 장면 {sc.index + 1}({sc.video_id})이 계속 만들어질 수 있다. 끝난 뒤 받기: "
+                # 작업이 여럿이면(json·batch) 몇 번째 작업의 장면인지도 (장면 번호만으로는 어느 것인지 모른다)
+                where = (f"작업 {k + 1}/{len(jobs)}" + (f"({jb.title})" if jb.title else "") + " ") if len(jobs) > 1 else ""
+                print(f"  서버에서는 {where}장면 {sc.index + 1}({sc.video_id})이 계속 만들어질 수 있다. 끝난 뒤 받기: "
                       f"h3video fetch {sc.video_id}{ref} -o scene.mp4", file=sys.stderr)
         if jb.status not in ("completed", "failed"):
             jb.status, jb.error, jb.finished = "failed", "사용자가 중단함 (Ctrl+C)", time.time()
             store.save(jb)
+            stopped.append(jb.id)
     if resume:
         print(f"  이어서 하기 (끝난 장면은 두고 나머지만): {resume}", file=sys.stderr)
     elif not on_server:
         print("  다시 하려면 같은 명령을 다시 실행한다", file=sys.stderr)
-    print(f"  기록 보기: h3video show {jobs[0].id}", file=sys.stderr)
+    print(f"  기록 보기: h3video show {(stopped or [jobs[0].id])[0]}", file=sys.stderr)
 
 
 def job_from_args(a, prompt: str, refs=None, base: Path | None = None) -> Job:
@@ -582,10 +607,12 @@ def cmd_config(a):
         return
     if act == "show":
         cfg, cp = C.load(), C.path()
+        width = max(text_width(str(C.resolve(k, cfg)[0] or "(없음)")) for k in C.KEYS)   # ← 를 한 줄로 맞춘다 (한글은 두 칸)
         print(f"설정 파일: {cp} ({'있음' if cp.is_file() else '아직 없음'})")
         for key, (env, _default, desc, _flag) in C.KEYS.items():
             val, src = C.resolve(key, cfg)
-            print(f"  {key:<13} {val or '(없음)'}   ← {src} · {desc}")
+            shown = str(val or "(없음)")
+            print(f"  {key:<13} {shown}{' ' * (width - text_width(shown))}  ← {src} · {desc}")
             if src.startswith("환경 변수") and cfg.get(key):
                 print(f"  {'':<13} (설정 파일 값 {cfg[key]} 은 환경 변수에 가려 쓰이지 않는다)")
         for k in cfg:
@@ -610,7 +637,8 @@ def cmd_config(a):
     if key in cfg:
         del cfg[key]
         C.save(cfg)
-        print(f"지웠다: {key} → 이제 {C.resolve(key, cfg)[1]} 값 {C.resolve(key, cfg)[0] or '(없음)'}")
+        val, src = C.resolve(key, cfg)
+        print(f"지웠다: {key} → 이제 {val or '(없음)'} ({src})")
     else:
         print(f"설정 파일에 {key} 가 없다 (지금 값은 {C.resolve(key, cfg)[1]})")
 
@@ -647,7 +675,10 @@ def cmd_ir(a):
     ep = a.ref_endpoint if req.task == "ref2va" else a.endpoint
     print(f"[ir] {req.task} {sc.duration}초 — 서버가 다듬는 중 (텍스트 인코더로 1분 안팎, 생성 중이면 그 뒤에)…", file=sys.stderr)
     t0 = time.time()
-    res = H3Client(ep).rewrite(req)
+    try:
+        res = H3Client(ep).rewrite(req)
+    except H3Error as e:
+        raise server_error(e) from None
     print(res["prompt"])
     print(f"[ir] {time.time() - t0:.0f}초. 이대로 만들려면 같은 옵션으로 gen/ref (서버가 같은 시드로 다시 다듬는다), "
           f"고쳐서 쓰려면 파일로 저장해 gen 파일 --raw", file=sys.stderr)
@@ -687,6 +718,8 @@ def parse_batch(text: str) -> list[tuple[dict, str]]:
 
 def cmd_batch(a):
     path = Path(a.file).expanduser()
+    if a.file != "-" and not path.is_file():
+        raise H3Error(f"프롬프트 파일이 없다: {a.file}" + similar_files(a.file))
     items = parse_batch(sys.stdin.read() if a.file == "-" else path.read_text(encoding="utf-8"))
     if not items:
         raise H3Error(f"{a.file} 에 프롬프트가 없다 (블록은 --- 줄로 구분)")
@@ -698,6 +731,8 @@ def cmd_batch(a):
             for k, v in opts.items():
                 attr = k.replace("-", "_")
                 if attr in ("seconds", "scene_seconds", "steps", "size"):
+                    if not re.fullmatch(r"\d+", v):
+                        raise H3Error(f"{k} 는 정수여야 한다: {v}")
                     v = int(v)
                 elif attr == "seed":
                     v = seed_arg(v)
@@ -825,11 +860,18 @@ def cmd_show(a):
 
 
 def cmd_status(a):
-    print(json.dumps(H3Client(a.ref_endpoint if a.ref else a.endpoint).status(a.video_id), ensure_ascii=False, indent=2))
+    try:
+        st = H3Client(a.ref_endpoint if a.ref else a.endpoint).status(a.video_id)
+    except H3Error as e:
+        raise server_error(e, a.video_id, a.ref) from None
+    print(json.dumps(st, ensure_ascii=False, indent=2))
 
 
 def cmd_fetch(a):
-    out = H3Client(a.ref_endpoint if a.ref else a.endpoint).download(a.video_id, a.out or f"{a.video_id}.mp4")
+    try:
+        out = H3Client(a.ref_endpoint if a.ref else a.endpoint).download(a.video_id, a.out or f"{a.video_id}.mp4")
+    except H3Error as e:
+        raise server_error(e, a.video_id, a.ref) from None
     print(out)
 
 
@@ -1098,6 +1140,12 @@ def route(argv: list[str]) -> tuple[list[str], str | None]:
         return head + ["gen", tok] + rest, "[자동] 명령 없이 옵션부터 써서 h3video gen (영상 만들기)으로 실행한다"
     p = Path(tok).expanduser()
     low = tok.lower()
+    media = IMAGE_EXTS + VIDEO_EXTS + AUDIO_EXTS + (".json",)
+    if not p.is_file() and low.endswith(media) and not any(c.isspace() for c in tok):
+        # 그림·영상·소리·JSON 파일 이름인데 없다 → 오타일 것: 그 이름을 글로 영상을 만들거나 옵션 오류로 헷갈리게 하지 않는다
+        what = "JSON" if low.endswith(".json") else "그림" if low.endswith(IMAGE_EXTS) else "영상" if low.endswith(VIDEO_EXTS) else "소리"
+        raise UnknownCommand(f"{what} 파일이 없다: {tok}" + similar_files(tok)
+                             + f"\n  글로 만들려면 따옴표로: h3video gen \"{tok}\"")
     if p.is_file():
         if low.endswith(".json"):
             return head + ["json", tok] + rest, "[자동] JSON 파일이라 h3video json (장면마다 만들어 이어 붙이기)으로 실행한다"
@@ -1167,8 +1215,10 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\n중단했다 (Ctrl+C).", file=sys.stderr)
         sys.exit(130)
-    except (FileNotFoundError, UnicodeDecodeError) as e:
-        sys.exit(f"오류: {e}")
+    except FileNotFoundError as e:
+        sys.exit(f"오류: 파일이 없다: {e.filename or e}")
+    except UnicodeDecodeError:
+        sys.exit("오류: 글자를 읽을 수 없는 파일이다 (UTF-8 글 파일인지 확인)")
 
 
 if __name__ == "__main__":

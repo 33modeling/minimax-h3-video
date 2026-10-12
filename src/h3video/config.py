@@ -75,7 +75,7 @@ def check_value(key: str, value: str) -> str:
     v = value.strip()
     if key in ("endpoint", "ref-endpoint"):
         if not v.startswith(("http://", "https://")):
-            raise H3Error(f"{key} 는 http:// 또는 https:// 로 시작해야 한다: {value}")
+            raise H3Error(f"{key} 는 http:// 또는 https:// 로 시작해야 한다: {value}  — 혹시: h3video config set {key} http://{v}")
         return v.rstrip("/")
     if key in ("output-dir", "inbox-dir"):
         return str(Path(v).expanduser().resolve())

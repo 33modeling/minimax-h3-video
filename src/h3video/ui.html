@@ -42,6 +42,7 @@ a{color:var(--acc)}
 .conn-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .conn-row label{font-weight:600;font-size:13.5px}
 .conn-row input{flex:1 1 220px;min-width:0}
+.conn .help.bad{color:var(--bad)}
 /* 본문 */
 .layout{display:grid;grid-template-columns:minmax(380px,520px) minmax(0,1fr);gap:20px;max-width:1440px;margin:0 auto;padding:16px 20px 48px;align-items:start}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}
@@ -329,8 +330,16 @@ const SERVED = document.documentElement.dataset.served === 'h3video';
 const trim = u => String(u || '').trim().replace(/\/+$/, '');
 let BASE = SERVED ? '' : trim(LS.get('h3video.server', '') || LS.get('shorts.h3Server', '') || 'http://localhost:8790');
 const full = p => !p ? p : /^https?:/.test(p) ? p : BASE + p;
+// 다른 곳(허브)에서 연 화면이 이 서버를 켜게 하는 명령 (허브 주소는 web.sh 기본값)
+const WEB_CMD = SERVED ? 'bash scripts/web.sh' : location.origin === 'https://33modeling.pages.dev' ? 'bash scripts/web.sh'
+  : `bash scripts/web.sh --cors ${location.protocol === 'file:' ? "'*'" : location.origin}`;
 async function api(path, opt) {
-  const r = await fetch(BASE + path, opt);
+  let r;
+  try { r = await fetch(BASE + path, opt); }
+  catch (e) {   // 서버가 꺼졌거나 주소가 틀림 (브라우저는 'Failed to fetch' 라고만 한다)
+    throw new Error(SERVED ? '웹 서버에 연결하지 못했어요. 서버 컴퓨터에서 bash scripts/web.sh 로 다시 켜세요'
+      : `웹 서버(${BASE})에 연결하지 못했어요. 위의 서버 주소를 확인하세요`);
+  }
   let d = null;
   try { d = await r.json(); } catch (e) { throw new Error(`서버 응답을 읽지 못했어요 (${r.status})`); }
   if (!r.ok) throw new Error(d && d.error || String(r.status));
@@ -395,11 +404,30 @@ function kindOf(f) {
   if (t.startsWith('video/') || /\.(mp4|mov|webm|mkv|m4v)$/.test(n)) return 'video';
   return 'other';
 }
-function addFiles(z, list) {
+function addFiles(z, list) {   // 놓은 곳이 조금 달라도 제자리로: JSON+쪽 그림 한꺼번에, 첫 장면 칸에 그림 두 장
+  list = [...list];
+  const by = k => list.filter(f => kindOf(f) === k);
+  if (z === 'json' || z === 'pages') {
+    const js = by('json'), rest = list.filter(f => kindOf(f) !== 'json');
+    if (js.length && rest.length) { addTo('json', js); addTo('pages', rest); return; }
+    if (js.length) return addTo('json', js);
+    if (z === 'json' && rest.length && by('image').length) return addTo('pages', rest);
+  }
+  if ((z === 'first' || z === 'last') && by('image').length >= 2) {
+    const [a, b] = by('image');
+    addTo('first', [a]); addTo('last', [b]);
+    toast(`그림 두 장을 첫 장면(${a.name})과 끝 장면(${b.name})에 넣었어요` + (by('image').length > 2 ? '. 나머지는 넣지 않았어요' : ''));
+    return;
+  }
+  addTo(z, list);
+}
+function addTo(z, list) {
   const conf = ZONES[z], bad = [];
-  for (const f of list) {
+  let ok = [...list].filter(f => conf.kinds.includes(kindOf(f)) || (bad.push(f.name), false));
+  const extra = !conf.multi && ok.length > 1 ? ok.slice(1) : [];
+  if (extra.length) ok = ok.slice(0, 1);
+  for (const f of ok) {
     const kind = kindOf(f);
-    if (!conf.kinds.includes(kind)) { bad.push(f.name); continue; }
     const item = {file: f, kind, url: kind === 'json' ? null : URL.createObjectURL(f), dur: null};
     if (!conf.multi) { files[z].forEach(drop); files[z] = [item]; }
     else {
@@ -409,9 +437,11 @@ function addFiles(z, list) {
     if (kind === 'video' || kind === 'audio') {
       const el = document.createElement(kind); el.preload = 'metadata'; el.src = item.url;
       el.onloadedmetadata = () => { item.dur = el.duration; renderZone(z); schedulePlan(); };
+      el.onerror = () => { item.durErr = true; renderZone(z); };   // 브라우저가 못 여는 형식: 길이는 서버가 본다
     }
   }
-  if (bad.length) toast(`${conf.kinds.map(k => KO[k]).join('·')} 파일만 넣을 수 있어요: ${bad.slice(0, 3).join(', ')}`);
+  if (bad.length) toast(`${conf.kinds.map(k => KO[k]).join('·')} 파일만 넣을 수 있어요: ${bad.slice(0, 3).join(', ')}${bad.length > 3 ? ` 외 ${bad.length - 3}개` : ''}`);
+  else if (extra.length) toast(`여기에는 하나만 넣어요. ${ok[0].name} 을(를) 넣었어요`);
   renderZone(z); changed(z);
 }
 function drop(item) { if (item && item.url) URL.revokeObjectURL(item.url); }
@@ -456,7 +486,7 @@ function tile(z, it, i, badge) {
   const media = it.kind === 'image' ? `<img src="${it.url}" alt="" loading="lazy">` : `<span class="media">${icon(it.kind)}</span>`;
   return `<div class="tile">${media}${badge ? `<span class="badge">${esc(badge)}</span>` : ''}
     <button type="button" class="x" data-rm="${z}:${i}" aria-label="${esc(it.file.name)} 빼기">${icon('x')}</button>
-    <div class="cap" title="${esc(it.file.name)}">${esc(it.file.name)}${it.kind !== 'image' ? `<br><b>${durText(it).slice(3) || '길이 확인 중'}</b>` : ''}</div></div>`;
+    <div class="cap" title="${esc(it.file.name)}">${esc(it.file.name)}${it.kind !== 'image' ? `<br><b>${durText(it).slice(3) || (it.durErr ? '길이 모름' : '길이 확인 중')}</b>` : ''}</div></div>`;
 }
 document.addEventListener('click', e => {
   const rm = e.target.closest('[data-rm]');
@@ -473,9 +503,21 @@ for (const z of Object.keys(ZONES)) {
   el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('over'); addFiles(z, [...(e.dataTransfer.files || [])]); });
   renderZone(z);
 }
-// 여러 칸 밖에 떨어뜨려도 브라우저가 파일을 열지 않게
+// 칸 밖에 떨어뜨려도 브라우저가 파일을 열지 않고, 지금 만드는 방법의 칸에 넣는다 (글로 만들기면 파일에 맞는 방법으로 바꾼다)
 window.addEventListener('dragover', e => e.preventDefault());
-window.addEventListener('drop', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  if (e.target.closest && e.target.closest('.drop')) return;   // 칸에 놓은 것은 칸이 받는다
+  const list = [...((e.dataTransfer && e.dataTransfer.files) || [])];
+  if (!list.length) return;
+  const kinds = new Set(list.map(kindOf));
+  if (mode === 'text') {
+    const to = kinds.has('json') ? 'story' : (kinds.has('video') || kinds.has('audio')) ? 'ref' : kinds.has('image') ? 'fl' : null;
+    if (!to) { toast('그림·영상·소리·JSON 파일만 넣을 수 있어요'); return; }
+    setMode(to);
+  }
+  addFiles({fl: 'first', ref: 'ref', story: kinds.has('json') ? 'json' : 'pages'}[mode], list);
+});
 
 // ---------- 길이 → 장면 나누기 ----------
 function planLocal(total, sceneSec = 10, maxScene = null) {   // spec.plan_scenes 와 같은 규칙 (서버에 못 물을 때)
@@ -501,19 +543,24 @@ async function updatePlan() {
   showSplit({seconds: s, scenes: planLocal(s), max_scene: null});
   try { const p = await api('/api/plan?' + q); if (seq === planSeq) showSplit(p); } catch (e) { /* 서버가 없으면 기본 규칙으로 */ }
 }
+function secsList(a) {   // 장면이 많으면 숫자를 다 늘어놓지 않는다
+  if (a.length <= 6) return a.join('·') + '초';
+  const lo = Math.min(...a), hi = Math.max(...a);
+  return lo === hi ? `${lo}초씩` : `${lo}~${hi}초씩`;
+}
 function showSplit(p, err) {
   const el = $('#split span');
   if (!p) { el.textContent = err; lastPlan = null; updateGo(); return; }
   lastPlan = p;
-  const n = p.scenes.length;
-  let t = n === 1 ? `${p.seconds}초 → 한 번에 만들어요` : `${p.seconds}초 → 장면 ${n}개를 이어 붙여요 (${p.scenes.join('·')}초)`;
+  const n = p.scenes.length, total = p.seconds >= 60 ? `${p.seconds}초(${fmt(p.seconds)})` : `${p.seconds}초`;
+  let t = n === 1 ? `${total} → 한 번에 만들어요` : `${total} → 장면 ${n}개를 이어 붙여요 (${secsList(p.scenes)})`;
   if (p.max_scene && p.max_scene < 15) t += ` · 이 서버는 한 장면 최대 ${p.max_scene}초`;
   el.textContent = t; updateGo();
 }
 for (const id of ['#seconds', '#aspect', '#size']) $(id).addEventListener('input', schedulePlan);
 
 // ---------- JSON 한번에: 장면 표 ----------
-let storyData = null, storySeq = 0;
+let storyData = null, storySeq = 0, storyBusy = false;
 function storyForm(forPlan) {
   const fd = new FormData();
   fd.append('json', files.json[0].file, files.json[0].file.name);
@@ -529,13 +576,19 @@ async function storyPlan() {
   if (!files.json.length) { box.innerHTML = ''; return; }
   const seq = ++storySeq;
   box.innerHTML = '<div class="help">장면을 나누는 중…</div>';
+  storyBusy = true; updateGo();
   try {
     const d = await api('/api/story/plan', {method: 'POST', body: storyForm(true)});
     if (seq !== storySeq) return;
     storyData = d; renderStoryPlan(d);
   } catch (e) {
     if (seq !== storySeq) return;
-    box.innerHTML = `<div class="warns"><div class="warn bad">${esc(e.message)}</div></div>`;
+    let msg = e.message;
+    const m = /^(.+?): 그림 (.+?) 을 찾지 못했다/.exec(msg);   // 웹에서는 '경로'가 아니라 그림을 같이 넣으면 된다
+    if (m) msg = `${m[1]}: JSON에 적힌 그림 ${m[2]} 이(가) 없어요. 아래 '쪽 그림'에 같은 이름의 그림을 넣어 주세요.`;
+    box.innerHTML = `<div class="warns"><div class="warn bad">${esc(msg)}</div></div>`;
+  } finally {
+    if (seq === storySeq) storyBusy = false;
   }
   updateGo();
 }
@@ -563,7 +616,8 @@ for (const id of ['#s-ratio', '#s-narr', '#s-size']) $(id).addEventListener('cha
 function setMsg(t, bad) { const m = $('#msg'); m.textContent = t; m.classList.toggle('bad', !!bad); }
 function updateGo() {
   const b = $('#go span');
-  if (mode === 'story') b.textContent = storyData ? `장면 ${storyData.clips.length}개 만들기 · ${storyData.total_seconds}초` : '장면 표를 먼저 확인해요';
+  if (mode === 'story') b.textContent = storyData ? `장면 ${storyData.clips.length}개 만들기 · ${storyData.total_seconds}초`
+    : !files.json.length ? 'JSON 파일을 넣어 주세요' : storyBusy ? '장면을 나누는 중…' : '장면 표의 문제를 먼저 고쳐 주세요';
   else b.textContent = lastPlan && lastPlan.scenes.length > 1 ? `영상 만들기 · 장면 ${lastPlan.scenes.length}개` : '영상 만들기';
   $('#go').disabled = mode === 'story' && !storyData;
 }
@@ -587,9 +641,17 @@ $('#f').addEventListener('submit', async e => {
   e.preventDefault();
   const p = problems();
   if (p) { const [t, focus] = Array.isArray(p) ? p : [p]; setMsg(t, true); if (focus) $(focus).focus(); return; }
-  const go = $('#go'); go.disabled = true; setMsg('보내는 중…');
+  const go = $('#go'); go.disabled = true; setMsg('서버 확인 중…');
   try {
     let r;
+    await checkHealth();   // 만들 서버가 꺼져 있으면 보내자마자 실패하는 작업을 만들지 않는다
+    if (!online) throw new Error(SERVED ? '웹 서버에 연결하지 못했어요' : `웹 서버(${BASE})에 연결하지 못했어요. 위의 서버 주소를 확인하세요`);
+    const need = mode === 'ref' ? 'ref2va' : 'fl2va';
+    if (health && health[need] === false) {
+      setMsg(`${need === 'ref2va' ? '참고 자료' : '글·그림'} 서버가 꺼져 있어서 보내지 않았어요. 위 안내대로 켠 뒤 다시 누르세요.`, true);
+      return;
+    }
+    setMsg('보내는 중…');
     if (mode === 'story') {
       r = await api('/api/story', {method: 'POST', body: storyForm(false)});
       toast(`장면 ${r.total}개 만들기를 시작했어요`, '보기', () => focusCard(r.id));
@@ -623,7 +685,7 @@ let health = null, online = true;
 function pill(id, ok, label, hint, ep) {
   const el = $(id);
   el.className = 'pill ' + (ok == null ? '' : ok ? 'ok' : 'bad');
-  $('span:last-child', el).textContent = `${label} ${ok == null ? '확인 중' : ok ? '켜짐' : '꺼짐'}`;
+  $('span:last-child', el).textContent = `${label} ${ok == null ? (online ? '확인 중' : '확인 못 함') : ok ? '켜짐' : '꺼짐'}`;
   el.title = ok ? ep || '' : hint || '';
 }
 async function checkHealth() {
@@ -638,8 +700,9 @@ async function checkHealth() {
 function renderBanners() {
   const out = [];
   if (!online) {
-    out.push(['bad', SERVED ? `웹 서버에 연결할 수 없어요 → 서버 컴퓨터에서 <code>bash scripts/web.sh</code> 로 다시 켜세요.`
-      : `웹 서버(${esc(BASE)})에 연결하지 못했어요 → 그 컴퓨터에서 <code>bash scripts/web.sh --cors ${esc(location.origin)}</code> 로 켜고, 주소가 다르면 위 <b>서버 주소</b>에 적으세요.`]);
+    // 다른 곳(허브)에서 연 화면은 위의 '서버 주소' 칸이 같은 안내를 한다
+    if (SERVED || $('#conn').hidden) out.push(['bad', SERVED ? `웹 서버에 연결할 수 없어요 → 서버 컴퓨터에서 <code>bash scripts/web.sh</code> 로 다시 켜세요.`
+      : `웹 서버(${esc(BASE)})에 연결하지 못했어요 → 그 컴퓨터에서 <code>${esc(WEB_CMD)}</code> 로 켜고, 주소가 다르면 위 <b>서버 주소</b>에 적으세요.`]);
   } else if (health) {
     const fl = health.hints && health.hints.fl2va, rf = health.hints && health.hints.ref2va;
     const codes = t => esc(t).replace(/(bash scripts\/[\w.]+(?: --ref)?|ssh -N -L \S+ \S+)/g, '<code>$1</code>');
@@ -652,18 +715,25 @@ for (const [id, k] of [['#pill-fl', 'fl2va'], ['#pill-ref', 'ref2va']]) $(id).ad
   if (!health) return;
   toast(health[k] ? `${k === 'fl2va' ? '글·그림' : '참고 자료'} 서버가 켜져 있어요 (${health.endpoints[k]})` : health.hints[k]);
 });
+let connAuto = false;   // 서버 주소 칸을 화면이 알아서 열었는지 (연결되면 다시 닫는다)
 function setOnline(ok) {
+  const was = online;
   online = ok;
+  if (!ok) { pill('#pill-fl', null, '글·그림 서버'); pill('#pill-ref', null, '참고 자료 서버'); $('#queue').textContent = ''; }
+  if (ok && !was && !spec) loadSpec().catch(() => { /* 다음에 다시 */ });   // 화면을 연 뒤에 서버가 켜졌으면 사양(화면비·크기)을 이제 받는다
   if (!SERVED) {
     $('#pill-base').className = 'pill ' + (ok ? 'ok' : 'bad');
     $('#pill-base span:last-child').textContent = ok ? `서버 ${BASE.replace(/^https?:\/\//, '')}` : '서버 주소';
-    if (!ok) $('#conn').hidden = false;
-    $('#conn-msg').innerHTML = ok ? `연결됨: ${esc(BASE)}` : `이 화면은 h3video 웹 서버에 연결해요. 그 컴퓨터에서 <code>bash scripts/web.sh --cors ${esc(location.origin)}</code> 로 켜고 주소를 적으세요.`;
+    if (!ok && $('#conn').hidden) { $('#conn').hidden = false; connAuto = true; }
+    if (ok && connAuto) { $('#conn').hidden = true; connAuto = false; }
+    $('#conn-msg').classList.toggle('bad', !ok);
+    $('#conn-msg').innerHTML = ok ? `연결됨: ${esc(BASE)}` : `웹 서버(${esc(BASE)})에 연결하지 못했어요. 이 화면은 h3video 웹 서버에 연결해요. 그 컴퓨터에서 <code>${esc(WEB_CMD)}</code> 로 켜고, 주소가 다르면 여기에 적고 <b>연결</b>을 누르세요.`;
+    if (!ok && !cards.size) $('#feed').innerHTML = '<div class="empty card"><h3>서버에 연결하면 여기에 만든 영상이 나와요</h3><div class="help" style="border:0;margin:0;padding:0">위의 서버 주소를 확인하세요.</div></div>';
   }
 }
 if (!SERVED) {
-  $('#pill-base').hidden = false; $('#base').value = BASE; $('#conn').hidden = false;
-  $('#pill-base').addEventListener('click', () => { $('#conn').hidden = !$('#conn').hidden; });
+  $('#pill-base').hidden = false; $('#base').value = BASE; $('#conn').hidden = false; connAuto = true;
+  $('#pill-base').addEventListener('click', () => { $('#conn').hidden = !$('#conn').hidden; connAuto = false; renderBanners(); });
   const save = async () => {
     BASE = trim($('#base').value) || 'http://localhost:8790'; $('#base').value = BASE; LS.set('h3video.server', BASE);
     $('#conn-msg').textContent = '연결하는 중…';
@@ -676,14 +746,25 @@ if (!SERVED) {
 
 // ---------- 모델 정보 ----------
 let spec = null;
+// 화면비·크기 칸: 서버에 연결하기 전에도 고를 수 있게 기본값으로 채우고, 서버 사양을 받으면 고른 값은 두고 다시 채운다
+function fillSelects(ratios, sizes, def) {
+  const opt = a => `<option value="${a}">${a === 'auto' ? 'auto (그림 비율)' : a}</option>`;
+  const prev = {a: $('#aspect').value, r: $('#s-ratio').value, s: $('#size').value, ss: $('#s-size').value};
+  $('#aspect').innerHTML = ratios.map(opt).join('');
+  $('#s-ratio').innerHTML = '<option value="">JSON 대로</option>' + ratios.map(opt).join('');
+  const so = sizes.slice().sort((a, b) => b - a).map(s => `<option value="${s}">${s}${s === def ? ' (기본)' : s === 576 ? ' (빠르게)' : ''}</option>`).join('');
+  $('#size').innerHTML = so; $('#s-size').innerHTML = so;
+  const set = (id, v, d) => { $(id).value = v; if ($(id).value !== v) $(id).value = d; };
+  set('#aspect', prev.a || LS.get('h3video.aspect', '16:9'), '16:9');
+  set('#s-ratio', prev.r || '', '');
+  set('#size', prev.s || String(def), String(def));
+  set('#s-size', prev.ss || String(def), String(def));
+}
+fillSelects(['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'auto'], [768, 704, 640, 576, 512], 768);
 async function loadSpec() {
-  spec = await api('/api/spec');
-  const ratios = spec.aspect_ratios.map(a => `<option value="${a}">${a === 'auto' ? 'auto (그림 비율)' : a}</option>`).join('');
-  $('#aspect').innerHTML = ratios; $('#aspect').value = LS.get('h3video.aspect', '16:9');
-  $('#s-ratio').innerHTML = '<option value="">JSON 대로</option>' + ratios;
-  const sizes = (spec.sizes || [768, 704, 640, 576, 512]).slice().sort((a, b) => b - a)
-    .map(s => `<option value="${s}">${s}${s === spec.short_edge ? ' (기본)' : s === 576 ? ' (빠르게)' : ''}</option>`).join('');
-  $('#size').innerHTML = sizes; $('#s-size').innerHTML = sizes; $('#size').value = $('#s-size').value = String(spec.short_edge);
+  const s = await api('/api/spec');
+  spec = s;
+  fillSelects(spec.aspect_ratios, spec.sizes || [768, 704, 640, 576, 512], spec.short_edge);
   const L = spec.ref_limits;
   const tasks = Object.entries(spec.tasks).map(([k, v]) => `<li><b>${{t2va: '글로 만들기', fl2va: '그림으로 시작', ref2va: '참고 자료로'}[k] || k}</b> (${k}) — ${esc(v)}</li>`).join('');
   const rows = [
@@ -746,7 +827,8 @@ function cmdBlock(it) {
   } else {
     rows.push(['같은 영상을 터미널에서', it.cli]);
     if (it.status === 'failed') {
-      const left = (it.scenes || []).filter(s => s.video_id && s.status !== 'completed').pop();
+      // 서버에 보낸 뒤 이쪽이 멈춘 장면만 (서버에서 실패한 장면은 받을 것이 없다)
+      const left = (it.scenes || []).filter(s => s.video_id && !['completed', 'failed'].includes(s.status)).pop();
       if (left) rows.push(['서버에서 다 만든 뒤 받기', `h3video fetch ${left.video_id}${left.task === 'ref2va' ? ' --ref' : ''} -o scene.mp4`]);
     }
   }
@@ -791,7 +873,8 @@ function cardHtml(it) {
     body += `<div class="err-box">${esc(ko || '만들지 못했어요.')}${errs.length ? `<details ${o.err ? 'open' : ''} data-open="err"><summary>원래 메시지</summary><div class="raw">${esc(errs.join('\n'))}</div></details>` : ''}</div>`;
   }
   const acts = [];
-  if (it.video_url) acts.push(`<a class="btn" href="${esc(full(it.video_url))}" download>${icon('down')}받기</a>`);
+  // ?download=1: 서버가 '내려받기'로 보낸다 (허브처럼 다른 주소에서 연 화면은 download 속성이 안 먹어 영상 페이지로 넘어가 버린다)
+  if (it.video_url) acts.push(`<a class="btn" href="${esc(full(it.video_url) + (it.video_url.includes('?') ? '&' : '?') + 'download=1')}" download>${icon('down')}받기</a>`);
   if (!story && it.status === 'failed') acts.push(`<button type="button" class="btn main" data-act="retry">${icon('redo')}다시 하기</button>`);
   if (story && it.status === 'failed') acts.push(`<button type="button" class="btn main" data-act="resume">${icon('redo')}안 된 장면 다시</button>`);
   if (!live) acts.push(`<button type="button" class="btn" data-act="again">${icon('edit')}같은 설정으로 다시</button>`);
@@ -896,6 +979,7 @@ async function loadStory(it) {
   setMode('story'); clearZone('json'); clearZone('pages');
   const p = it.params || {};
   $('#s-size').value = String(p.size || 768); $('#s-narr').checked = p.narration !== false; $('#s-seed').value = p.seed ?? '';
+  $('#s-ratio').value = p.ratio || ''; if ($('#s-ratio').value !== (p.ratio || '')) $('#s-ratio').value = '';
   const imgs = [];
   for (const im of it.inputs.images) imgs.push(await asFile(im.url, im.name));
   if (imgs.length) addFiles('pages', imgs);
@@ -908,7 +992,7 @@ async function loadStory(it) {
 let pollTimer = null;
 async function poll() {
   clearTimeout(pollTimer);
-  try { renderFeed(await api('/api/feed')); if (!online) { setOnline(true); renderBanners(); } }
+  try { renderFeed(await api('/api/feed')); if (!online) { setOnline(true); checkHealth(); } }
   catch (e) { if (online) { setOnline(false); renderBanners(); } }
   pollTimer = setTimeout(poll, document.hidden ? 8000 : 2500);
 }

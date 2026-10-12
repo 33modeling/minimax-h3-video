@@ -262,7 +262,9 @@ def load_story(data, images: list[str] | None = None, base: Path | None = None, 
         try:
             data = json.loads(data.decode("utf-8-sig") if isinstance(data, bytes) else data.lstrip("﻿"))
         except json.JSONDecodeError as e:
-            raise H3Error(f"JSON 을 읽을 수 없다: {e}") from None
+            # 파이썬 영어 메시지만 주지 않고 어디가 틀렸는지 쉬운 말로 (원래 메시지는 괄호에)
+            raise H3Error(f"JSON 을 읽을 수 없다: {e.lineno}줄 {e.colno}번째 글자 근처가 JSON 형식이 아니다 "
+                          f"(따옴표·쉼표·괄호를 확인. 원래 메시지: {e.msg})") from None
     if _is_conti(data):
         source, (title, jratio, raw) = "conti", _conti(data, narration)
     elif _is_maker_book(data):

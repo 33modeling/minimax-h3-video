@@ -43,6 +43,22 @@ async function mode(page, name) {
   await page.waitForTimeout(150);
 }
 const visible = (page, sel) => page.locator(sel).first().isVisible();
+// 끌어다 놓기: 진짜 DataTransfer 로 drop 이벤트 (여러 파일·여러 종류를 한꺼번에)
+async function dropOn(page, sel, names) {
+  const files = names.map(n => ({name: n, b64: fs.readFileSync(m(n)).toString('base64'),
+    type: n.endsWith('.png') ? 'image/png' : n.endsWith('.json') ? 'application/json' : n.endsWith('.wav') ? 'audio/wav' : n.endsWith('.mp4') ? 'video/mp4' : ''}));
+  await page.evaluate(({sel, files}) => {
+    const dt = new DataTransfer();
+    for (const f of files) {
+      const bin = atob(f.b64), a = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+      dt.items.add(new File([a], f.name, {type: f.type}));
+    }
+    const el = document.querySelector(sel);
+    for (const t of ['dragenter', 'dragover', 'drop']) el.dispatchEvent(new DragEvent(t, {bubbles: true, cancelable: true, dataTransfer: dt}));
+  }, {sel, files});
+  await page.waitForTimeout(300);
+}
 
 (async () => {
   const browser = await chromium.launch(process.env.CHROME ? {executablePath: process.env.CHROME} : {});
@@ -85,6 +101,10 @@ const visible = (page, sel) => page.locator(sel).first().isVisible();
     check((await page.textContent('#split')).includes('10·10·10·10'), '40초 → 장면 4개 안내');
     check((await page.textContent('#go')).includes('장면 4개'), '만들기 버튼에도 장면 수');
     await shot(page, 'desk-text-40s');
+    await page.fill('#seconds', '600');
+    await page.waitForFunction(() => document.querySelector('#split').textContent.includes('장면 60개'));
+    const long = await page.textContent('#split');
+    check(long.includes('10초씩') && !long.includes('10·10·10·10·10·10·10'), '긴 영상은 장면 길이를 다 늘어놓지 않는다: ' + long);
     await page.fill('#seconds', '5');
     await page.waitForFunction(() => document.querySelector('#split').textContent.includes('한 번에'));
     await page.click('#go');
@@ -93,6 +113,7 @@ const visible = (page, sel) => page.locator(sel).first().isVisible();
     const c1 = card(page, 'e2e 글 영상');
     check(await c1.locator('video').count() === 1, '완성되면 영상이 카드 안에서 재생된다');
     check(await c1.locator('a[download]').count() === 1, '받기 링크');
+    check((await c1.locator('a[download]').getAttribute('href')).endsWith('?download=1'), '받기는 내려받기로 (?download=1)');
     await c1.locator('[data-act="cmd"]').click();
     const cmd = await c1.locator('pre.code').first().textContent();
     check(cmd.startsWith('h3video gen ') && cmd.includes('-s 5') && /--seed \d+/.test(cmd), '명령어로 보기: ' + cmd.slice(0, 60));
@@ -102,6 +123,11 @@ const visible = (page, sel) => page.locator(sel).first().isVisible();
     await mode(page, 'fl');
     await page.click('#go');
     check((await page.textContent('#msg')).includes('그림을 한 장 이상'), '그림이 없으면 알려 준다');
+    await dropOn(page, '.drop[data-zone="first"]', ['first.png', 'face.png']);
+    check((await page.textContent('.drop[data-zone="first"] .nm')).includes('first.png') && (await page.textContent('.drop[data-zone="last"] .nm')).includes('face.png'),
+      '첫 장면 칸에 그림 두 장을 놓으면 첫·끝 장면으로 나눠 넣는다');
+    await page.click('.drop[data-zone="last"] .x');
+    check(await page.locator('.drop[data-zone="last"] img').count() === 0, '끝 장면 빼기');
     await page.setInputFiles('.drop[data-zone="first"] input[type=file]', m('first.png'));
     await page.waitForSelector('.drop[data-zone="first"] img');
     await page.fill('#prompt', 'e2e 그림 영상: 아이가 웃는다');
@@ -131,6 +157,18 @@ const visible = (page, sel) => page.locator(sel).first().isVisible();
     await waitStatus(page, 'e2e 참고 영상', 'completed');
     check((await card(page, 'e2e 참고 영상').locator('.tag').textContent()).includes('참고 자료'), '참고 자료 카드');
 
+    step = '꺼진 서버로는 보내지 않는다';
+    await mode(page, 'text');
+    const nCards = await page.locator('#feed article.job').count();
+    await page.route('**/api/health', r => r.fulfill({contentType: 'application/json', body: JSON.stringify(
+      {fl2va: false, ref2va: true, queue: 0, current: null, endpoints: {fl2va: 'http://x:1', ref2va: 'http://x:2'},
+       hints: {fl2va: '글·그림 서버가 꺼져 있어요 → bash scripts/up.sh', ref2va: null}})}));
+    await page.fill('#prompt', 'e2e 꺼진 서버');
+    await page.click('#go');
+    await page.waitForFunction(() => document.querySelector('#msg').textContent.includes('보내지 않았어요'));
+    check(await page.locator('#feed article.job').count() === nCards, '꺼진 서버면 작업을 만들지 않고 알려 준다');
+    await page.unroute('**/api/health');
+
     step = '실패와 다시 하기';
     await mode(page, 'text');
     await page.fill('#prompt', 'e2e 실패 FAILME');
@@ -153,6 +191,7 @@ const visible = (page, sel) => page.locator(sel).first().isVisible();
     step = 'JSON 한번에';
     await mode(page, 'story');
     check(await page.locator('#go').isDisabled(), 'JSON 을 넣기 전에는 만들기 버튼이 꺼져 있다');
+    check((await page.textContent('#go')).includes('JSON 파일을 넣어'), '버튼이 할 일을 알려 준다');
     await page.setInputFiles('.drop[data-zone="pages"] input[type=file]', [m('page-01.png'), m('page-02.png')]);
     await page.setInputFiles('.drop[data-zone="json"] input[type=file]', m('toto.json'));
     await page.waitForSelector('.plan .srow');
@@ -194,9 +233,9 @@ const visible = (page, sel) => page.locator(sel).first().isVisible();
       await page.screenshot({path: path.join(OUT, `phone-${md}.png`)});
     }
     await mode(page, 'story');
-    await page.setInputFiles('.drop[data-zone="pages"] input[type=file]', [m('page-01.png'), m('page-02.png')]);
-    await page.setInputFiles('.drop[data-zone="json"] input[type=file]', m('toto.json'));
+    await dropOn(page, '.drop[data-zone="json"]', ['toto.json', 'page-01.png', 'page-02.png']);   // 한꺼번에 놓아도 제자리로
     await page.waitForSelector('.plan .srow');
+    check(await page.locator('#tiles-pages .tile').count() === 2 && await page.locator('.plan .srow img').count() === 2, 'JSON 과 쪽 그림을 한 칸에 같이 놓아도 나눠 넣는다');
     check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'story 장면 표: 가로 넘침 없음');
     await page.locator('.plan').scrollIntoViewIfNeeded();
     await page.screenshot({path: path.join(OUT, 'phone-story-plan.png')});
@@ -211,10 +250,14 @@ const visible = (page, sel) => page.locator(sel).first().isVisible();
       await page.goto(HUB, {waitUntil: 'domcontentloaded'});
       await page.waitForSelector('#conn:not([hidden])');
       check(true, '서버 주소 칸이 보인다');
+      await page.waitForSelector('#conn-msg.bad');
+      check(await page.locator('#aspect option').count() === 7 && await page.locator('#size option').count() === 5, '연결 전에도 화면비·크기 칸이 차 있다');
+      check((await page.textContent('#banners')).trim() === '', '같은 안내를 두 번 띄우지 않는다');
       await page.fill('#base', BASE + '/');
       await page.click('#base-save');
       await page.waitForSelector('#feed article.job', {timeout: 15000});
       await page.waitForSelector('#pill-base.ok');
+      check(await page.locator('#conn').isHidden(), '연결되면 서버 주소 칸을 닫는다');
       check(await page.evaluate(() => localStorage.getItem('h3video.server')) === BASE, '서버 주소를 저장한다');
       const v = await page.locator('#feed video').first().getAttribute('src');
       check(v.startsWith(BASE + '/files/'), '영상도 그 서버 주소로');
