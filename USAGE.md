@@ -68,8 +68,8 @@ bash scripts/down.sh                 # 다른 창에서 H3 서버 끄기 (웹 UI
 
 ## 4. 웹 UI·숏폼
 
-- 웹 UI: 다른 창에서 `bash scripts/web.sh` (허브 숏폼 제작에서 부르면 `--cors https://33modeling.pages.dev`). 화면에 나오는 `ssh -N -L …` 를 PC 에서 실행 → 브라우저 `http://127.0.0.1:8790`. 영상은 H3 서버(`up.sh`)가 떠 있어야 만들어진다
-- 웹 UI 를 허브(https://33modeling.pages.dev)처럼 다른 주소에서 열면 위쪽 **서버 주소** 칸에 `http://localhost:8790` 처럼 적는다(브라우저에 기억됨). 이때 웹 UI 는 `bash scripts/web.sh --cors https://33modeling.pages.dev` 로 띄운다
+- 웹 UI: 다른 창에서 `bash scripts/web.sh` (허브 33modeling.pages.dev 의 **동영상 만들기**·숏폼 제작에서 부를 수 있게 기본으로 허브 주소를 허용한다. 끄려면 `--cors ''`). 화면에 나오는 `ssh -N -L …` 를 PC 에서 실행 → 브라우저 `http://127.0.0.1:8790`. 영상은 H3 서버(`up.sh`)가 떠 있어야 만들어진다
+- 웹 UI 를 허브(https://33modeling.pages.dev)처럼 다른 주소에서 열면 위쪽 **서버 주소** 칸에 `http://localhost:8790` 처럼 적는다(브라우저에 기억됨). 허브 카드 **동영상 만들기**(`/video-maker/`)가 이 화면이다. 크롬이 '로컬 네트워크 접근'을 물으면 허용한다
 - 서버가 꺼져 있으면 웹 UI 위쪽에 무엇을 켜야 하는지 한 줄로 나온다. CLI 는 `h3video doctor`
 - JSON 한번에: 웹 UI 위쪽 "JSON 한번에"를 고르고 동화책 콘티 JSON 과 쪽 그림을 넣으면 장면 표가 나오고, 만들기를 누르면 장면마다 영상을 만들어 이어 붙인다(CLI 는 `h3video json`, [VIDEO.md](VIDEO.md#json-하나로-한-번에-그림책장면-목록))
 - 터미널 UI: `source scripts/cluster_env.sh && h3video tui`

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # 웹 UI 만 띄운다 (H3 서버와 따로: 이것을 다시 띄우거나 꺼도 H3 서버는 그대로). H3 서버는 bash scripts/up.sh.
 #   bash scripts/web.sh                                    웹 UI(8790), 이 화면에서. 끄기 Ctrl+C
-#   bash scripts/web.sh --cors https://33modeling.pages.dev  허브 '숏폼 제작'에서 부를 수 있게
+#   (기본으로 33modeling 허브의 '동영상 만들기'·'숏폼 제작'에서 부를 수 있다. 끄려면 --cors '' , 바꾸려면 --cors 주소)
 #   bash scripts/web.sh --stop                             다른 창에서 웹 UI 끄기
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/cluster_env.sh" >/dev/null || { echo "cluster_env.sh 실패"; exit 1; }
-PORT="${H3_WEB_PORT:-8790}"; CORS="${H3_CORS_ORIGIN:-}"; STOP=0
+PORT="${H3_WEB_PORT:-8790}"; CORS="${H3_CORS_ORIGIN-https://33modeling.pages.dev}"; STOP=0
 while [[ $# -gt 0 ]]; do case "$1" in
   --cors) CORS="$2"; shift 2 ;; --port) PORT="$2"; shift 2 ;; --stop) STOP=1; shift ;;
   -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
