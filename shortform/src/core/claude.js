@@ -100,6 +100,27 @@ export function parseReply(resp) {
   return { obj, errors };
 }
 
+// Anthropic API 오류(HTTP 상태 + {"type":"error","error":{"type","message"}})를 쉬운 말로. 원래 메시지는 괄호에.
+// shorts/claude.py http_error_text 와 같다.
+export function httpErrorText(status, body = '') {
+  let msg = String(body || '').slice(0, 300);
+  try {
+    const j = JSON.parse(body);
+    if (j && j.error && j.error.message) msg = j.error.message;
+  } catch {
+    /* JSON 이 아니면 그대로 */
+  }
+  const tail = msg ? ` (원래 메시지: ${msg})` : '';
+  if (status === 401) return 'Anthropic API 키가 맞지 않습니다(401). 키를 확인하세요';
+  if (status === 403) return `이 키로는 쓸 수 없습니다(403). 키의 권한·결제 상태를 확인하세요${tail}`;
+  if (status === 429) return '요청 한도에 걸렸습니다(429). 잠시 뒤 다시 하세요';
+  if (status === 413) return `보내는 내용이 너무 큽니다(413). 2번 칸의 영상을 줄이고 다시 하세요${tail}`;
+  if (status === 529 || status === 503) return `Claude 서버가 지금 붐빕니다(${status}). 잠시 뒤 다시 하세요`;
+  if (status >= 500) return `Claude 서버에 잠깐 문제가 있습니다(${status}). 잠시 뒤 다시 하세요${tail}`;
+  if (status === 400) return `요청을 받지 않았습니다(400)${tail}`;
+  return `Anthropic API 오류 HTTP ${status}${tail}`;
+}
+
 async function defaultPost(url, body, apiKey, signal) {
   let r;
   try {
@@ -108,12 +129,7 @@ async function defaultPost(url, body, apiKey, signal) {
     if (e.name === 'AbortError') throw e;
     throw new PlanError(`Anthropic API 에 연결하지 못했습니다: ${e.message}`);
   }
-  if (!r.ok) {
-    const detail = (await r.text().catch(() => '')).slice(0, 300);
-    if (r.status === 401) throw new PlanError('Anthropic API 키가 맞지 않습니다(401). 키를 확인하세요');
-    if (r.status === 429) throw new PlanError('요청 한도에 걸렸습니다(429). 잠시 뒤 다시 하세요');
-    throw new PlanError(`Anthropic API 오류 HTTP ${r.status}: ${detail}`);
-  }
+  if (!r.ok) throw new PlanError(httpErrorText(r.status, await r.text().catch(() => '')));
   return r.json();
 }
 

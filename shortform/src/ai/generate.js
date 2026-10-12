@@ -10,6 +10,8 @@ export const DEFAULT_H3VIDEO = 'http://localhost:8790';
 export const DEFAULT_FL2VA = 'http://localhost:30010';
 export const DEFAULT_REF2VA = 'http://localhost:30011';
 export const H3_SHORT_EDGE = 768;
+// h3video 웹 서버가 받는 크기(짧은 변). shorts/backends.py H3_SIZES 와 같다.
+export const H3_SIZES = [512, 576, 640, 704, 768];
 
 export class GenError extends Error {}
 
@@ -39,6 +41,14 @@ export function genShortEdge(spec) {
   return short;
 }
 
+// h3video 웹 서버에 보낼 '크기': gen_size 의 짧은 변 이하에서 서버가 받는 가장 큰 값(512 보다 작으면 512).
+// gen_size 가 없으면 보내지 않는다(서버 기본 768). 전에는 아예 보내지 않아 '생성 크기'를 골라도 늘 768p 로 만들었다.
+export function h3videoSize(spec) {
+  if (spec.gen_size == null || spec.gen_size === '') return null;
+  const short = genShortEdge(spec);
+  return H3_SIZES.filter((s) => s <= short).pop() || H3_SIZES[0];
+}
+
 const trimSlash = (u) => String(u || '').trim().replace(/\/+$/, '');
 
 export function sglangBody(scene, spec, uriOf) {
@@ -66,6 +76,8 @@ export function h3videoForm(scene, spec, fileOf) {
   fd.append('aspect_ratio', spec.ratio || '9:16');
   fd.append('seed', String(Number(scene.seed || 0)));
   fd.append('title', spec.title || 'shorts');
+  const size = h3videoSize(spec);
+  if (size) fd.append('size', String(size));
   if (scene.image && scene.task !== 'ref2va') fd.append('first_image', fileOf(scene.image));
   for (const r of scene.sources) {
     const f = fileOf(r.path);
@@ -195,7 +207,7 @@ export async function generateScene({ scene, spec, conn, fileOf, signal, onStatu
   const server = trimSlash(conn.server);
   if (!server) throw new GenError('AI 서버 주소를 넣어 주세요');
   if (backend === 'auto') backend = await detectBackend(server, fetchFn, signal);
-  genShortEdge(spec); // 상한 검사(h3video 웹 서버는 크기를 받지 않고 자체 768p 로 만든다)
+  genShortEdge(spec); // 상한 검사(h3video 웹 서버에는 h3videoSize 로 맞춘 크기를 보낸다)
   const pollMs = Math.max(200, (conn.poll || 3) * 1000);
   const deadline = Date.now() + (conn.timeout || 3600) * 1000;
   const sources = scene.sources.map((r) => ({ path: r.path, kind: mediaKind(fileOf(r.path)) }));

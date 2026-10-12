@@ -315,7 +315,7 @@ const scenarios = {
   async ai_h3video() {
     const fake = await startH3video(genMp4);
     const { page, done } = await newPage('ai-h3');
-    const job = { prompt: 'A cat jumps over a fence', duration: 4, ratio: '9:16', title: 'AI 고양이', captions: ['노을', '점프!'], backend: 'h3video', server: fake.url, poll: 0.2, output: 'ai-cat.mp4' };
+    const job = { prompt: 'A cat jumps over a fence', duration: 4, ratio: '9:16', title: 'AI 고양이', captions: ['노을', '점프!'], backend: 'h3video', server: fake.url, poll: 0.2, output: 'ai-cat.mp4', gen_size: 576 };
     await loadJob(page, 'ai-h3', job);
     await waitReady(page, 'ai-h3');
     await page.evaluate(() => {
@@ -325,6 +325,11 @@ const scenarios = {
         if (document.querySelector('.sc-bar:not(.indeterminate) > div[style*="40%"]')) window.__seen.add('bar40');
         if (/⏳ \d+% 생성 중/.test(document.title)) window.__seen.add('title');
       }).observe(document.getElementById('statusBox'), { subtree: true, childList: true, characterData: true, attributes: true });
+      new MutationObserver(() => {   // 진행 줄에 서버 상태가 영어(running·queued)로 나오면 안 된다
+        const t = document.getElementById('progressText').textContent;
+        if (/running|queued|in_progress|pending/.test(t)) window.__seen.add('english:' + t);
+        if (/AI 장면 1\/1 · 생성 중/.test(t)) window.__seen.add('ko-progress');
+      }).observe(document.getElementById('progressText'), { subtree: true, childList: true, characterData: true });
     });
     const { info } = await makeAndDownload(page, 'ai-h3video');
     check(info.w === 720 && info.h === 1280 && info.acodec, `ai_h3video: 결과 이상 ${JSON.stringify(info)}`);
@@ -332,6 +337,8 @@ const scenarios = {
     const sub = fake.log.find((x) => x.kind === 'submit');
     const f = Object.fromEntries(sub.fields.map((x) => [x.name, x.value]));
     check(f.prompt === job.prompt && f.seconds === '4' && f.aspect_ratio === '9:16', `ai_h3video: 요청 필드 이상 ${JSON.stringify(f)}`);
+    check(f.size === '576', `ai_h3video: 생성 크기(gen_size)를 h3video 서버에 안 보냄 ${JSON.stringify(f)}`);
+    check(seen.includes('ko-progress') && !seen.some((s) => s.startsWith('english:')), `ai_h3video: 진행 줄 상태가 한국어가 아님 ${seen}`);
     check(seen.some((s) => s.startsWith('대기열')) && seen.some((s) => s.startsWith('생성 중')) && seen.includes('bar40') && seen.includes('title'), `ai_h3video: 단계·진행률 표시 이상 ${seen}`);
     check((await page.locator('.sc-id code').innerText()) === 'job1', 'ai_h3video: 작업 ID 표시 없음');
     check(/완료/.test(await page.locator('.scene-card .badge').innerText()), 'ai_h3video: 장면 카드가 완료로 안 바뀜');
@@ -510,6 +517,17 @@ const scenarios = {
     await page.waitForTimeout(300);
     const k = JSON.parse(await page.inputValue('#jsonText'));
     check(k.image === undefined && JSON.stringify(k.sources) === JSON.stringify(['src2.mp4']), `slots: 뺀 파일이 JSON 에 남음 ${JSON.stringify(k)}`);
+    // AI 가 아닌 작업 JSON: 4번 칸에 그림을 놓아도 클립(sources)으로 넣지 않는다 (전에는 '읽을 수 없는 형식'으로 만들기가 막혔다)
+    await page.fill('#jsonText', JSON.stringify({ base: 'base.mp4', sources: ['src1.mp4'], title: '그림 참고' }));
+    await page.dispatchEvent('#jsonText', 'input');
+    await page.waitForTimeout(600);
+    await page.setInputFiles('#mediaFiles', media('base.mp4', 'src1.mp4'));
+    await page.setInputFiles('#refFiles', media('first.png'));
+    await waitReady(page, 'slots-non-ai');
+    const n = JSON.parse(await page.inputValue('#jsonText'));
+    check(JSON.stringify(n.sources) === JSON.stringify(['src1.mp4']), `slots: AI 가 아닌데 그림이 sources 에 들어감 ${JSON.stringify(n.sources)}`);
+    check(/AI로 장면을 만들 때/.test(await page.locator('#dropNote').innerText()), 'slots: 4번 칸 그림 안내 없음');
+    check(!/읽을 수 없는/.test(await page.locator('#messages').innerText()), 'slots: 그림을 클립으로 읽으려 함');
     await done();
   },
 

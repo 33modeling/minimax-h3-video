@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -419,13 +421,33 @@ def story_spec(a, out: Out):
     뒤에 준 그림(또는 그림 폴더)은 쪽마다 첫 프레임으로, 나머지(음악 등)는 평소처럼. 아니면 None."""
     from . import story as STY
     p = Path(a.files[0])
+    zimgs, zrest, root = [], [], p.resolve().parent
+    if p.suffix.lower() == ".zip" and p.is_file():
+        # 동화책 만들기의 '파일 받기' zip(웹 숏폼에 놓는 것과 같은 파일): 안의 JSON·그림·소리를 그대로 (결과는 zip 옆에)
+        try:
+            z = STY._h3story().unpack_zip(str(p))
+        except Exception as e:   # h3video.client.H3Error
+            if type(e).__name__ != "H3Error":
+                raise
+            input_error(f"{a.files[0]}: {e}")
+        if not z["json"]:
+            input_error(f"zip 안에 JSON 이 없습니다: {a.files[0]} (동화책 만들기의 '파일 받기' zip 에는 book.json 이 들어 있습니다)")
+        out.event("zip", f"{p.name}에서 {1 + len(z['images']) + len(z['media'])}개를 꺼냈습니다"
+                  + (f" (쓰지 않는 {len(z['skipped'])}개는 뺌)" if z["skipped"] else ""), files=[z["json"], *z["images"], *z["media"]])
+        zimgs, zrest = z["images"], z["media"]
+        p = Path(z["json"])
     try:
         data = json.loads(p.read_bytes().decode("utf-8-sig"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        if zimgs or zrest or p != Path(a.files[0]):
+            spec, _ = load_spec(str(p))   # zip 안 JSON 의 문법 오류를 알린다
         return None   # 오류 문장은 load_spec 이 알려 준다
     if not STY.is_story(data):
+        if p != Path(a.files[0]):   # zip 안의 작업 JSON: 안의 그림·영상·소리를 두 번째 파일들처럼
+            spec, _ = load_spec(str(p))
+            return spec, root, zimgs + zrest + list(a.files[1:])
         return None
-    imgs, rest = [], []
+    imgs, rest = list(zimgs), list(zrest)
     for f in a.files[1:]:
         q = Path(f).expanduser()
         if q.is_dir():
@@ -435,7 +457,7 @@ def story_spec(a, out: Out):
         else:
             rest.append(f)
     try:
-        spec, info = STY.story_to_spec(data, imgs, base=p.resolve().parent, narration=not a.no_narration)
+        spec, info = STY.story_to_spec(data, imgs, base=p.parent if zimgs else p.resolve().parent, narration=not a.no_narration)
     except Exception as e:   # h3video.client.H3Error: 그림·JSON 문제
         if type(e).__name__ != "H3Error":
             raise
@@ -447,7 +469,7 @@ def story_spec(a, out: Out):
         out.event("story_clip", f"  {c['label']} {c['seconds']}초 ({c['auto']}) · {Path(c['image']).name if c['image'] else '그림 없음(글만)'}", **c)
     for f in info["unused_images"]:
         out.event("warning", f"주의: 그림 {Path(f).name} 은(는) 맞는 쪽이 없어 쓰지 않습니다", file=f)
-    return spec, p.resolve().parent, rest
+    return spec, root, rest
 
 
 def cmd_run(a) -> int:
@@ -535,8 +557,9 @@ def cmd_run(a) -> int:
                   + (f" · 참조 모드(ref2va): {norm['ref_server']}" if norm["ref_server"] and backend.name != "h3video" else ""),
                   backend=backend.name, server=norm["server"], ref_server=norm["ref_server"])
         gse = S.gen_short_edge(norm.get("gen_size"))
-        if backend.name == "h3video" and gse not in (None, B.H3_SHORT_EDGE):
-            out.event("warning", f"주의: h3video 웹 서버는 생성 해상도를 짧은 변 {B.H3_SHORT_EDGE}px 로 고정합니다(gen_size {gse} 무시)")
+        hs = B.h3video_size({"gen_size": norm.get("gen_size")}) if backend.name == "h3video" and gse else None
+        if hs and hs != gse:
+            out.event("warning", f"주의: h3video 웹 서버는 짧은 변 {'·'.join(map(str, B.H3_SIZES))}px 만 받아 {hs}px 로 만듭니다(gen_size {gse})")
         state = {"kind": "run", "state_path": str(work / "state.json"), "server": norm["server"], "ref_server": norm["ref_server"],
                  "backend": backend.name, "model": norm["model"], "spec": spec, "output": output,
                  "scenes": reuse_scenes(work, reqs, norm["server"], fresh=a.fresh, out=out)}
@@ -759,9 +782,52 @@ def add_server_opts(p):
     p.add_argument("--inline", action="store_true", help="참조 파일을 data:;base64 URI 로 요청에 넣어 보냄(SGLang H3 가 받음, 원격 서버에서 파일 공유 없이 쓸 때)")
 
 
+# argparse 의 영어 오류를 쉬운 한국어로 (h3video CLI 와 같은 말투). 명령 오타는 비슷한 명령을 알려 준다.
+_ARG_KO = [
+    (r"^the following arguments are required: (.*)$", r"꼭 필요한 값이 빠졌습니다: \1"),
+    (r"^unrecognized arguments: (.*)$", r"모르는 옵션이나 값: \1"),
+    (r"^argument (\S+): expected one argument$", r"\1 뒤에 값이 하나 필요합니다"),
+    (r"^argument (\S+): expected at least one argument$", r"\1 뒤에 값이 필요합니다"),
+    (r"^argument (\S+): invalid int value: (.*)$", r"\1 은(는) 정수여야 합니다: \2"),
+    (r"^argument (\S+): invalid float value: (.*)$", r"\1 은(는) 숫자여야 합니다: \2"),
+    (r"^ambiguous option: (\S+) could match (.*)$", r"\1 이(가) 여러 옵션과 겹칩니다: \2 (끝까지 써 주세요)"),
+]
+
+
+class KoArgParser(argparse.ArgumentParser):
+    def __init__(self, *args, **kw):
+        kw["add_help"] = False
+        super().__init__(*args, **kw)
+        self._positionals.title = "인자"
+        self._optionals.title = "옵션"
+        self.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help="이 도움말")
+
+    def format_usage(self):
+        return super().format_usage().replace("usage: ", "사용법: ", 1)
+
+    def format_help(self):
+        return super().format_help().replace("usage: ", "사용법: ", 1)
+
+    def error(self, message):
+        msg = message
+        m = re.match(r"^argument (\S+): invalid choice: '?([^' ]+)'? \(choose from (.*)\)$", message)
+        if m:
+            choices = re.findall(r"'([^']+)'", m.group(3))
+            near = difflib.get_close_matches(m.group(2), choices, n=1, cutoff=0.5)
+            what = "명령" if m.group(1) in ("cmd", "server_cmd") else m.group(1)
+            msg = f"{what}에 '{m.group(2)}' 은(는) 없습니다. 고를 수 있는 것: {', '.join(choices)}" + (f" — 혹시: {self.prog} {near[0]}" if near and what == "명령" else f" — 혹시: {near[0]}" if near else "")
+        else:
+            for pat, repl in _ARG_KO:
+                if re.match(pat, message):
+                    msg = re.sub(pat, repl, message)
+                    break
+        self.print_usage(sys.stderr)
+        self.exit(2, f"오류: {msg}\n도움말: {self.prog} --help\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="shorts", description="프롬프트 JSON(+소스 영상)으로 9:16 숏폼 만들기")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    ap = KoArgParser(prog="shorts", description="프롬프트 JSON(+소스 영상)으로 9:16 숏폼 만들기")
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="명령", parser_class=KoArgParser)
 
     r = sub.add_parser("run", help="검증 → (AI 생성) → 합성 → 출력")
     r.add_argument("files", nargs="*", help="prompt.json [source.mp4 ...]  (--idea 를 쓰면 소스 영상만). "
@@ -838,7 +904,7 @@ def build_parser() -> argparse.ArgumentParser:
     rs.set_defaults(fn=cmd_resume)
 
     sv = sub.add_parser("server", help="서버 도구")
-    svs = sv.add_subparsers(dest="server_cmd", required=True)
+    svs = sv.add_subparsers(dest="server_cmd", required=True, metavar="도구", parser_class=KoArgParser)
     ck = svs.add_parser("check", help="서버 상태·모델·모드·사양")
     ck.add_argument("--server")
     ck.add_argument("--backend", default="auto", choices=["auto", "sglang", "vllm", "h3video"])
@@ -855,7 +921,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     ap = build_parser()
-    a = ap.parse_args(argv)
+    a, extra = ap.parse_known_args(argv)
+    if extra:
+        if a.cmd == "compose" and any(str(x).lower().endswith(".json") for x in extra):
+            ap.error("compose 는 JSON 을 받지 않습니다 (--base·--source 로 영상을 줌). JSON 으로 만들려면: shorts run "
+                     + next(x for x in extra if str(x).lower().endswith(".json")))
+        ap.error("unrecognized arguments: " + " ".join(extra))
     if a.cmd == "run" and a.backend is None:
         a.backend = None
     try:

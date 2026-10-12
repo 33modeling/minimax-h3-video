@@ -115,19 +115,42 @@ class PlanError(RuntimeError):
         self.errors = errors or []
 
 
+def http_error_text(status: int, body: str = "") -> str:
+    """Anthropic API 오류(HTTP 상태 + {"type":"error","error":{"type","message"}})를 쉬운 말로. src/core/claude.js httpErrorText 와 같다."""
+    msg = str(body or "")[:300]
+    try:
+        j = json.loads(body)
+        if isinstance(j, dict) and isinstance(j.get("error"), dict) and j["error"].get("message"):
+            msg = j["error"]["message"]
+    except (TypeError, ValueError):
+        pass
+    tail = f" (원래 메시지: {msg})" if msg else ""
+    if status == 401:
+        return "Anthropic API 키가 맞지 않습니다(401). 키를 확인하세요"
+    if status == 403:
+        return f"이 키로는 쓸 수 없습니다(403). 키의 권한·결제 상태를 확인하세요{tail}"
+    if status == 429:
+        return "요청 한도에 걸렸습니다(429). 잠시 뒤 다시 하세요"
+    if status == 413:
+        return f"보내는 내용이 너무 큽니다(413). 2번 칸의 영상을 줄이고 다시 하세요{tail}"
+    if status in (529, 503):
+        return f"Claude 서버가 지금 붐빕니다({status}). 잠시 뒤 다시 하세요"
+    if status >= 500:
+        return f"Claude 서버에 잠깐 문제가 있습니다({status}). 잠시 뒤 다시 하세요{tail}"
+    if status == 400:
+        return f"요청을 받지 않았습니다(400){tail}"
+    return f"Anthropic API 오류 HTTP {status}{tail}"
+
+
 def _post(url: str, body: dict, api_key: str, timeout: float) -> dict:
     req = urllib.request.Request(url, data=json.dumps(body, ensure_ascii=False).encode(), method="POST", headers=headers(api_key))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
-        detail = e.read()[:300].decode(errors="replace")
+        detail = e.read()[:2000].decode(errors="replace")
         e.close()
-        if e.code == 401:
-            raise PlanError("Anthropic API 키가 맞지 않습니다(401). ANTHROPIC_API_KEY 를 확인하세요") from e
-        if e.code == 429:
-            raise PlanError("요청 한도에 걸렸습니다(429). 잠시 뒤 다시 하세요") from e
-        raise PlanError(f"Anthropic API 오류 HTTP {e.code}: {detail}") from e
+        raise PlanError(http_error_text(e.code, detail).replace("키를 확인하세요", "ANTHROPIC_API_KEY 를 확인하세요")) from e
     except urllib.error.URLError as e:
         raise PlanError(f"Anthropic API 에 연결하지 못했습니다: {e.reason}") from e
 

@@ -84,6 +84,18 @@ def seconds_of(req: dict) -> int:
     return int(math.floor(float(req["duration"]) + 0.5))
 
 
+H3_SIZES = (512, 576, 640, 704, 768)   # h3video 웹 서버가 받는 크기(짧은 변). src/ai/generate.js H3_SIZES 와 같다
+
+
+def h3video_size(req: dict) -> int | None:
+    """h3video 웹 서버에 보낼 '크기': gen_size 짧은 변 이하에서 서버가 받는 가장 큰 값(512 보다 작으면 512).
+    gen_size 가 없으면 None(서버 기본 768). 전에는 보내지 않아 --gen-size 를 줘도 늘 768p 로 만들었다."""
+    if req.get("gen_size") in (None, ""):
+        return None
+    short = gen_size_of(req, H3_SHORT_EDGE)[0]
+    return max([s for s in H3_SIZES if s <= short] or [H3_SIZES[0]])
+
+
 def gen_size_of(req: dict, default_short: int) -> tuple[int, str]:
     """요청의 gen_size → (짧은 변, "WxH"). 숫자면 ratio 로 WxH 를 계산, "WxH" 면 그대로."""
     g = req.get("gen_size")
@@ -336,6 +348,9 @@ class H3VideoBackend:
     def build_form(self, req: dict, read: bool = True) -> tuple[list, list]:
         fields = [("prompt", req["prompt"]), ("seconds", str(seconds_of(req))), ("aspect_ratio", req["ratio"]),
                   ("seed", str(int(req.get("seed") or 0))), ("title", req.get("title") or "shorts")]
+        size = h3video_size(req)
+        if size:
+            fields.append(("size", str(size)))
         files = []
 
         def add(key, path):

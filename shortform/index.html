@@ -185,11 +185,12 @@
             </label>
           </div>
           <div class="settings">
-            <label><span class="lab">생성 크기(짧은 변) <button type="button" class="tip" data-tip="AI 서버가 만들 영상의 짧은 변이에요. 로컬 H3는 768이 상한이에요. 합성할 때 출력 해상도로 맞춰요.">ⓘ</button></span>
+            <label><span class="lab">생성 크기(짧은 변) <button type="button" class="tip" data-tip="AI 서버가 만들 영상의 짧은 변이에요. 작을수록 빠르고 메모리를 덜 써요(576이면 약 40% 빨라요). 로컬 H3는 768이 상한이에요. 합성할 때 출력 해상도로 맞춰요.">ⓘ</button></span>
               <select id="aiGenSize">
-                <option value="480">480p</option>
-                <option value="576">576p</option>
-                <option value="720">720p</option>
+                <option value="512">512p</option>
+                <option value="576">576p (빠르게)</option>
+                <option value="640">640p</option>
+                <option value="704">704p</option>
                 <option value="768">768p (H3 상한)</option>
               </select>
             </label>

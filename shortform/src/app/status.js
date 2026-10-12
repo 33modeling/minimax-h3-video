@@ -11,7 +11,7 @@ export const STAGES = [
 ];
 const AI_STAGES = ['connect', 'queue', 'generate', 'download'];
 
-const STATE_KO = {
+export const STATE_KO = {
   pending: '대기',
   queued: '대기열',
   in_progress: '생성 중',

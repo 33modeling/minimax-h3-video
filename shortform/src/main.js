@@ -5,7 +5,7 @@ import { plan as claudePlan } from './core/claude.js';
 import { matchFiles, fileFor, outputName, kindOf } from './app/match.js';
 import { isStory, storyToSpec } from './core/story.js';
 import { EXAMPLE_JOB, EXAMPLES } from './app/example.js';
-import { StatusView, notifyDone, fmtSec } from './app/status.js';
+import { StatusView, notifyDone, fmtSec, STATE_KO } from './app/status.js';
 import { Tour, tourSeen, setupTips, hintDismissed, dismissHint } from './app/tour.js';
 import { isJsonFile, isZipFile, isMediaFile, zipToFiles, pickJson, sortDropped } from './app/drop.js';
 import { checkDecodable, StillFrames, SequentialFrames, mixAudio } from './render/media.js';
@@ -159,6 +159,7 @@ function roleOf(f, match) {
   if (story.src && story.unused.has(f.name)) return { role: '쓰지 않음 · 맞는 쪽이 없어요', cls: 'idle' };
   if (!match) return { role: state.jsonText.trim() ? '' : 'JSON을 넣으면 쓰일 곳이 정해져요', cls: 'idle' };
   const r = match.roles[baseName(f.name)];
+  if (!r && slotFiles.refs.includes(f)) return { role: '쓰지 않음 · AI 장면(prompt)을 만들 때 참고로 써요', cls: 'idle' };
   return r ? { role: r, cls: 'ok' } : { role: '쓰지 않음', cls: 'idle' };
 }
 
@@ -203,8 +204,9 @@ function fillResolutionOptions() {
   sel.replaceChildren();
   const label = (r) => {
     const [w, h] = r.split('x').map(Number);
-    const kind = w === h ? '정사각' : w > h ? '가로' : Math.abs(w / h - 0.8) < 0.01 ? '4:5' : '9:16';
-    return `${w}×${h} (${kind})${r === '720x1280' ? ' · 기본' : ''}`;
+    // 넓은 화면의 좁은 칸에서도 잘리지 않게 짧게 (전에는 '720×1280 (9:16) · 기본' 이 잘렸다)
+    const kind = w === h ? '정사각' : w > h ? '가로' : Math.abs(w / h - 0.8) < 0.01 ? '4:5' : '세로';
+    return `${w}×${h} ${kind}${r === '720x1280' ? '(기본)' : ''}`;
   };
   for (const r of PRESETS) sel.append(new Option(label(r), r));
   sel.append(new Option('직접 입력…', 'custom'));
@@ -688,7 +690,7 @@ async function make() {
             const p = st.progress != null ? st.progress : 0;
             if (st.state || st.progress != null) {
               const overall = (i + p) / N;
-              setProgress(overall, `AI 장면 ${i + 1}/${N} · ${st.state || ''}${st.retry ? ` · 재시도 중(${st.retry}/${st.maxRetry})` : ''}`);
+              setProgress(overall, `AI 장면 ${i + 1}/${N} · ${STATE_KO[st.state] || st.state || ''}${st.retry ? ` · 재시도 중(${st.retry}/${st.maxRetry})` : ''}`);
               status.title(`⏳ ${Math.floor(overall * 100)}% 생성 중`);
             }
           },
@@ -974,7 +976,16 @@ async function takeDrop(list, target = null) {
   }
   if (sorted.refs.length) {
     putFiles('refs', sorted.refs);
-    refsToJson(sorted.refs);
+    // 참고 자료는 AI 장면(prompt·scenes)용이다. AI 가 아닌 JSON 의 sources 는 클립이라 그림·소리를 넣으면
+    // '읽을 수 없는 형식' 오류로 만들기가 막혔다 → 영상만 클립으로 쓰고 그림·소리는 칸에만 둔다.
+    const o = jsonObj() || {};
+    const ai = !!(story.src || o.prompt || o.scenes);
+    const usable = ai ? sorted.refs : sorted.refs.filter((f) => kindOf(f) === 'video');
+    if (usable.length) refsToJson(usable);
+    if (usable.length < sorted.refs.length) {
+      notes.push('4번 칸의 그림·소리는 AI로 장면을 만들 때(JSON에 prompt가 있을 때) 참고로 써요. 지금은 넣어만 뒀어요');
+      level = level === 'error' ? level : 'warn';
+    }
   }
   syncFiles();
   const placed = [json ? '작업 JSON 1개' : '', ...['media', 'image', 'refs'].map((k) => (sorted[k].length ? `${SLOT_KO[k]} ${sorted[k].length}개` : ''))].filter(Boolean);
