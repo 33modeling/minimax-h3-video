@@ -4,11 +4,14 @@
 API: GET /api/spec, GET /api/jobs, GET /api/jobs/{id}, POST /api/jobs (multipart), GET /files/{job}/{name}, GET /api/health
      JSON 한번에: POST /api/story/plan (미리 보기), POST /api/story (multipart: json, images[], narration, ratio, seed, size),
      GET /api/story/{id} (장면별 상태, 다 끝나면 이어 붙인 영상), GET /api/stories
+     화면용: GET /api/feed (작업·JSON 한번에를 카드 하나씩, 쉬운 오류·CLI 명령 포함),
+             GET /api/plan?seconds=40&task=t2va&aspect=16:9&size=768 (몇 장면으로 나뉘는지, 서버 GPU 한도 반영),
+             POST /api/jobs/{id}/retry (같은 설정으로 다시), POST /api/story/{id}/resume (안 된 장면만 다시)
 
 CORS: 기본은 끔. 다른 웹 페이지(예: 33modeling 허브의 숏폼 제작)에서 이 서버를 부르려면
   h3video web --cors-origin https://33modeling.pages.dev   (여러 개는 쉼표, 전부 허용은 *)
 또는 환경변수 H3_CORS_ORIGIN. 허용한 출처에만 Access-Control-Allow-Origin 을 돌려주고,
-사설망 접근 사전 요청(Access-Control-Request-Private-Network)에도 답한다.
+사전 요청(OPTIONS)에는 사설망 접근 허용(Access-Control-Allow-Private-Network: true)도 붙인다.
 """
 from __future__ import annotations
 
@@ -17,12 +20,15 @@ import email.policy
 import json
 import mimetypes
 import os
+import random
 import re
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from . import hints
 from . import spec
 from . import story as ST
 from . import storyrun as SR
@@ -30,6 +36,36 @@ from .client import DEFAULT_ENDPOINT, DEFAULT_REF_ENDPOINT, H3Client, H3Error
 from .jobs import INBOX_DIR, OUTPUT_DIR, JobStore, Worker, new_job
 
 HTML = Path(__file__).with_name("ui.html").read_text(encoding="utf-8")
+SIZES = (512, 576, 640, 704, 768)
+
+
+def served_html() -> bytes:
+    """이 서버가 직접 준 화면이라는 표시: 화면은 같은 주소로 API 를 부른다 (허브 등 다른 곳에서 열면 '서버 주소'를 묻는다)."""
+    return HTML.replace('<html lang="ko">', '<html lang="ko" data-served="h3video">', 1).encode()
+
+
+def parse_seed(v) -> int:
+    """비었으면 0 (예전과 같게), random 이면 매번 다르게."""
+    s = str(v if v is not None else "").strip().lower()
+    if s in ("random", "rand", "r"):
+        return random.randrange(2 ** 31)
+    return int(s or 0)
+
+
+def parse_size(v) -> int:
+    size = int(v or spec.SHORT_EDGE_DEFAULT)
+    if size not in SIZES:
+        raise H3Error("size 는 512·576·640·704·768 중 하나")
+    return size
+
+
+def parse_bool(v) -> bool:
+    return str(v).strip().lower() in ("1", "true", "on", "yes", "y", "예")
+
+
+def display_name(path: str) -> str:
+    """업로드 때 붙인 앞 8자리(충돌 방지)를 뗀 원래 파일 이름."""
+    return re.sub(r"^[0-9a-f]{8}-", "", Path(str(path)).name)
 
 
 class App:
@@ -43,6 +79,9 @@ class App:
         self.worker.start()
         self.endpoint, self.ref_endpoint = endpoint, ref_endpoint
         self.inbox_dir = inbox_dir
+        self.cli_output_dir = str(Path(output_dir).resolve())   # '명령어로 보기'의 --output-dir (다른 폴더에서 실행해도 찾게)
+        self._limits: dict[tuple, tuple[float, int | None]] = {}
+        self._limits_lock = threading.Lock()
 
     def allowed_input(self, path: str) -> bool:
         if path.startswith(("http://", "https://")):
@@ -58,6 +97,146 @@ class App:
         dest.write_bytes(data)
         return str(dest)
 
+    # ---------- 화면용 ----------
+    def file_url(self, path: str | None) -> str | None:
+        """결과 폴더 안의 파일 → /files/... 주소 (그 밖의 파일은 보여 주지 않는다)."""
+        if not path:
+            return None
+        s = str(path)
+        if s.startswith(("http://", "https://")):
+            return s
+        p = Path(s[7:] if s.startswith("file://") else s).expanduser().resolve()
+        root = self.store.root.resolve()
+        if root not in p.parents:
+            return None
+        return "/files/" + urllib.parse.quote(p.relative_to(root).as_posix())
+
+    def max_scene(self, task: str, aspect: str, size: int, keyframes: int, images: int, video_seconds: float) -> int | None:
+        """서버가 알려 주는 한 장면 최대 초 (잠깐 기억해 둔다: 화면이 길이를 바꿀 때마다 묻지 않게)."""
+        key = (task == "ref2va", aspect, size, keyframes, images, round(video_seconds))
+        with self._limits_lock:
+            hit = self._limits.get(key)
+        if hit and time.time() - hit[0] < (300 if hit[1] else 30):
+            return hit[1]
+        client = self.ref_client if task == "ref2va" else self.client
+        m = client.max_seconds(aspect, size, keyframes, images, video_seconds, timeout=3) if hasattr(client, "max_seconds") else None
+        with self._limits_lock:
+            self._limits[key] = (time.time(), m)
+        return m
+
+    def plan(self, q: dict) -> dict:
+        g = lambda k, d=None: (q.get(k) or [d])[0]  # noqa: E731
+        seconds = max(spec.DURATION_MIN, int(float(g("seconds", 8) or 8)))
+        task = g("task", "t2va") or "t2va"
+        aspect = g("aspect", "16:9") or "16:9"
+        if aspect not in spec.ASPECT_RATIOS:
+            raise H3Error(f"aspect 는 {spec.ASPECT_RATIOS} 중 하나")
+        size = parse_size(g("size"))
+        keyframes = 0 if task == "ref2va" else (2 if parse_bool(g("last", "0")) else 1)
+        m = self.max_scene(task, aspect, size, keyframes, int(g("images", 0) or 0), float(g("video_seconds", 0) or 0))
+        scenes = spec.plan_scenes(seconds, int(g("scene_seconds", 10) or 10), m or None)
+        return {"seconds": seconds, "scenes": scenes, "max_scene": m or None,
+                "limit": max(spec.SCENE_MIN, min(spec.DURATION_MAX, m)) if m else spec.DURATION_MAX}
+
+    def job_item(self, d: dict) -> dict:
+        refs = [{"type": r["type"], "name": display_name(r["path"]), "url": self.file_url(r["path"])} for r in d.get("refs") or []]
+        q = list(self.worker.queue)
+        return {**d, "kind": "job", "cli": hints.job_command(d), "error_ko": hints.explain_error(d.get("error"), d.get("task", "t2va")),
+                "video_url": self.file_url(d.get("output")) if d.get("status") == "completed" else None,
+                "first_url": self.file_url(d.get("first_image")), "last_url": self.file_url(d.get("last_image")),
+                "first_name": display_name(d["first_image"]) if d.get("first_image") else None,
+                "last_name": display_name(d["last_image"]) if d.get("last_image") else None,
+                "ref_files": refs, "queue_pos": (q.index(d["id"]) + 1) if d["id"] in q else None}
+
+    def story_dirs(self) -> list[Path]:
+        return sorted((d for d in self.store.root.glob("story-*") if (d / SR.STATE).is_file()), key=lambda d: d.name, reverse=True)
+
+    def story_item(self, d: Path) -> dict:
+        try:
+            st = SR.refresh(d, SR.load_state(d), self.store)
+            join_error = None
+        except Exception as e:   # noqa: BLE001  이어 붙이기 실패(ffmpeg 등)도 카드에 보이게
+            st, join_error = SR.load_state(d), f"이어 붙이기 실패: {e}"
+        s = SR.summary(st)
+        jobs = [self.store.get(c["job_id"]) for c in st["clips"] if c.get("job_id")]
+        jobs = [j for j in jobs if j]
+        busy = any(j.status in ("pending", "running") for j in jobs)
+        status = "completed" if st.get("output") else "running" if busy else "failed" if (s["failed"] or join_error) else "running"
+        started = min((j.started or j.created for j in jobs), default=st.get("created") or time.time())
+        finished = max((j.finished or 0 for j in jobs), default=0) if status in ("completed", "failed") else None
+        clips = []
+        for c in st["clips"]:
+            clips.append({"id": c["id"], "label": c["label"], "seconds": c["seconds"], "auto": c.get("auto", ""),
+                          "text": c.get("text", ""), "image_name": Path(c["image"]).name if c.get("image") else None,
+                          "image_url": self.file_url(c.get("image")), "status": "completed" if c.get("output") else
+                          ("failed" if c.get("error") else c.get("status") or "pending"), "progress": c.get("progress") or 0,
+                          "error": c.get("error"), "error_ko": hints.explain_error(c.get("error")),
+                          "video_url": self.file_url(c.get("output"))})
+        inp = st.get("input") or {}
+        imgs = sorted(Path(inp["images"]).glob("*")) if inp.get("images") and Path(inp["images"]).is_dir() else []
+        cmds = hints.story_commands(st, d.name, self.cli_output_dir)
+        return {"kind": "story", "id": d.name, "title": st.get("title"), "created": st.get("created") or 0, "ratio": st.get("ratio"),
+                "status": status, "elapsed": round((finished or time.time()) - started, 1), "clips": clips, **s,
+                "video_url": self.file_url(st.get("output")), "error": join_error, "error_ko": hints.explain_error(join_error),
+                "cli": cmds["make"] or cmds["resume"], "resume_cli": cmds["resume"], "params": st.get("params") or {},
+                "inputs": {"json_url": self.file_url(inp.get("json")), "json_name": Path(inp["json"]).name if inp.get("json") else None,
+                           "images": [{"name": p.name, "url": self.file_url(str(p))} for p in imgs
+                                      if p.suffix.lower() in ST.IMAGE_EXTS]}}
+
+    def feed(self, limit: int = 40) -> dict:
+        """화면 오른쪽 카드 목록: 작업과 JSON 한번에를 최근 순으로. JSON 한번에의 장면 작업은 그 카드 안에만 보인다."""
+        items, in_story = [], set()
+        for d in self.story_dirs()[:limit]:
+            try:
+                it = self.story_item(d)
+            except (OSError, ValueError, KeyError):
+                continue
+            items.append(it)
+        for d in self.story_dirs():
+            try:
+                in_story |= {j for c in SR.load_state(d)["clips"] for j in [c.get("job_id"), *(c.get("past_jobs") or [])]}
+            except (OSError, ValueError, KeyError):
+                continue
+        items += [self.job_item(j) for j in self.store.list() if j["id"] not in in_story]
+        items.sort(key=lambda x: x.get("created") or 0, reverse=True)
+        return {"items": items[:limit], "queue": list(self.worker.queue), "current": self.worker.current, "now": time.time()}
+
+    def health(self) -> dict:
+        ok = {"fl2va": self.client.healthy(), "ref2va": self.ref_client.healthy()}
+        return {**ok, "queue": len(self.worker.queue), "current": self.worker.current,
+                "endpoints": {"fl2va": self.endpoint, "ref2va": self.ref_endpoint},
+                "hints": {k: (None if v else hints.server_hint(k, self.endpoint if k == "fl2va" else self.ref_endpoint)) for k, v in ok.items()}}
+
+    def retry(self, job_id: str):
+        jb = self.store.get(job_id)
+        if not jb:
+            raise KeyError(job_id)
+        for path in [jb.first_image, jb.last_image] + [r["path"] for r in jb.refs]:
+            if path and not self.allowed_input(str(path)):
+                raise H3Error(f"이 작업의 파일은 웹에서 다시 쓸 수 없어요: {path}")
+        job = new_job(prompt=jb.prompt, seconds=jb.total_seconds, aspect_ratio=jb.aspect_ratio, seed=jb.seed, task=jb.task,
+                      first_image=jb.first_image, last_image=jb.last_image, refs=list(jb.refs), scene_seconds=jb.scene_seconds,
+                      steps=jb.steps, title=jb.title, negative=jb.negative, raw=jb.raw, short_edge=jb.short_edge)
+        self.worker.enqueue(job)
+        return job
+
+    def resume_story(self, name: str) -> dict:
+        d = self.store.root / name
+        if not re.fullmatch(r"story-[\w-]+", name) or not (d / SR.STATE).is_file():
+            raise KeyError(name)
+        st = SR.refresh(d, SR.load_state(d), self.store)
+        busy = [c for c in st["clips"] if c.get("job_id") and (self.store.get(c["job_id"]) and
+                                                             self.store.get(c["job_id"]).status in ("pending", "running"))]
+        if busy:
+            raise H3Error("아직 만드는 장면이 있어요. 끝난 뒤에 다시 하세요")
+        jobs = SR.jobs_for(st)
+        if not jobs:
+            raise H3Error("다시 만들 장면이 없어요")
+        SR.save_state(d, st)
+        for job in jobs:
+            self.worker.enqueue(job)
+        return {"id": name, **SR.summary(st), "redo": len(jobs)}
+
 
 def story_fields(fields: dict) -> dict:
     """JSON 한번에 폼: json(파일이나 글), narration, ratio, seed, size."""
@@ -68,11 +247,8 @@ def story_fields(fields: dict) -> dict:
     ratio = g("ratio") or None
     if ratio and ratio not in spec.ASPECT_RATIOS:
         raise H3Error(f"ratio 는 {spec.ASPECT_RATIOS} 중 하나")
-    size = int(g("size") or spec.SHORT_EDGE_DEFAULT)
-    if size not in (512, 576, 640, 704, 768):
-        raise H3Error("size 는 512·576·640·704·768 중 하나")
-    return {"json": raw, "narration": g("narration", "1") not in ("0", "false", "off", ""), "ratio": ratio,
-            "seed": int(g("seed") or 0), "size": size}
+    return {"json": raw, "json_name": fields["json"][0][0], "narration": g("narration", "1") not in ("0", "false", "off", ""),
+            "ratio": ratio, "seed": parse_seed(g("seed")), "size": parse_size(g("size"))}
 
 
 def parse_multipart(content_type: str, body: bytes) -> dict[str, list[tuple[str | None, bytes]]]:
@@ -101,7 +277,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
         def log_message(self, fmt, *args):  # 조용히
             pass
 
-        def _cors(self):
+        def _cors(self, preflight: bool = False):
             if not cors_origins:
                 return
             origin = (self.headers.get("Origin") or "").rstrip("/")
@@ -113,13 +289,16 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             else:
                 return
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-            if self.headers.get("Access-Control-Request-Private-Network"):
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
+            if preflight or self.headers.get("Access-Control-Request-Private-Network"):
+                # 공개 웹(허브)에서 이 컴퓨터(127.0.0.1)의 서버를 부를 때 크롬이 묻는 사설망 접근 허용
                 self.send_header("Access-Control-Allow-Private-Network", "true")
+            if preflight:
+                self.send_header("Access-Control-Max-Age", "600")
 
         def do_OPTIONS(self):
             self.send_response(204 if cors_origins else 405)
-            self._cors()
+            self._cors(preflight=True)
             self.send_header("Content-Length", "0")
             self.end_headers()
 
@@ -128,6 +307,8 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             self._cors()
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            if ctype.startswith("text/html"):
+                self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
@@ -174,16 +355,24 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
         def do_GET(self):
             u = urllib.parse.urlparse(self.path)
             p = u.path
-            if p == "/":
-                return self._send(200, HTML.encode(), "text/html; charset=utf-8")
+            if p in ("/", "/index.html"):
+                return self._send(200, served_html(), "text/html; charset=utf-8")
             if p == "/api/spec":
                 return self._json({"summary": spec.summary(), "duration_min": spec.DURATION_MIN, "duration_max": spec.DURATION_MAX,
                                    "fps": spec.FPS, "short_edge": spec.SHORT_EDGE_DEFAULT, "aspect_ratios": spec.ASPECT_RATIOS,
                                    "tasks": spec.TASKS, "ref_limits": spec.REF_LIMITS, "endpoint": app.endpoint,
-                                   "ref_endpoint": app.ref_endpoint, "output_dir": str(app.store.root)})
+                                   "ref_endpoint": app.ref_endpoint, "output_dir": str(app.store.root),
+                                   "model": spec.MODEL_ID, "audio": spec.AUDIO, "languages": spec.LANGUAGES, "hardware": spec.PARAMS,
+                                   "scene_min": spec.SCENE_MIN, "sizes": list(SIZES), "steps_default": spec.STEPS_DEFAULT})
             if p == "/api/health":
-                return self._json({"fl2va": app.client.healthy(), "ref2va": app.ref_client.healthy(),
-                                   "queue": len(app.worker.queue), "current": app.worker.current})
+                return self._json(app.health())
+            if p == "/api/feed":
+                return self._json(app.feed())
+            if p == "/api/plan":
+                try:
+                    return self._json(app.plan(urllib.parse.parse_qs(u.query)))
+                except (H3Error, ValueError) as e:
+                    return self._json({"error": str(e)}, 400)
             if p == "/api/jobs":
                 return self._json(app.store.list())
             if p.startswith("/api/jobs/"):
@@ -228,6 +417,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                     for c in d["clips"]:
                         c["image"] = Path(c["image"]).name if c["image"] else None
                     d["unused_images"] = [Path(x).name for x in d["unused_images"]]
+                    d["missing_images"] = [c["id"] for c in d["clips"] if not c["image"]]
                     return self._json(d)
                 folder = app.upload_dir / f"story-{os.urandom(4).hex()}"
                 paths = []
@@ -238,7 +428,13 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                         dest.write_bytes(data)
                         paths.append(str(dest))
                 st = ST.load_story(f["json"], paths, narration=f["narration"], ratio=f["ratio"], seed=f["seed"], local_paths=False)
-                state = SR.initial_state(st, {"size": f["size"], "narration": f["narration"]})
+                state = SR.initial_state(st, {"size": f["size"], "narration": f["narration"], "seed": f["seed"]})
+                # 올린 JSON 도 같이 둔다: 화면의 '명령어로 보기'·'같은 설정으로 다시'가 같은 파일을 쓴다
+                folder.mkdir(parents=True, exist_ok=True)
+                jname = Path(f["json_name"] or "story.json").name
+                jpath = folder / (jname if jname.lower().endswith(".json") else jname + ".json")
+                jpath.write_bytes(f["json"])
+                state["input"] = {"json": str(jpath), "images": str(folder)}
                 jobs = SR.jobs_for(state)
                 d = SR.new_story_dir(app.store.root)
                 SR.save_state(d, state)
@@ -249,9 +445,26 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 return self._json({"error": str(e)}, 400)
 
         def do_POST(self):
-            if self.path in ("/api/story", "/api/story/plan"):
+            p = urllib.parse.urlparse(self.path).path
+            if p in ("/api/story", "/api/story/plan"):
                 return self._story_post()
-            if self.path != "/api/jobs":
+            m = re.fullmatch(r"/api/jobs/([\w-]+)/retry", p)
+            if m:
+                try:
+                    return self._json(app.retry(m.group(1)).to_json(), 201)
+                except KeyError:
+                    return self._json({"error": "없음"}, 404)
+                except (H3Error, ValueError) as e:
+                    return self._json({"error": str(e)}, 400)
+            m = re.fullmatch(r"/api/story/([\w-]+)/resume", p)
+            if m:
+                try:
+                    return self._json(app.resume_story(m.group(1)), 201)
+                except KeyError:
+                    return self._json({"error": "없음"}, 404)
+                except (H3Error, ValueError) as e:
+                    return self._json({"error": str(e)}, 400)
+            if p != "/api/jobs":
                 return self._json({"error": "not found"}, 404)
             ctype = self.headers.get("Content-Type", "")
             try:
@@ -285,10 +498,12 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                         if path and not app.allowed_input(str(path)):
                             raise H3Error(f"로컬 파일 경로는 업로드(multipart)로 보내라: {path}")
                 job = new_job(prompt=str(g("prompt", "")).strip(), seconds=int(g("seconds", 8)),
-                              aspect_ratio=str(g("aspect_ratio", "16:9")), seed=int(g("seed", 0) or 0),
+                              aspect_ratio=str(g("aspect_ratio", "16:9")), seed=parse_seed(g("seed", 0)),
                               task=(g("task") or None), first_image=first, last_image=last, refs=refs,
                               scene_seconds=int(g("scene_seconds", 10) or 10),
-                              steps=(int(g("steps")) if g("steps") else None), title=str(g("title", "") or ""))
+                              steps=(int(g("steps")) if g("steps") else None), title=str(g("title", "") or ""),
+                              negative=(str(g("negative") or "").strip() or None), raw=parse_bool(g("raw", "")),
+                              short_edge=parse_size(g("size")))
                 if not job.prompt:
                     raise H3Error("프롬프트를 입력하라")
                 app.worker.enqueue(job)

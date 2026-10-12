@@ -146,8 +146,10 @@ class CliTest(unittest.TestCase):
         self.assertEqual(job["status"], "failed"); self.assertIn("중단", job["error"])
 
     def test_no_command_prints_help(self):
-        code, out, _ = run()
-        self.assertEqual(code, 0); self.assertIn("h3video batch", out)
+        code, out, _ = run()   # 인자 없이: 빠른 시작 (자주 쓰는 명령 몇 개)
+        self.assertEqual(code, 0); self.assertIn("h3video doctor", out); self.assertIn("h3video --help", out)
+        code, out, _ = run("--help")
+        self.assertEqual(code, 0); self.assertIn("h3video batch", out); self.assertIn("서버·설정", out)
 
 
 if __name__ == "__main__":

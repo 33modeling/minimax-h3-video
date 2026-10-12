@@ -65,6 +65,8 @@ def jobs_for(state: dict, only: set[str] | None = None) -> list[Job]:
         job = new_job(c["prompt"], seconds=c["seconds"], aspect_ratio=state["ratio"], seed=int(c.get("seed") or 0),
                       first_image=c.get("image"), steps=p.get("steps"), negative=p.get("negative"), raw=bool(p.get("raw")),
                       short_edge=int(p.get("size") or 768), title=f"{slugify(state['title'], 24)}-{c['id']}")
+        if c.get("job_id"):   # 다시 하기 전 작업도 기억한다 (웹 목록에서 이 이야기의 장면으로 묶어 보이게)
+            c["past_jobs"] = list(c.get("past_jobs") or []) + [c["job_id"]]
         c.update(job_id=job.id, output=None, error=None)
         out.append(job)
     return out
