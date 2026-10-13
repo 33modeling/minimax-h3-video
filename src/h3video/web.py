@@ -36,6 +36,7 @@ from .client import DEFAULT_ENDPOINT, DEFAULT_REF_ENDPOINT, H3Client, H3Error
 from .jobs import INBOX_DIR, OUTPUT_DIR, JobStore, Worker, new_job
 
 from .recovery import edit_story, restore_story, edit_job, restore_job
+from .studio import VideoStudio
 
 HTML = Path(__file__).with_name("ui.html").read_text(encoding="utf-8")
 SIZES = (512, 576, 640, 704, 768)
@@ -100,6 +101,7 @@ class App:
         self.cli_output_dir = str(Path(output_dir).resolve())   # '명령어로 보기'의 --output-dir (다른 폴더에서 실행해도 찾게)
         self._limits: dict[tuple, tuple[float, int | None]] = {}
         self._limits_lock = threading.Lock()
+        self.studio = VideoStudio(self)
 
     def allowed_input(self, path: str) -> bool:
         if path.startswith(("http://", "https://")):
@@ -429,6 +431,23 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
             p = u.path
             if p in ("/", "/index.html"):
                 return self._send(200, served_html(), "text/html; charset=utf-8")
+            if p.startswith('/studio/'):
+                file = (Path(__file__).parent / p.lstrip('/')).resolve()
+                directory = (Path(__file__).parent / 'studio').resolve()
+                if directory not in file.parents or not file.is_file():
+                    return self._json({'error': '파일 없음'}, 404)
+                return self._send_file(file)
+            if p == '/api/studio/capabilities':
+                return self._json(app.studio.capabilities())
+            if p == '/api/studio/projects':
+                return self._json({'projects': app.studio.list()})
+            if re.fullmatch(r'/api/studio/projects/edit-[a-f0-9]{32}', p):
+                try:
+                    return self._json(app.studio.get(p.rsplit('/', 1)[-1]))
+                except KeyError:
+                    return self._json({'error': '프로젝트 없음'}, 404)
+                except H3Error as error:
+                    return self._json({'error': str(error)}, 400)
             if p == "/api/spec":
                 return self._json({"summary": spec.summary(), "duration_min": spec.DURATION_MIN, "duration_max": spec.DURATION_MAX,
                                    "fps": spec.FPS, "short_edge": spec.SHORT_EDGE_DEFAULT, "aspect_ratios": spec.ASPECT_RATIOS,
@@ -519,6 +538,29 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
 
         def _do_post(self):
             p = urllib.parse.urlparse(self.path).path
+            studio_route = re.fullmatch(r'/api/studio/projects(?:/(edit-[a-f0-9]{32})(?:/([a-z-]+))?)?', p)
+            if studio_route:
+                try:
+                    name, action = studio_route.groups()
+                    length = int(self.headers.get('Content-Length', 0))
+                    if length < 0 or length > 512 * 1024 * 1024:
+                        return self._json({'error': '파일은 512MB 이하로 업로드하세요.'}, 413)
+                    data = self.rfile.read(length)
+                    if action == 'upload':
+                        fields = parse_multipart(self.headers.get('Content-Type', ''), data)
+                        body = {key: rows[0][1].decode() for key, rows in fields.items() if key != 'file'}
+                        filename, content = fields['file'][0]
+                        return self._json(app.studio.upload(name, body, filename, content))
+                    body = json.loads(data or b'{}')
+                    if not isinstance(body, dict):
+                        raise H3Error('요청은 JSON 객체로 보내세요.')
+                    if not name:
+                        return self._json(app.studio.create(body), 201)
+                    return self._json(app.studio.dispatch(name, action, body), 202 if action in ('preview','render','transcribe','inspect','upscale','candidates','resume') else 200)
+                except KeyError:
+                    return self._json({'error': '프로젝트·파일·필수 입력을 찾지 못했습니다.'}, 404)
+                except (H3Error, ValueError, TypeError) as error:
+                    return self._json({'error': str(error)}, 400)
             recovery=re.fullmatch(r"/api/(jobs|story)/([\w-]+)/(pause|continue|edit|restore)",p)
             if recovery:
                 kind, name, action = recovery.groups()
@@ -655,3 +697,4 @@ def serve(host: str = "127.0.0.1", port: int = 8790, endpoint: str = DEFAULT_END
         pass
     finally:
         httpd.server_close()
+        app.studio.close()

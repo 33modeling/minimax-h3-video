@@ -1,5 +1,28 @@
 # minimax-h3-video
 
+## 영상 편집실 · 초안에서 최종 출력까지
+
+기존 웹 UI의 **영상 편집실** 또는 결과 카드의 **편집·보정·AI 업스케일**에서 시작합니다. 기존 H3 웹 서버를 그대로 사용하며 GPU 생성 서버를 새로 시작하거나 주소를 바꾸지 않습니다.
+
+1. **타임라인**: 드래그·이동 버튼으로 장면 순서를 정하고 시작·끝 자르기, 길이, 겹치기·와이프·슬라이드 전환을 편집합니다.
+2. **실제 음성 자막**: CPU의 multilingual Whisper small로 현재 타임라인의 음성을 인식합니다. 문구·시간 수정, 한글 자막 합성, SRT·VTT 저장을 지원합니다. 장면이 바뀌면 이전 자막임을 표시하고 확인 전 자막 포함 최종 출력을 막습니다.
+3. **소리 편집**: 별도 내레이션·배경음 업로드, 트랙별 크기, 대사 중 음악 낮추기, 자동 음량 보정을 지원합니다. 생성 모델의 원본 소리는 하나의 트랙으로 유지합니다.
+4. **그림 콘티 미리보기**: 현재 JSON·이미지를 가져와 카메라 이동과 전환을 넣은 예비 영상을 생성합니다. GPU 생성 서버가 꺼져 있어도 사용할 수 있습니다.
+5. **실제 AI 업스케일**: H3 초안은 576px·20단계, 확정 생성은 768px·50단계입니다. 밝기·대비·색감·감마·선명도·노이즈 보정 후 Real-ESRGAN으로 각 프레임을 2배·4배 보강합니다. 원본 프레임 속도와 소리를 유지하고 길이·크기를 검증합니다. 실제 업스케일과 단순 출력 해상도 변경은 별도 기능입니다.
+6. **품질 검사**: 검은 화면·비정상 정지·무음·급격한 밝기 변화, 검출된 사람 얼굴의 시각 특징 변화를 검사합니다. 얼굴 검사는 1초 간격 프레임의 DINOv2 특징을 비교하며 동일 인물일 확률이 아닙니다. 얼굴 미검출·의도된 인물 변경은 직접 판단합니다. 업스케일 뒤 자동으로 검사하며 결과 JSON과 구간 이동을 제공합니다.
+7. **후보·원본 보관**: 장면별 시드 후보, 두 영상 비교, 선택·복원, 확정한 장면의 재생성 제외를 지원합니다. 기존 출력 파일을 덮어쓰지 않습니다.
+8. **동시 출력**: 가로·세로·정사각, 장면별 인물 위치, 자막 안전 영역, 720·1080·2160px 출력, 전체 그림·화면 채우기 배치와 MP4·자막·타임라인 ZIP을 제공합니다.
+
+편집 기록은 기존 결과 경로의 `_studio/edit-<id>/project.json`, 원본·후보는 `media/`, 출력은 `exports/`에 저장합니다. CPU 작업과 업스케일은 중지·재개할 수 있습니다. 완료한 업스케일 프레임은 `.work/<task>/restored/`에 보존하며 그대로 이어서 처리합니다. 중지 후 설정이 바뀌면 새 설정으로 작업을 다시 시작하고 기존 결과는 유지합니다. 후보 생성은 기존 H3 worker의 중지·재개를 사용합니다.
+
+자동 자막 도구 설치: `npm run install:studio`. 별도 `.venv-video-studio`와 사용자 도구 폴더에 설치하며 모델을 CPU int8로 실행합니다. Whisper 모델 리비전은 `scripts/video-tools.json`에 고정합니다. AI 업스케일과 얼굴 비교는 인접 `storybook-maker`의 설치된 Real-ESRGAN·DINOv2 도구를 재사용합니다. 각각 그 저장소의 `npm run install:studio`, `npm run install:consistency`로 설치할 수 있습니다.
+
+검증: `PYTHONPATH=src python3 -m unittest discover -s tests -p test_video_studio.py -v`, `npm run test:studio`. 실제 FFmpeg, Whisper와 AI 업스케일을 사용하며 영상 생성 API만 CPU 모의 서버로 검사합니다. 전체 테스트에는 기존 H3 Diffusers 테스트 환경이 필요합니다. 음성 스모크 검사는 [Whisper 공식 테스트 음성](https://github.com/openai/whisper/blob/main/tests/jfk.flac)을 `H3_ASR_FIXTURE` 또는 사용자 도구 폴더의 `jfk.flac`으로 사용합니다.
+
+구현 근거: [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [Real-ESRGAN NCNN](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan), [FFmpeg 필터](https://ffmpeg.org/ffmpeg-filters.html).
+
+웹과 편집 도구만 사용자 서비스로 배포하려면 `python3 scripts/install-web-service.py`를 실행합니다. 기존 8790 포트와 CLI에 저장한 생성 서버 설정을 사용하며 GPU 생성 서버는 시작하지 않습니다. 중지는 `systemctl --user stop h3video-web.service`입니다.
+
 MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 SGLang 으로 서빙하고, 프롬프트만 넣으면 오디오 포함 영상을 만들어 주는 도구.
 로컬호스트 웹 UI 로 진행 상황을 보고 결과를 바로 재생한다. 클라이언트는 표준 라이브러리만 쓴다(의존성 0).
 

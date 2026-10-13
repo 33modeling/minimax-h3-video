@@ -202,7 +202,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
   .pair{grid-template-columns:1fr}
   .primary{flex:1;justify-content:center}.go-bar{flex-direction:column-reverse;align-items:stretch;gap:6px}.go-bar .msg:empty{display:none}
 }
-</style></head><body>
+</style><link rel="stylesheet" href="./studio/editor.css"></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></symbol>
@@ -237,6 +237,8 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
   <div class="help" id="conn-msg"></div>
 </div></div>
 <div class="banners" id="banners"></div>
+<div style="max-width:1540px;margin:18px auto 0;padding:0 28px"><button class="btn main" id="openVideoStudio" type="button" disabled>영상 편집실 · 초안·보정·AI 업스케일·자막·출력</button></div>
+<section id="videoWorkbench" class="vw" hidden aria-label="영상 편집실"></section>
 <main class="layout">
 <section class="maker card" aria-label="새 영상">
   <div class="modes" role="tablist" aria-label="만드는 방법">
@@ -954,6 +956,7 @@ function cardHtml(it) {
   if (!story && it.status === 'failed') acts.push(`<button type="button" class="btn main" data-act="retry">${icon('redo')}다시 하기</button>`);
   if (story && it.status === 'failed') acts.push(`<button type="button" class="btn main" data-act="resume">${icon('redo')}안 된 장면 다시</button>`);
   if (!live) acts.push(`<button type="button" class="btn" data-act="again">${icon('edit')}같은 설정으로 다시</button>`);
+  if(!live)acts.push(`<button type="button" class="btn main" data-video-studio-source="${esc(it.id)}" data-kind="${story?'story':'job'}">편집·보정·AI 업스케일</button>`);
   acts.push(`<button type="button" class="btn" data-act="cmd" aria-expanded="${!!o.cmd}">${icon('term')}명령어로 보기</button>`);
   const settings = story ? '' : `<details class="set" ${o.set ? 'open' : ''} data-open="set"><summary>설정 보기</summary><div class="set-body">
       <div class="p">${esc(it.prompt)}</div>${it.negative ? `<div>넣지 않을 것: ${esc(it.negative)}</div>` : ''}
@@ -1132,5 +1135,6 @@ addEventListener('message',event=>{
  const data=event.data.project;if(!data?.board?.scenes)return;
  setMode('story');addFiles('json',[new File([JSON.stringify(data)],'frame-storyboard.json',{type:'application/json'})]);toast('영상 콘티를 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');
 });
+import('./studio/editor.js').then(({mountVideoStudio})=>mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null})).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));
 if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');
 </script></body></html>

@@ -236,7 +236,7 @@ def test_direct_server_stops_before_launch_on_failed_nms(tmp_path):
     sglang.write_text(f'#!/bin/sh\ntouch "{tmp_path / "launched"}"\n')
     sglang.chmod(0o755)
     (scripts / "cluster_env.sh").write_text(
-        f'export VENV="{bin_dir.parent}" H3_MODEL_DIR="{model}" H3_PORT_FL2VA=30010 H3_NUM_GPUS=1\n'
+        f'export VENV="{bin_dir.parent}" H3_MODEL_DIR="{model}" H3_PORT_FL2VA=30010 H3_NUM_GPUS=1 H3_ENGINE=sglang\n'
         f'export PATH="{bin_dir}:$PATH"\n'
         'h3_cuda_compat() { return 0; }\n'
     )

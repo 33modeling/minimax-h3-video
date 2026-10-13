@@ -1,0 +1,5 @@
+{
+  "asrPackage": "faster-whisper==1.2.1",
+  "asrModel": "Systran/faster-whisper-small",
+  "asrRevision": "536b0662742c02347bc0e980a01041f333bce120"
+}

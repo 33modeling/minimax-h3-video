@@ -21,3 +21,6 @@ shorts = "shorts.cli:main"          # 숏폼 제작 (shortform/)
 [tool.setuptools.packages.find]
 where = ["src", "shortform"]
 include = ["h3video*", "shorts*"]
+
+[tool.setuptools.package-data]
+h3video = ["ui.html", "studio/*.js", "studio/*.css"]
