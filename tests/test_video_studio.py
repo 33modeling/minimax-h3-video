@@ -164,6 +164,14 @@ class VideoEditingTest(unittest.TestCase):
         self.assertEqual(original_bytes,self.studio.file(p['id'],p['clips'][0]['variants'][0]['file']).read_bytes())
         p=self.studio.select(p['id'],{'clip':'scene-0','variant':original})
         self.assertEqual(p['clips'][0]['selected'],original)
+        self.studio.command=command
+        self.studio.start(p['id'],'upscale',{'clip':'scene-0','scale':4,'model':'photo'})
+        p=self.wait(p['id'])
+        restored=next(v for v in p['clips'][0]['variants'] if v['id']==p['clips'][0]['selected'])
+        self.assertEqual((restored['width'],restored['height']),(384,256))
+        self.assertTrue(restored['audio'])
+        self.assertAlmostEqual(restored['fps'],4)
+        self.assertEqual(original_bytes,self.studio.file(p['id'],p['clips'][0]['variants'][0]['file']).read_bytes())
 
     def test_actual_speech_recognition_and_caption_sidecars(self):
         fixture=Path(os.environ.get('H3_ASR_FIXTURE',Path.home()/'.local/share/h3video/studio/jfk.flac'))
