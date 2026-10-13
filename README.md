@@ -167,3 +167,5 @@ python3 tests/mock_server.py 30010            # 실제 서버 없이 UI 만 확�
 Image Maker는 선택한 장면 이미지 파일과 스토리라인·재생 시간·카메라 지시를 `creative-image-handoff` 메시지로 보낸다. 기존 `video-maker-ready` 준비 완료 핸드셰이크를 사용하며, 허용한 출처의 opener만 받고 전송 ID로 중복 수신을 방지한다. 수신 후 영상 장면 표에 이미지와 글을 보여 주며 실제 생성은 사용자가 시작한다. 기존 FRAME 콘티 연결은 함께 유지한다.
 
 팝업 대신 Image Maker의 **영상용 이미지 + JSON ZIP**을 기존 JSON 가져오기에서 열 수 있다. `clips[].image`는 함께 첨부한 파일명과 대응하고 SVG 이미지는 보내는 화면에서 PNG로 변환한다. 통합 브라우저 검사는 인접 `image-maker/test/browser.mjs`에서 실제 H3 웹·장면 파서와 CPU 모의 모델로 실행한다.
+
+동화책 Maker의 고급 작업실도 같은 전송 규약을 사용한다. 표지를 선택적으로 포함하고 캐릭터 시트는 제외한다. `sourceKind: "books"`를 받아 동화책에서 넘어온 작업임을 표시하며, 이미지와 쪽 글·재생 시간·카메라·장면 JSON을 함께 가져온다. 두 Maker의 공통 전송 검사는 `storybook-maker/test/browser-creative.mjs`에서 실행한다.

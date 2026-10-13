@@ -1113,7 +1113,7 @@ $('#recovery-form').onsubmit=async event=>{
 // Cross-site handoff uses a readiness handshake; no story is placed in a URL.
 const receivedImageTransfers=new Set();
 addEventListener('message',event=>{
- const trusted=event.origin==='https://frame-storyboard-33.glassytune4.chatgpt.site'||event.origin==='https://33modeling.pages.dev'||/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(event.origin);
+ const trusted=event.origin===location.origin||event.origin==='https://frame-storyboard-33.glassytune4.chatgpt.site'||event.origin==='https://33modeling.pages.dev'||/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(event.origin);
  if(!trusted||event.source!==window.opener)return;
  if(event.data?.type==='creative-image-handoff'){
   const {project,files:incoming,transferId}=event.data;
@@ -1124,7 +1124,7 @@ addEventListener('message',event=>{
   if(!receivedImageTransfers.has(transferId)){
    receivedImageTransfers.add(transferId);setMode('story');files.pages.forEach(drop);files.pages=[];files.json.forEach(drop);files.json=[];
    addFiles('json',[...incoming,new File([JSON.stringify(project)],'image-maker-video.json',{type:'application/json'})]);
-   toast('Image Maker의 이미지와 스토리라인을 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');
+   toast((project.sourceKind==='books'?'동화책 Maker':'Image Maker')+'의 이미지와 스토리라인을 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');
   }
   event.source.postMessage({type:'image-maker-received',transferId},event.origin);return;
  }
