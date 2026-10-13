@@ -145,12 +145,13 @@ class VideoStudio:
             for c in project['clips'] for item in c.get('pendingCandidates', []))
 
     def capabilities(self):
+        from .reference import downloader
         home = Path(os.environ.get('H3_STUDIO_TOOLS', Path.home() / '.local/share/h3video/studio'))
         upscale = Path(os.environ.get('STUDIO_UPSCALER_DIR', Path.home() / '.local/share/storybook-maker/upscaler'))
         shared = Path(os.environ.get('H3_SHARED_STUDIO', ROOT.parent / 'storybook-maker'))
         return dict(ffmpeg=bool(shutil.which('ffmpeg')), transcription=(home / 'whisper-small/model.bin').exists(),
                     aiUpscale=(upscale / 'realesrgan-ncnn-vulkan').exists(),
-                    referenceAnalysis=bool(shutil.which('yt-dlp')), referenceOCR=bool(shutil.which('tesseract')),
+                    referenceAnalysis=bool(downloader()), referenceOCR=bool(shutil.which('tesseract')),
                     referenceVisionConfigured=bool(os.environ.get('H3_REFERENCE_VISION_BASE_URL') and os.environ.get('H3_REFERENCE_VISION_MODEL')),
                     qwenImage=dict(endpoint=os.environ.get('QWEN_IMAGE_BASE_URL', 'http://127.0.0.1:8091'),
                                    model=os.environ.get('QWEN_IMAGE_MODEL', 'Qwen/Qwen-Image-2.1')),

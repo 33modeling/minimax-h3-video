@@ -21,6 +21,12 @@ from .client import H3Error
 from .studio import ROOT, Paused, atomic, number, probe
 
 
+def downloader():
+    # User services do not necessarily inherit the interactive shell PATH.
+    candidates = [ROOT / '.venv-video-studio/bin/yt-dlp', Path.home() / '.local/bin/yt-dlp']
+    return next((str(p) for p in candidates if p.is_file() and os.access(p, os.X_OK)), None) or shutil.which('yt-dlp')
+
+
 def youtube_url(value):
     url = urlparse(str(value).strip())
     if url.scheme not in ('https', 'http') or url.username or url.password or url.port:
@@ -224,7 +230,7 @@ class ReferenceLibrary:
             if not video.exists():
                 self.progress(job, .02, '참고 영상과 게시 정보 읽기')
                 if job['source']['kind'] == 'youtube':
-                    binary = shutil.which('yt-dlp') or (str(ROOT/'.venv-video-studio/bin/yt-dlp') if (ROOT/'.venv-video-studio/bin/yt-dlp').exists() else None)
+                    binary = downloader()
                     if not binary:
                         raise H3Error('yt-dlp가 없습니다. npm run install:studio로 분석 도구를 설치하세요.')
                     common = [binary, '--ignore-config', '--no-playlist', '--socket-timeout', '20', '--retries', '1', '--fragment-retries', '1']

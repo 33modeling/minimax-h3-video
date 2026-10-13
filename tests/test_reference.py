@@ -13,7 +13,7 @@ import zipfile
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'src'));sys.path.insert(0,str(ROOT/'tests'))
 import mock_server
 from h3video.web import App
-from h3video.reference import youtube_url,validate_document
+from h3video.reference import youtube_url,validate_document,downloader
 from h3video.client import H3Error
 
 
@@ -40,6 +40,8 @@ class ReferenceTest(unittest.TestCase):
         self.fail('Analysis timeout: '+str(self.library.get(name)))
 
     def test_url_host_validation_and_canonicalization(self):
+        with patch.dict('os.environ', {'PATH': '/usr/bin'}):
+            self.assertTrue(downloader(), 'User service must find the pinned/user-local yt-dlp without shell PATH')
         for url in ['https://youtu.be/aqz-KE-bpKQ?t=2','https://m.youtube.com/watch?v=aqz-KE-bpKQ&list=x','https://www.youtube.com/shorts/aqz-KE-bpKQ']:
             self.assertEqual(youtube_url(url),'https://www.youtube.com/watch?v=aqz-KE-bpKQ')
         for url in ['https://youtube.com.evil.org/watch?v=aqz-KE-bpKQ','http://127.0.0.1:8000/x','file:///tmp/x','https://youtube.com/playlist?list=x','https://user@youtube.com/watch?v=aqz-KE-bpKQ']:
