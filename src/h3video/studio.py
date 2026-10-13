@@ -150,6 +150,10 @@ class VideoStudio:
         shared = Path(os.environ.get('H3_SHARED_STUDIO', ROOT.parent / 'storybook-maker'))
         return dict(ffmpeg=bool(shutil.which('ffmpeg')), transcription=(home / 'whisper-small/model.bin').exists(),
                     aiUpscale=(upscale / 'realesrgan-ncnn-vulkan').exists(),
+                    referenceAnalysis=bool(shutil.which('yt-dlp')), referenceOCR=bool(shutil.which('tesseract')),
+                    referenceVisionConfigured=bool(os.environ.get('H3_REFERENCE_VISION_BASE_URL') and os.environ.get('H3_REFERENCE_VISION_MODEL')),
+                    qwenImage=dict(endpoint=os.environ.get('QWEN_IMAGE_BASE_URL', 'http://127.0.0.1:8091'),
+                                   model=os.environ.get('QWEN_IMAGE_MODEL', 'Qwen/Qwen-Image-2.1')),
                     faceInspection=(shared / '.venv-studio/bin/python').exists(), draftSize=576, draftSteps=20,
                     generationServer=self.app.endpoint)
 
@@ -231,6 +235,7 @@ class VideoStudio:
             prompt = prompt[:-len(existing_narration)]
         return dict(id=str(value.get('id') or uuid.uuid4().hex), label=str(value.get('label') or '새 장면'),
                     prompt=prompt, text=str(value.get('text') or ''),
+                    referenceMetadata={k: copy.deepcopy(value[k]) for k in ('source_start', 'source_end', 'text_overlays', 'image_prompt', 'analysis_engine') if k in value},
                     seconds=number(value.get('seconds', 4), .1, 86400, '장면 길이'),
                     image=None, variants=[], selected=None, trimIn=0, trimOut=None, transition='cut',
                     transitionSeconds=.3, motion='push', corrections=copy.deepcopy(DEFAULT_COLOR),
@@ -495,6 +500,12 @@ class VideoStudio:
                 options['scale'] = int(number(options.get('scale', 2), 2, 4, '업스케일 배율'))
                 if options['scale'] not in (2, 4) or options.get('model', 'illustration') not in ('illustration', 'photo', 'anime'):
                     raise H3Error('업스케일 배율·모델을 확인하세요.')
+                if options.get('engine', 'realesrgan') not in ('realesrgan', 'qwen-realesrgan'):
+                    raise H3Error('업스케일 방식을 확인하세요.')
+                if options.get('engine') == 'qwen-realesrgan':
+                    options['retouchPrompt'] = str(options.get('retouchPrompt') or '').strip()
+                    if not options['retouchPrompt']:
+                        raise H3Error('Qwen Image 보정 지시를 입력하세요.')
                 c = self.find(p, options.get('clip'))
                 if c['locked'] or not c.get('selected'):
                     raise H3Error('확정을 해제하고 영상이 있는 장면을 선택하세요.')
@@ -703,6 +714,8 @@ class VideoStudio:
             raise H3Error('실제 AI 업스케일 도구를 설치하세요: storybook-maker npm run install:studio')
         frames, restored = work / 'frames', work / 'restored'
         frames.mkdir(exist_ok=True); restored.mkdir(exist_ok=True)
+        retouched = work / 'qwen-retouched'
+        retouched.mkdir(exist_ok=True)
         if not (work / 'extracted.json').exists():
             self.progress(p, .02, '원본 프레임 추출·밝기·색감·노이즈 보정')
             self.ffmpeg(p, ['-i', source, '-vf', self.color(clip), '-fps_mode', 'passthrough', frames / '%08d.png'])
@@ -718,8 +731,19 @@ class VideoStudio:
             if output.exists():
                 continue
             temporary = restored / (image.stem + '.working.png')
+            source_image = image
+            if options.get('engine') == 'qwen-realesrgan':
+                source_image = retouched / image.name
+                if not source_image.exists():
+                    self.progress(p, .05 + .85 * index / len(images), f'Qwen Image 보정 {index+1}/{len(images)} · 원본 구도 유지')
+                    python = ROOT / '.venv-video-studio/bin/python'
+                    if not python.exists():
+                        raise H3Error('이미지 편집 도구를 설치하세요: npm run install:studio')
+                    self.command(p, [python, ROOT / 'scripts/qwen-retouch.py'],
+                                 dict(input=str(image), output=str(source_image), seed=0,
+                                      prompt='Preserve exact composition, identities, geometry and typography across this video frame. ' + options['retouchPrompt']))
             self.progress(p, .05 + .85 * index / len(images), f'AI 업스케일 {index+1}/{len(images)} 프레임 · 완료한 프레임 자동 저장')
-            self.command(p, [binary, '-i', image, '-o', temporary, '-s', str(options['scale']), '-t', '64',
+            self.command(p, [binary, '-i', source_image, '-o', temporary, '-s', str(options['scale']), '-t', '64',
                              '-m', home / 'models', '-n', model_name, '-g', os.environ.get('STUDIO_UPSCALER_GPU', '0'), '-j', '1:1:1'])
             probe(temporary)
             temporary.replace(output)
@@ -735,7 +759,8 @@ class VideoStudio:
             raise H3Error('업스케일 결과 길이가 달라 원본을 유지했습니다.')
         current = self.find(p, clip['id'])
         variant = self.copy_variant(p, current, final, 'ai-upscale', scale=options['scale'], model=model,
-                                    bakedCorrections=clip['corrections'], engine='Real-ESRGAN', parent=variant['id'])
+                                    bakedCorrections=clip['corrections'], engine='Qwen Image Edit + Real-ESRGAN' if options.get('engine') == 'qwen-realesrgan' else 'Real-ESRGAN',
+                                    retouchPrompt=options.get('retouchPrompt'), parent=variant['id'])
         current['selected'] = variant['id']
         current['corrections'] = copy.deepcopy(DEFAULT_COLOR)
         task['result'] = variant['id']
@@ -872,6 +897,8 @@ class VideoStudio:
         return self.start(project_id, action, body)
 
     def close(self):
+        if hasattr(self.app, 'references'):
+            self.app.references.close()
         with self.lock:
             for event in self.pause_events.values():
                 event.set()

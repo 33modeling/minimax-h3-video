@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node scripts/build-ui.mjs",
     "test:studio": "node tests/e2e/video_studio.mjs",
-    "install:studio": "python3 scripts/install-video-tools.py"
+    "install:studio": "python3 scripts/install-video-tools.py",
+    "test:reference": "node tests/e2e/reference_studio.mjs"
   }
 }

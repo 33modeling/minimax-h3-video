@@ -102,6 +102,8 @@ class App:
         self._limits: dict[tuple, tuple[float, int | None]] = {}
         self._limits_lock = threading.Lock()
         self.studio = VideoStudio(self)
+        from .reference import ReferenceLibrary
+        self.references = ReferenceLibrary(self)
 
     def allowed_input(self, path: str) -> bool:
         if path.startswith(("http://", "https://")):
@@ -439,6 +441,13 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 return self._send_file(file)
             if p == '/api/studio/capabilities':
                 return self._json(app.studio.capabilities())
+            if p == '/api/studio/references':
+                return self._json({'references': app.references.list()})
+            if re.fullmatch(r'/api/studio/references/ref-[a-f0-9]{32}', p):
+                try:
+                    return self._json(app.references.get(p.rsplit('/', 1)[-1]))
+                except KeyError:
+                    return self._json({'error': '참고 분석 없음'}, 404)
             if p == '/api/studio/projects':
                 return self._json({'projects': app.studio.list()})
             if re.fullmatch(r'/api/studio/projects/edit-[a-f0-9]{32}', p):
@@ -538,6 +547,32 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
 
         def _do_post(self):
             p = urllib.parse.urlparse(self.path).path
+            reference_route = re.fullmatch(r'/api/studio/references(?:/(ref-[a-f0-9]{32})(?:/(pause|resume|save|import))?)?', p)
+            if reference_route:
+                try:
+                    name, action = reference_route.groups()
+                    length = int(self.headers.get('Content-Length', 0))
+                    if length < 0 or length > 512 * 1024 * 1024:
+                        return self._json({'error': '업로드는 512MB 이하로 준비하세요.'}, 413)
+                    data = self.rfile.read(length)
+                    if 'multipart/form-data' in self.headers.get('Content-Type', ''):
+                        fields = parse_multipart(self.headers.get('Content-Type', ''), data)
+                        body = {key: rows[0][1].decode() for key, rows in fields.items() if key != 'file'}
+                        return self._json(app.references.create(body, fields['file'][0]), 202)
+                    body = json.loads(data or b'{}')
+                    if not isinstance(body, dict):
+                        raise H3Error('JSON 객체를 보내세요.')
+                    if not name:
+                        return self._json(app.references.create(body), 202)
+                    if action == 'pause': return self._json(app.references.pause(name))
+                    if action == 'resume': return self._json(app.references.resume(name), 202)
+                    if action == 'save': return self._json(app.references.edit(name, body))
+                    if action == 'import': return self._json(app.references.import_project(name), 201)
+                    raise H3Error('참고 분석 작업을 선택하세요.')
+                except KeyError:
+                    return self._json({'error': '참고 분석·업로드 파일을 찾지 못했습니다.'}, 404)
+                except (H3Error, ValueError, TypeError) as error:
+                    return self._json({'error': str(error)}, 400)
             studio_route = re.fullmatch(r'/api/studio/projects(?:/(edit-[a-f0-9]{32})(?:/([a-z-]+))?)?', p)
             if studio_route:
                 try:

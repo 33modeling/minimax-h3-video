@@ -4,6 +4,12 @@
 
 기존 웹 UI의 **영상 편집실** 또는 결과 카드의 **편집·보정·AI 업스케일**에서 시작합니다. 기존 H3 웹 서버를 그대로 사용하며 GPU 생성 서버를 새로 시작하거나 주소를 바꾸지 않습니다.
 
+**유튜브 참고 분석**에서 YouTube 주소와 분석 시작·끝 시각을 입력하거나 영상 파일을 올립니다. FFmpeg가 실제 화면 전환과 지정한 간격으로 장면을 나누고, Tesseract가 한글·영문 글자 영역을, 로컬 Whisper가 음성을 분석합니다. 각 장면의 참고 프레임, 영상 프롬프트, Qwen Image용 이미지 프롬프트, 자막, 글자 영역의 0~1 좌표·크기·색·출력 글꼴을 JSON으로 저장합니다. 화면에서 문구·글꼴·굵기·위치·프롬프트를 수정하고 JSON 또는 JSON＋이미지 ZIP을 받거나 **새 편집 프로젝트로 가져오기**를 누릅니다. 기존 프로젝트를 덮어쓰지 않습니다. 저장한 분석 목록과 중지·이어 하기를 지원하며 자료는 `outputs/_references/ref-…/`에 보관합니다. 기본 분석 범위는 시작부터 60초이며 끝 시각으로 늘릴 수 있습니다.
+
+OCR로 원본 글꼴 이름이나 굵기를 확정할 수 없어 출력 기본값을 따로 표시합니다. 색·글자 크기는 추정값입니다. `H3_REFERENCE_VISION_BASE_URL`과 `H3_REFERENCE_VISION_MODEL`을 지정하면 로컬 OpenAI 호환 비전 모델이 실제 참고 프레임을 보고 장면 설명을 보강합니다. 미연결 상태에서는 프레임·OCR·자막·색상으로 만든 초안임을 표시하고 사용자가 장면을 보강할 수 있습니다. 비공개 영상·로그인 요구·YouTube 접근 제한은 오류로 표시하며 직접 준비한 영상 업로드로 이어갈 수 있습니다.
+
+**Qwen Image 보정 + AI 확대**는 기존 로컬 이미지 편집 API(`/v1/images/edits`, 기본 `http://127.0.0.1:8091`)에 각 원본 프레임과 보정 지시를 보낸 뒤 Real-ESRGAN으로 2배·4배 확대합니다. `QWEN_IMAGE_BASE_URL`, `QWEN_IMAGE_MODEL`(기본 `Qwen/Qwen-Image-2.1`), `QWEN_IMAGE_API_KEY`, `QWEN_IMAGE_EDIT_FIELD`를 기존 이미지 서버에 맞춰 지정할 수 있습니다. 서버를 자동으로 시작하거나 모델을 바꾸지 않습니다. 완료한 Qwen 보정 프레임과 확대 프레임을 저장하므로 중지 후 이어 할 수 있습니다. 생성 보정은 세부 형태나 프레임 간 일관성을 바꿀 수 있어 원본·후보 비교로 확인하세요. 모델이 요청한 원본 프레임 크기를 유지하지 않으면 실패 처리하고 이전 선택을 보존합니다.
+
 1. **타임라인**: 드래그·이동 버튼으로 장면 순서를 정하고 시작·끝 자르기, 길이, 겹치기·와이프·슬라이드 전환을 편집합니다.
 2. **실제 음성 자막**: CPU의 multilingual Whisper small로 현재 타임라인의 음성을 인식합니다. 문구·시간 수정, 한글 자막 합성, SRT·VTT 저장을 지원합니다. 장면이 바뀌면 이전 자막임을 표시하고 확인 전 자막 포함 최종 출력을 막습니다.
 3. **소리 편집**: 별도 내레이션·배경음 업로드, 트랙별 크기, 대사 중 음악 낮추기, 자동 음량 보정을 지원합니다. 생성 모델의 원본 소리는 하나의 트랙으로 유지합니다.
@@ -16,6 +22,10 @@
 편집 기록은 기존 결과 경로의 `_studio/edit-<id>/project.json`, 원본·후보는 `media/`, 출력은 `exports/`에 저장합니다. CPU 작업과 업스케일은 중지·재개할 수 있습니다. 완료한 업스케일 프레임은 `.work/<task>/restored/`에 보존하며 그대로 이어서 처리합니다. 중지 후 설정이 바뀌면 새 설정으로 작업을 다시 시작하고 기존 결과는 유지합니다. 후보 생성은 기존 H3 worker의 중지·재개를 사용합니다.
 
 자동 자막 도구 설치: `npm run install:studio`. 별도 `.venv-video-studio`와 사용자 도구 폴더에 설치하며 모델을 CPU int8로 실행합니다. Whisper 모델 리비전은 `scripts/video-tools.json`에 고정합니다. AI 업스케일과 얼굴 비교는 인접 `storybook-maker`의 설치된 Real-ESRGAN·DINOv2 도구를 재사용합니다. 각각 그 저장소의 `npm run install:studio`, `npm run install:consistency`로 설치할 수 있습니다.
+
+설치 스크립트에는 버전을 고정한 yt-dlp와 공식 Tesseract의 리비전을 고정한 한글·영문 언어팩도 포함합니다. 시스템의 FFmpeg·ffprobe·Tesseract 실행 파일이 필요합니다. 참고 분석 검증은 `python3 -m unittest discover -s tests -p test_reference.py -v`, Qwen API·실제 확대 검증은 `python3 -m unittest discover -s tests -p test_qwen_retouch.py -v`입니다. Qwen 테스트는 이미지 편집 API만 모의 서버로 대체하고 프레임 추출·실제 Real-ESRGAN 확대·소리 복원·원본 보존은 실제 도구로 확인합니다.
+
+브라우저 검증: `npm run test:reference`. 실제 OCR로 글자를 분석하고 글꼴·좌표 수정, ZIP 내려받기, 기존 프로젝트 보존, 새 프로젝트 가져오기와 재접속 복원을 320·390·820·1440px에서 검사합니다. 저장할 때 `typography_prompt`를 수정한 영역에서 다시 만들고 가져온 프로젝트의 영상 프롬프트에도 반영합니다.
 
 검증: `PYTHONPATH=src python3 -m unittest discover -s tests -p test_video_studio.py -v`, `npm run test:studio`. 실제 FFmpeg, Whisper와 AI 업스케일을 사용하며 영상 생성 API만 CPU 모의 서버로 검사합니다. 전체 테스트에는 기존 H3 Diffusers 테스트 환경이 필요합니다. 음성 스모크 검사는 [Whisper 공식 테스트 음성](https://github.com/openai/whisper/blob/main/tests/jfk.flac)을 `H3_ASR_FIXTURE` 또는 사용자 도구 폴더의 `jfk.flac`으로 사용합니다.
 
