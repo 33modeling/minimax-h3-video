@@ -85,6 +85,7 @@ class Job:
     error: str | None = None
     title: str = ""
     pause_requested: bool = False
+    stop_requested: bool = False
 
     def to_json(self) -> dict:
         d = asdict(self)
@@ -241,6 +242,10 @@ def _concat_av(parts: list[Path], out: Path) -> Path:
     return out
 
 
+class JobStopped(Exception):
+    pass
+
+
 class Worker(threading.Thread):
     """작업을 순서대로 실행. 서버는 GPU 4장 한 세트라 병렬 제출해도 큐만 쌓이므로 직렬 처리."""
 
@@ -273,13 +278,21 @@ class Worker(threading.Thread):
             self.store.save(job)
         return job
 
+    def stop(self, job_id: str):
+        job = self.pause(job_id)
+        with self.cv:
+            if job.status in ('running', 'pending', 'paused'):
+                job.stop_requested = True
+                self.store.save(job)
+        return job
+
     def resume(self, job_id: str):
         job = self.store.get(job_id)
         if not job:
             raise KeyError(job_id)
         if job.status in ("pending", "running"):
             raise H3Error("아직 만드는 중입니다. 일시중지가 끝난 뒤 이어 만드세요.")
-        job.pause_requested, job.status, job.error, job.finished = False, "pending", None, None
+        job.pause_requested, job.stop_requested, job.status, job.error, job.finished = False, False, "pending", None, None
         self.enqueue(job)
         return job
 
@@ -335,12 +348,21 @@ class Worker(threading.Thread):
                 sc.video_id = client.submit(req)
 
             def on_progress(st, sc=sc, job=job):
+                if job.stop_requested:
+                    raise JobStopped()
                 sc.status = st.get("status", sc.status)
                 sc.progress = float(st.get("progress") or 0)
                 sc.stage = st.get("stage") or sc.stage
                 self.store.save(job)
 
-            st = client.wait(sc.video_id, poll=self.poll, timeout=WAIT_TIMEOUT, on_progress=on_progress)
+            try:
+                if job.stop_requested:
+                    raise JobStopped()
+                st = client.wait(sc.video_id, poll=self.poll, timeout=WAIT_TIMEOUT, on_progress=on_progress)
+            except JobStopped:
+                job.status, job.finished = 'paused', time.time()
+                self.store.save(job)
+                return
             out = job_dir / f"scene{sc.index + 1:02d}.mp4"
             if st.get("prompt_used"):   # 서버가 실제로 쓴 프롬프트 (Diffusers 엔진이 다듬은 것)
                 (job_dir / f"scene{sc.index + 1:02d}.prompt.txt").write_text(st["prompt_used"], encoding="utf-8")
@@ -351,6 +373,10 @@ class Worker(threading.Thread):
             self.store.save(job)
             if sc.index < len(job.scenes) - 1:
                 prev_frame = extract_last_frame(out, job_dir / f"scene{sc.index + 1:02d}.last.png")
+        if job.stop_requested:
+            job.status, job.finished = 'paused', time.time()
+            self.store.save(job)
+            return
         final = job_dir / f"{slugify(job.title or job.prompt)}.mp4"
         if len(parts) == 1:
             shutil.copy2(parts[0], final)

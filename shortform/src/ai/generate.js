@@ -220,7 +220,7 @@ export async function generateScene({ scene, spec, conn, fileOf, signal, onStatu
     if (job.error) throw new GenError(`h3video 서버가 거절했습니다: ${job.error}`);
     const id = encodeURIComponent(job.id);
     onStatus({ stage: 'queue', state: job.status || 'queued', id: job.id, backend });
-    const onAbort = () => onStatus({ note: 'h3video 웹 서버는 작업 취소를 지원하지 않아 서버에서는 끝까지 돌 수 있습니다' });
+    const onAbort = () => { void fetchFn(`${server}/api/jobs/${id}/stop`,{method:'POST'}).then(r=>{if(!r.ok)throw Error('stop failed');onStatus({note:'서버 작업을 중지했습니다. 완료한 장면은 보존합니다.'});}).catch(()=>onStatus({note:'서버 중지 요청을 확인하지 못했습니다. 영상 Maker의 저장 작업에서 상태를 확인하세요.'})); };
     signal?.addEventListener('abort', onAbort, { once: true });
     try {
       for (;;) {

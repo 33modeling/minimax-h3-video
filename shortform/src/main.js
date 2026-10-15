@@ -351,7 +351,7 @@ function saveConn() {
 let seq = 0;
 
 function setReady(on) {
-  el.makeBtn.disabled = !on;
+  el.makeBtn.disabled = !on;el.restartBtn.disabled=!on||state.busy;
   el.againBtn.disabled = !on;
   updateDock();
 }
@@ -638,7 +638,7 @@ function setBusy(b) {
   for (const id of ['jsonFile', 'mediaFiles', 'firstImage', 'refFiles', 'allFiles', 'jsonText', 'importFile', 'planBtn', 'pickAll', 'startExample', 'startStory', 'startIdea']) el[id].disabled = b;
   document.querySelectorAll('#settingsPanel select, #settingsPanel input, #aiPanel input, #aiPanel select, .slot-pick').forEach((x) => (x.disabled = b));
   document.body.classList.toggle('is-busy', b);
-  el.makeBtn.textContent = b ? '만드는 중…' : state.paused?'저장본 이어 만들기':'만들기';
+  el.restartBtn.disabled=b||!state.job;el.makeBtn.textContent = b ? '만드는 중…' : state.paused?'저장본 이어 만들기':'만들기';
   el.pauseBtn.disabled=!b;for(const id of ['recoveryLibrary','recoverySave','recoveryRestore','recoveryNew'])el[id].disabled=b;
   el.progressBox.hidden = !b;
   el.cancelBtn.disabled = !b;
@@ -1189,6 +1189,7 @@ el.scrub.addEventListener('input', () => {
 });
 el.playBtn.addEventListener('click', togglePlay);
 el.makeBtn.addEventListener('click', make);
+el.restartBtn.addEventListener('click',async()=>{if(state.busy||!state.job)return;await saveCurrent();recoveryId=crypto.randomUUID();LS.set('shorts.recovery.current',recoveryId);state.generated=new Map();state.paused=false;await saveCurrent();el.recoveryMessage.textContent='기존 영상과 완료 장면을 보관하고 새 저장본에서 처음부터 만듭니다.';await make();});
 el.retryBtn.addEventListener('click', make);
 el.againBtn.addEventListener('click', make);
 el.cancelBtn.addEventListener('click', () => state.abort && state.abort.abort());

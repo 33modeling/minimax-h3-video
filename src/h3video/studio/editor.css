@@ -5,3 +5,5 @@
 @media(max-width:700px){.vr-dialog .vw-actions>button,.vr-dialog .vw-actions>.vr-upload{flex:1 1 180px;text-align:center}.vr-dialog{padding:14px;width:calc(100% - 12px)}.vr-layout{grid-template-columns:minmax(0,1fr)}.vr-history{max-height:160px;overflow:auto}.vr-head h2{font-size:23px}.vr-dialog .vw-form{grid-template-columns:minmax(0,1fr)}.vr-dialog .vw-section{padding:12px}.vr-head{gap:8px}}
 /* 휴대폰 글자 11px 이상 (2026-10-15) */
 @media (max-width:560px){.vw-focus-guide,.vw-badge{font-size:11px}}
+
+.vw-toolbar:has([data-action="pause"]){position:sticky;top:0;z-index:30;background:#fffdf6;padding:12px;flex-wrap:wrap}.vw-toolbar button{min-height:44px}

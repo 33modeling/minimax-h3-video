@@ -167,6 +167,15 @@ class ReferenceLibrary:
         self.save(job)
         return self.resume(name)
 
+    def restart(self, name):
+        with self.lock:
+            if name in self.active:raise H3Error('먼저 분석을 중지하세요.')
+            job=self.load(name)
+            body={**job['options']}
+            if job['source']['kind']=='youtube':
+                return self.create({**body,'url':job['source']['url']})
+            return self.create(body,(job['source']['name'],(self.directory(name)/'upload.mp4').read_bytes()))
+
     def pause(self, name):
         with self.lock:
             job = self.load(name)

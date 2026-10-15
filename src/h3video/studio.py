@@ -459,7 +459,7 @@ class VideoStudio:
             self.save(p)
             return self.view(p)
 
-    def pause(self, project_id):
+    def pause(self, project_id, immediate=False):
         with self.lock:
             p = self.load(project_id)
             self.pause_events.get(project_id, threading.Event()).set()
@@ -467,7 +467,7 @@ class VideoStudio:
                 for candidate in c.get('pendingCandidates', []):
                     job = self.app.store.get(candidate['job'])
                     if job and job.status in ('pending', 'running'):
-                        self.app.worker.pause(job.id)
+                        (self.app.worker.stop if immediate else self.app.worker.pause)(job.id)
             return dict(ok=True, message='중지하고 저장하는 중입니다. 완료한 영상과 업스케일 프레임은 유지됩니다.')
 
     def start(self, project_id, operation, options=None):
@@ -890,8 +890,14 @@ class VideoStudio:
             return self.select(project_id, body)
         if action == 'candidates':
             return self.candidates(project_id, body)
-        if action == 'pause':
-            return self.pause(project_id)
+        if action in ('pause', 'stop'):
+            return self.pause(project_id, immediate=action=='stop')
+        if action == 'restart':
+            p=self.load(project_id)
+            if self.busy(p):raise H3Error('먼저 작업을 중지하세요.')
+            task=p.get('task')
+            if task:return self.start(project_id,task['operation'],copy.deepcopy(task.get('options') or {}))
+            return self.candidates(project_id,body)
         if action == 'captions':
             with self.lock:
                 return self.write_captions(self.load(project_id))

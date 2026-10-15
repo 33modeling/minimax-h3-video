@@ -196,7 +196,7 @@ class H3Client:
         last = None
         while True:
             st = self.status(video_id)
-            if on_progress and st != last:
+            if on_progress:
                 on_progress(st)
             last = st
             s = st.get("status")

@@ -322,7 +322,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 </section>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button type="button" id="toast-b" hidden></button></div>
-<dialog id="recovery-dialog" style="width:min(640px,94vw);max-height:90vh;overflow:auto;border:1px solid var(--line);border-radius:18px;padding:24px;background:var(--card);color:var(--ink)"><form id="recovery-form"><h2>저장한 장면 일부 수정</h2><p>완성한 원본과 수정 전 저장본은 남습니다. 이어 만들기는 수정한 장면부터 진행합니다.</p><label class="lab">수정할 장면<select id="recovery-scene" style="width:100%"></select></label><label class="lab">영상 프롬프트<textarea id="recovery-prompt" rows="6" required style="width:100%"></textarea></label><label class="lab" id="recovery-text-label">내레이션·글<textarea id="recovery-text" rows="3" style="width:100%"></textarea></label><label class="lab" id="recovery-seconds-label">전체 장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" role="alert"></p><div class="actions"><button type="submit" class="btn main">수정 저장</button><button type="button" class="btn" id="recovery-close">닫기</button></div></form></dialog>
+<aside id="liveJobControls" hidden aria-label="진행 작업 중지" style="position:fixed;bottom:0;left:0;right:0;z-index:80;padding:12px max(12px,env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px"></aside><dialog id="recovery-dialog" style="width:min(640px,94vw);max-height:90vh;overflow:auto;border:1px solid var(--line);border-radius:18px;padding:24px;background:var(--card);color:var(--ink)"><form id="recovery-form"><h2>저장한 장면 일부 수정</h2><p>완성한 원본과 수정 전 저장본은 남습니다. 이어 만들기는 수정한 장면부터 진행합니다.</p><label class="lab">수정할 장면<select id="recovery-scene" style="width:100%"></select></label><label class="lab">영상 프롬프트<textarea id="recovery-prompt" rows="6" required style="width:100%"></textarea></label><label class="lab" id="recovery-text-label">내레이션·글<textarea id="recovery-text" rows="3" style="width:100%"></textarea></label><label class="lab" id="recovery-seconds-label">전체 장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" role="alert"></p><div class="actions"><button type="submit" class="btn main">수정 저장</button><button type="button" class="btn" id="recovery-close">닫기</button></div></form></dialog>
 <script>
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -953,9 +953,9 @@ function cardHtml(it) {
   const acts = [];
   // ?download=1: 서버가 '내려받기'로 보낸다 (허브처럼 다른 주소에서 연 화면은 download 속성이 안 먹어 영상 페이지로 넘어가 버린다)
   if (it.video_url) acts.push(`<a class="btn" href="${esc(full(it.video_url) + (it.video_url.includes('?') ? '&' : '?') + 'download=1')}" download>${icon('down')}받기</a>`);
-  if (live) acts.push(`<button type="button" class="btn" data-recovery="pause">현재 장면 저장 후 일시중지</button>`);
+  if (live) acts.push(`<button type="button" class="btn" data-recovery="stop">지금 중지 · 완료 구간 보존</button>`);
   if(it.status==='paused'||it.status==='failed')acts.push(`<button type="button" class="btn main" data-recovery="continue">저장본 이어 만들기</button>`);
-  if(!live)acts.push(`<button type="button" class="btn" data-recovery="edit">일부 수정</button>`);
+  if(!live)acts.push(`<button type="button" class="btn" data-recovery="restart">처음부터 다시 · 새 작업</button><button type="button" class="btn" data-recovery="edit">일부 수정</button>`);
   if(!live&&it.revisions)acts.push(`<button type="button" class="btn" data-recovery="restore">수정 전 저장본 복원</button>`);
   if (!story && it.status === 'failed') acts.push(`<button type="button" class="btn main" data-act="retry">${icon('redo')}다시 하기</button>`);
   if (story && it.status === 'failed') acts.push(`<button type="button" class="btn main" data-act="resume">${icon('redo')}안 된 장면 다시</button>`);
@@ -975,6 +975,7 @@ function cardHtml(it) {
     <div class="cmd" ${o.cmd ? '' : 'hidden'}>${cmdBlock(it)}<div class="help">서버 주소가 다르면 <code>h3video config set endpoint 주소</code> 로 한 번 저장해 두세요.</div></div>${settings}</div>`;
 }
 function renderFeed(data) {
+  const active=data.items.filter(it=>['pending','running','pausing'].includes(it.status));const controls=$('#liveJobControls');controls.hidden=!active.length;controls.style.display=active.length?'flex':'none';controls.innerHTML=active.map(it=>`<div style="display:flex;align-items:center;gap:8px"><span>${esc((it.title||it.prompt||'영상 생성').slice(0,32))}</span><button class="btn" style="min-height:44px" data-live-stop="${esc(it.id)}" data-kind="${it.kind==='story'?'story':'jobs'}">지금 중지 · 결과 보존</button></div>`).join('');document.body.style.paddingBottom=active.length?'140px':'';
   feedItems = data.items; feedAt = Date.now(); serverNow = data.now || Date.now() / 1000;
   const box = $('#feed'); const keep = new Set(data.items.map(x => x.id));
   $('#feed-count').textContent = data.items.length ? `${data.items.length}개` : '';
@@ -1094,6 +1095,7 @@ setMode(mode);
 boot();
 setInterval(checkHealth, 10000);
 
+$('#liveJobControls').onclick=async event=>{const button=event.target.closest('[data-live-stop]');if(!button)return;button.disabled=true;try{await api(`/api/${button.dataset.kind}/${encodeURIComponent(button.dataset.liveStop)}/stop`,{method:'POST'});toast('중지를 요청했습니다. 완료한 구간은 보존합니다.');poll();}catch(error){button.disabled=false;toast(error.message);}};
 let recoveryTarget=null;
 $('#recovery-close').onclick=()=>$('#recovery-dialog').close();
 const recoveryChoices=it=>it.kind==='story'?it.clips:it.scenes;
@@ -1108,7 +1110,7 @@ $('#feed').addEventListener('click',async event=>{
    $('#recovery-text-label').hidden=kind!=='story';$('#recovery-seconds-label').hidden=kind!=='story';fillRecovery();$('#recovery-dialog').showModal();return;
  }
  button.disabled=true;
- try{await api(`/api/${kind}/${encodeURIComponent(item.id)}/${action}`,{method:'POST'});toast(action==='pause'?'현재 장면을 마친 뒤 저장하고 멈춥니다':action==='restore'?'수정 전 저장본을 복원했습니다':'완성한 장면을 유지하고 이어 만듭니다');poll();}
+ try{await api(`/api/${kind}/${encodeURIComponent(item.id)}/${action}`,{method:'POST'});toast(action==='stop'?'작업을 중지합니다. 이미 제출한 원격 장면은 이어할 때 같은 요청으로 확인하며, 완료 구간은 보존합니다':action==='restart'?'기존 결과를 보존하고 새 작업을 시작했습니다':action==='pause'?'현재 장면을 마친 뒤 저장하고 멈춥니다':action==='restore'?'수정 전 저장본을 복원했습니다':'완성한 장면을 유지하고 이어 만듭니다');poll();}
  catch(error){toast(error.message);button.disabled=false;}
 });
 $('#recovery-form').onsubmit=async event=>{

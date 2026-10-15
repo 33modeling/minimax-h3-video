@@ -610,7 +610,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                     return self._json({'error': '모션 프로젝트·파일을 찾지 못했습니다.'}, 404)
                 except (H3Error, ValueError, TypeError) as error:
                     return self._json({'error': str(error)}, 400)
-            reference_route = re.fullmatch(r'/api/studio/references(?:/(ref-[a-f0-9]{32})(?:/(pause|resume|save|import))?)?', p)
+            reference_route = re.fullmatch(r'/api/studio/references(?:/(ref-[a-f0-9]{32})(?:/(pause|resume|restart|save|import))?)?', p)
             if reference_route:
                 try:
                     name, action = reference_route.groups()
@@ -629,6 +629,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                         return self._json(app.references.create(body), 202)
                     if action == 'pause': return self._json(app.references.pause(name))
                     if action == 'resume': return self._json(app.references.resume(name), 202)
+                    if action == 'restart': return self._json(app.references.restart(name), 202)
                     if action == 'save': return self._json(app.references.edit(name, body))
                     if action == 'import': return self._json(app.references.import_project(name), 201)
                     raise H3Error('참고 분석 작업을 선택하세요.')
@@ -659,12 +660,14 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                     return self._json({'error': '프로젝트·파일·필수 입력을 찾지 못했습니다.'}, 404)
                 except (H3Error, ValueError, TypeError) as error:
                     return self._json({'error': str(error)}, 400)
-            recovery=re.fullmatch(r"/api/(jobs|story)/([\w-]+)/(pause|continue|edit|restore)",p)
+            recovery=re.fullmatch(r"/api/(jobs|story)/([\w-]+)/(pause|stop|continue|restart|edit|restore)",p)
             if recovery:
                 kind, name, action = recovery.groups()
                 try:
                     if kind=="jobs":
                         if action=="pause": result=app.worker.pause(name).to_json()
+                        elif action=="stop": result=app.worker.stop(name).to_json()
+                        elif action=="restart": result=app.retry(name).to_json()
                         elif action=="continue": result=app.worker.resume(name).to_json()
                         elif action=="edit":
                             body=json.loads(self.rfile.read(int(self.headers.get("Content-Length",0))) or b"{}")
@@ -675,13 +678,25 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                         if not name.startswith("story-") or not (d/SR.STATE).is_file():raise KeyError(name)
                         with SR.story_lock(d):
                             state=SR.load_state(d)
-                            if action=="pause":
+                            if action in ("pause","stop"):
                                 state["paused"]=True
                                 for clip in state["clips"]:
                                     job=app.store.get(clip.get("job_id")) if clip.get("job_id") else None
-                                    if job and job.status in ("pending","running"):app.worker.pause(job.id)
+                                    if job and job.status in ("pending","running"):
+                                        (app.worker.stop if action=="stop" else app.worker.pause)(job.id)
                                 SR.save_state(d,state);result={"id":name,"paused":True}
                             elif action=="continue": result=app.resume_story(name)
+                            elif action=="restart":
+                                if any(app.store.get(c.get('job_id')) and app.store.get(c['job_id']).status in ('pending','running') for c in state['clips'] if c.get('job_id')):
+                                    raise H3Error('먼저 작업을 중지하세요.')
+                                new_dir=SR.new_story_dir(app.store.root)
+                                import copy
+                                fresh=copy.deepcopy(state)
+                                fresh.update(output=None,paused=True,revisions=[])
+                                for clip in fresh['clips']:
+                                    clip.update(job_id=None,output=None,error=None,status='pending',progress=0)
+                                SR.save_state(new_dir,fresh)
+                                result=app.resume_story(new_dir.name)
                             elif action=="edit":
                                 body=json.loads(self.rfile.read(int(self.headers.get("Content-Length",0))) or b"{}")
                                 result=edit_story(d,app.store,body)
