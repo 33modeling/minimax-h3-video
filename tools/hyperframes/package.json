@@ -1,0 +1,10 @@
+{
+  "name": "h3video-hyperframes-runtime",
+  "private": true,
+  "description": "Pinned HyperFrames Studio and renderer used by the existing H3 Video Maker server",
+  "dependencies": {
+    "gsap": "3.14.2",
+    "hyperframes": "0.8.158",
+    "node": "22.22.2"
+  }
+}

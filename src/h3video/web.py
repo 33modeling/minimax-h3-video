@@ -104,6 +104,8 @@ class App:
         self.studio = VideoStudio(self)
         from .reference import ReferenceLibrary
         self.references = ReferenceLibrary(self)
+        from .motion import MotionStudio
+        self.motion = MotionStudio(self)
 
     def allowed_input(self, path: str) -> bool:
         if path.startswith(("http://", "https://")):
@@ -334,7 +336,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 self.send_header("Vary", "Origin")
             else:
                 return
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
             if preflight or self.headers.get("Access-Control-Request-Private-Network"):
                 # 공개 웹(허브)에서 이 컴퓨터(127.0.0.1)의 서버를 부를 때 크롬이 묻는 사설망 접근 허용
@@ -368,6 +370,18 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
 
         def do_POST(self):
             self._safe(self._do_post)
+
+        def _studio_method(self):
+            from .motion_proxy import motion_route
+            if not motion_route(self, app, cors_origins):
+                self._json({'error': '이 경로는 GET 또는 POST를 사용하세요.'}, 405)
+
+        def do_PUT(self):
+            self._safe(self._studio_method)
+
+        do_PATCH = do_PUT
+        do_DELETE = do_PUT
+        do_HEAD = do_PUT
 
         def do_OPTIONS(self):
             self.send_response(204 if cors_origins else 405)
@@ -431,6 +445,18 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
         def _do_get(self):
             u = urllib.parse.urlparse(self.path)
             p = u.path
+            from .motion_proxy import motion_route
+            if motion_route(self, app, cors_origins):
+                return
+            if p == '/api/motion/capabilities':
+                return self._json(app.motion.capabilities())
+            if p == '/api/motion/projects':
+                return self._json({'projects': app.motion.list()})
+            if re.fullmatch(r'/api/motion/projects/hf-[a-f0-9]{32}', p):
+                try:
+                    return self._json(app.motion.get(p.rsplit('/', 1)[-1]))
+                except KeyError:
+                    return self._json({'error': '모션 프로젝트 없음'}, 404)
             if p in ("/", "/index.html"):
                 return self._send(200, served_html(), "text/html; charset=utf-8")
             if p.startswith('/studio/'):
@@ -547,6 +573,43 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
 
         def _do_post(self):
             p = urllib.parse.urlparse(self.path).path
+            from .motion_proxy import motion_route
+            if motion_route(self, app, cors_origins):
+                return
+            motion = re.fullmatch(r'/api/motion/projects(?:/(hf-[a-f0-9]{32})(?:/(save|upload|render|pause|resume|restore|export))?)?', p)
+            if motion:
+                try:
+                    origin = self.headers.get('Origin')
+                    host = self.headers.get('Host', '')
+                    if origin and origin not in cors_origins and '*' not in cors_origins and origin not in ('http://' + host, 'https://' + host):
+                        return self._json({'error': '허용되지 않은 출처입니다.'}, 403)
+                    length = int(self.headers.get('Content-Length', 0))
+                    if length < 0 or length > 512 * 1024 * 1024:
+                        return self._json({'error': '업로드는 512MB 이하로 준비하세요.'}, 413)
+                    data = self.rfile.read(length)
+                    name, action = motion.groups()
+                    if action == 'upload':
+                        fields = parse_multipart(self.headers.get('Content-Type', ''), data)
+                        filename, content = fields['file'][0]
+                        return self._json(app.motion.upload(name, filename, content))
+                    if not self.headers.get('Content-Type', '').startswith('application/json'):
+                        return self._json({'error': 'JSON 요청이 필요합니다.'}, 415)
+                    body = json.loads(data or b'{}')
+                    if not isinstance(body, dict):
+                        raise H3Error('JSON 객체를 보내세요.')
+                    if not name:
+                        return self._json(app.motion.create(body), 201)
+                    if action == 'save': return self._json(app.motion.edit(name, body))
+                    if action == 'restore': return self._json(app.motion.restore(name, body.get('version')))
+                    if action == 'render': return self._json(app.motion.render(name, body), 202)
+                    if action == 'resume': return self._json(app.motion.render(name, body, resume=True), 202)
+                    if action == 'pause': return self._json(app.motion.pause(name))
+                    if action == 'export': return self._json(app.motion.export(name))
+                    raise H3Error('모션 작업을 선택하세요.')
+                except KeyError:
+                    return self._json({'error': '모션 프로젝트·파일을 찾지 못했습니다.'}, 404)
+                except (H3Error, ValueError, TypeError) as error:
+                    return self._json({'error': str(error)}, 400)
             reference_route = re.fullmatch(r'/api/studio/references(?:/(ref-[a-f0-9]{32})(?:/(pause|resume|save|import))?)?', p)
             if reference_route:
                 try:
@@ -726,6 +789,11 @@ def serve(host: str = "127.0.0.1", port: int = 8790, endpoint: str = DEFAULT_END
     if origins:
         print(f"[h3video web] CORS 허용: {', '.join(origins)}", flush=True)
     print(f"[h3video web] http://{host}:{port}  (H3 서버: {endpoint} / ref: {ref_endpoint}, 출력: {output_dir})", flush=True)
+    # systemd's SIGTERM must also flush editing state and stop owned renderers.
+    import signal
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt
+    previous_term = signal.signal(signal.SIGTERM, interrupted) if threading.current_thread() is threading.main_thread() else None
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -733,3 +801,6 @@ def serve(host: str = "127.0.0.1", port: int = 8790, endpoint: str = DEFAULT_END
     finally:
         httpd.server_close()
         app.studio.close()
+        app.motion.close()
+        if previous_term is not None:
+            signal.signal(signal.SIGTERM, previous_term)

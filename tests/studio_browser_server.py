@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import signal
 import threading
 from http.server import ThreadingHTTPServer
 
@@ -26,5 +27,9 @@ for clip in project['clips']:
 app.studio.update(project['id'],{'delivery':{'shortEdge':64}})
 server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(app,{'*'}))
 print(json.dumps({'url':f'http://127.0.0.1:{server.server_address[1]}','project':project['id'],'video':str(file),'image':str(image)}),flush=True)
+def interrupted(signum, frame):
+ raise KeyboardInterrupt
+signal.signal(signal.SIGTERM, interrupted)
 try:server.serve_forever()
-finally:app.studio.close();server.server_close();model.shutdown();model.server_close()
+except KeyboardInterrupt:pass
+finally:app.motion.close();app.studio.close();server.server_close();model.shutdown();model.server_close()

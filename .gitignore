@@ -13,3 +13,5 @@ __pycache__/
 /dist-ui/
 /.venv-video-studio/
 /test-results/
+
+**/node_modules/

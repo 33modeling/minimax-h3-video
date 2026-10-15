@@ -6,6 +6,12 @@
     "build": "node scripts/build-ui.mjs",
     "test:studio": "node tests/e2e/video_studio.mjs",
     "install:studio": "python3 scripts/install-video-tools.py",
-    "test:reference": "node tests/e2e/reference_studio.mjs"
+    "test:reference": "node tests/e2e/reference_studio.mjs",
+    "install:hyperframes": "node scripts/install-hyperframes.mjs",
+    "test:hyperframes": "PYTHONPATH=src python3 -m unittest discover -s tests -p test_motion.py -v",
+    "test:motion-ui": "node tests/e2e/motion_studio.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   }
 }

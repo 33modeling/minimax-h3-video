@@ -1,5 +1,16 @@
 # minimax-h3-video
 
+## Hyperframes 모션 영상 편집
+
+기존 영상 maker의 **Hyperframes · 모션·타임라인 영상**에서 HTML·GSAP 모션과
+실제 Hyperframes Studio의 타임라인·레이어·미디어 편집을 사용합니다. 기존 영상
+편집실의 **Hyperframes로 모션 편집**으로 장면·선택 영상·소리를 복사할 수 있습니다.
+MP4/WebM/MOV/GIF, 원본 크기·4K 출력, 저장 목록·HTML/미디어 ZIP·수정 기록 복원과
+중지 후 재출력을 제공합니다. MP4는 완료한 프레임 구간을 검증해 재사용합니다.
+
+설치: `npm run install:hyperframes`. 분석한 원본 구조, 저장 경로, 제작 흐름과
+검증은 [Hyperframes 통합 문서](docs/HYPERFRAMES_INTEGRATION.md)를 참고하세요.
+
 ## 영상 편집실 · 초안에서 최종 출력까지
 
 기존 웹 UI의 **영상 편집실** 또는 결과 카드의 **편집·보정·AI 업스케일**에서 시작합니다. 기존 H3 웹 서버를 그대로 사용하며 GPU 생성 서버를 새로 시작하거나 주소를 바꾸지 않습니다.

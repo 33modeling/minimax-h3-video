@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/heygen-com/hyperframes",
+  "source_revision": "8f0bcadcd32893d3ad5231f33b210c410096281f",
+  "package": "hyperframes",
+  "version": "0.8.158",
+  "license": "Apache-2.0",
+  "integration": "Unmodified published Studio, core runtime, player, renderer and FFmpeg producer; H3 owns project storage and the same-origin host adapter."
+}
