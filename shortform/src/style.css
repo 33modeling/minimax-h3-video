@@ -389,3 +389,20 @@ label.block textarea { resize: vertical; font: inherit; }
 .tour-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tour-count { margin-right: auto; font-size: 12px; color: var(--ink-3); }
 .lab { display: block; }
+
+/* 휴대폰·터치: 입력칸 글자 16px(아이폰 확대 방지), 누름 대상 44px */
+@media (max-width: 820px), (pointer: coarse) {
+  body :is(input:is([type=text], [type=search], [type=number], [type=email], [type=url], [type=tel], [type=password], :not([type])), select, textarea) { font-size: 16px; min-width: 0; }
+  label.block :is(input, select) { min-height: 44px; }
+  .home { display: inline-flex; align-items: center; min-height: 44px; }
+  .help-btn { width: 44px; height: 44px; }
+  .tour-hint-go, .link { min-height: 44px; }
+  /* ⓘ 단추: 보이는 동그라미는 20px 그대로, 투명 테두리로 누름 범위만 44px (음수 여백으로 배치 유지) */
+  .tip { width: 44px; height: 44px; margin: -12px; border: 12px solid transparent; background-clip: padding-box; box-shadow: inset 0 0 0 1px var(--line-2); }
+  .tip:hover, .tip[aria-expanded="true"] { border-color: transparent; box-shadow: inset 0 0 0 1px var(--accent-line); }
+  /* 선택 동그라미·체크 칸: 보이는 크기는 16px, 누름 범위는 44px (음수 여백으로 배치 유지) */
+  .seg label input[type=radio] { -webkit-appearance: none; appearance: none; flex: none; width: 44px; height: 44px; margin: -14px -8px -14px -14px; border: 0; border-radius: 50%; cursor: pointer; background: radial-gradient(circle closest-side, transparent 6.5px, var(--ink-3) 7px 8px, transparent 8.5px); }
+  .seg label input[type=radio]:checked { background: radial-gradient(circle closest-side, var(--accent) 4px, transparent 4.5px 6.5px, var(--accent) 7px 8px, transparent 8.5px); }
+  .notify input[type=checkbox] { -webkit-appearance: none; appearance: none; flex: none; width: 44px; height: 44px; margin: -14px -8px -14px -14px; border: 0; border-radius: 8px; cursor: pointer; background: linear-gradient(var(--ink-3), var(--ink-3)) 14px 14px/16px 2px no-repeat, linear-gradient(var(--ink-3), var(--ink-3)) 14px 28px/16px 2px no-repeat, linear-gradient(var(--ink-3), var(--ink-3)) 14px 14px/2px 16px no-repeat, linear-gradient(var(--ink-3), var(--ink-3)) 28px 14px/2px 16px no-repeat; }
+  .notify input[type=checkbox]:checked { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 15px 15px/14px 14px no-repeat, linear-gradient(var(--accent), var(--accent)) 14px 14px/16px 16px no-repeat; }
+}
