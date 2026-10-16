@@ -10,18 +10,20 @@ from PIL import Image
 
 
 def edit(v):
-    endpoint=os.environ.get('QWEN_IMAGE_BASE_URL','http://127.0.0.1:8091').rstrip('/')
-    model=os.environ.get('QWEN_IMAGE_MODEL','Qwen/Qwen-Image-2.1')
+    turbo=v.get('provider')=='qwen-image-turbo'
+    prefix='QWEN_IMAGE_TURBO' if turbo else 'QWEN_IMAGE'
+    endpoint=os.environ.get(prefix+'_BASE_URL','http://127.0.0.1:8093' if turbo else 'http://127.0.0.1:8091').rstrip('/')
+    model=os.environ.get(prefix+'_MODEL','Qwen/Qwen-Image-2.1-Turbo' if turbo else 'Qwen/Qwen-Image-2.1')
     image=Path(v['input']);size=Image.open(image).size
     boundary='qwen-'+uuid.uuid4().hex;parts=[]
     fields=dict(model=model,prompt=v['prompt'],size=f'{size[0]}x{size[1]}',response_format='b64_json',
-                seed=str(v.get('seed',0)),num_inference_steps=str(v.get('steps',40)),true_cfg_scale='4')
+                seed=str(v.get('seed',0)),num_inference_steps=str(8 if turbo else v.get('steps',40)),true_cfg_scale='1' if turbo else '4')
     for key,value in fields.items():
         parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode())
-    field=os.environ.get('QWEN_IMAGE_EDIT_FIELD','image')
+    field=os.environ.get(prefix+'_EDIT_FIELD','image')
     parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="frame.png"\r\nContent-Type: image/png\r\n\r\n'.encode()+image.read_bytes()+b'\r\n')
     parts.append(f'--{boundary}--\r\n'.encode());headers={'Content-Type':'multipart/form-data; boundary='+boundary}
-    if os.environ.get('QWEN_IMAGE_API_KEY'):headers['Authorization']='Bearer '+os.environ['QWEN_IMAGE_API_KEY']
+    if os.environ.get(prefix+'_API_KEY'):headers['Authorization']='Bearer '+os.environ[prefix+'_API_KEY']
     try:
         data=json.load(urllib.request.urlopen(urllib.request.Request(endpoint+'/v1/images/edits',data=b''.join(parts),headers=headers),timeout=900))
         item=data['data'][0]
@@ -42,7 +44,7 @@ def edit(v):
         temporary.replace(out)
         print(json.dumps(dict(model=model,width=size[0],height=size[1])))
     except Exception as error:
-        raise RuntimeError('로컬 Qwen Image Edit 요청 실패. 8091 이미지 서버의 편집 API와 모델을 확인하세요. 원본은 보존됩니다. '+type(error).__name__) from None
+        raise RuntimeError('로컬 Qwen Image Edit 요청 실패. 선택한 이미지 서버의 편집 API와 모델을 확인하세요. 원본은 보존됩니다. '+type(error).__name__) from None
 
 
 if __name__=='__main__':edit(json.load(sys.stdin))
