@@ -13,7 +13,7 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  root.innerHTML=`<div class="maker-recovery-heading"><strong>${video?'영상 작업 복구':'이미지 작업 복구'}</strong><span data-recovery-state>준비</span></div><div class="maker-recovery-settings"><label>${video?'남은 영상 해상도 · 짧은 변':'남은 그림 해상도 · 긴 변'}<select data-recovery-size>${video?'<option value="576">최대 576px · 가벼운 생성</option><option value="448">최대 448px · 메모리 절약</option>':'<option value="512">최대 512px · 메모리 절약</option><option value="768">최대 768px</option>'}<option value="0">현재 설정 유지</option></select></label><button type="button" data-recover-generation>${video?'저장한 영상 이어 만들기':'생성 복구 · 이어 만들기'}</button><button type="button" data-cancel-recovery hidden>복구 대기 취소</button></div><p role="status" aria-live="polite">${video?'중지한 작업을 저장하고 남은 장면부터 이어 만듭니다. 완성한 영상은 보관합니다.':'진행 중인 작업을 저장하고 이미지 모델을 다시 켠 뒤 남은 그림만 이어 만듭니다. 완성한 그림은 보관합니다.'}</p><progress data-recovery-progress max="4" value="0" hidden aria-label="복구 진행"></progress><div class="maker-server-actions"><button type="button" data-restart-web>웹 서버만 다시 켜기</button>${video?'':'<button type="button" data-restart-vllm>이미지 모델만 다시 켜기</button><button type="button" data-restart-image>선택 이미지 모델만 다시 켜기</button>'}</div><details><summary>서버 연결·상세 설정</summary><p>${video?'웹 서버 재시작은 영상 생성 엔진을 끄지 않습니다. 영상 엔진 연결 오류는 아래 상태에서 확인하세요.':'웹 서버와 이미지 모델은 각각 다시 켤 수 있습니다. 모델을 다시 불러오는 동안에는 복구 대기를 취소할 수 있습니다.'}</p><label>웹 서버 복구 주소<input type="url" data-control-web placeholder="자동 · 웹 서버 PC의 8798 포트"></label><label ${video?'hidden':''}>이미지 서버 복구 주소<input type="url" data-control-image placeholder="자동 · 이미지 서버 PC의 8798 포트"></label><label>웹 복구 접속 키 (설정한 경우)<input type="password" autocomplete="off" data-key-web></label><label ${video?'hidden':''}>이미지 복구 접속 키 (설정한 경우)<input type="password" autocomplete="off" data-key-image></label><button type="button" data-control-check>서버 연결 확인</button></details>`;
  const status=root.querySelector('[role=status]'),q=selector=>root.querySelector(selector),key='maker-control.'+kind;
  if(video)root.querySelector('.maker-server-actions').insertAdjacentHTML('beforeend','<button type="button" data-recover-video="fl2va">영상 모델 복구</button><button type="button" data-recover-video="ref2va">참고 영상 모델 복구</button>');
- root.insertAdjacentHTML('beforeend',`<button type="button" data-show-server-logs data-log-control>${video?'영상 웹 서버 로그':'이미지 서버 로그'}</button><section data-server-log-panel hidden aria-label="서버 로그"><div><strong>서버 로그</strong><button type="button" data-log-refresh data-log-control>새로고침</button><button type="button" data-log-copy data-log-control>로그 복사</button><button type="button" data-log-save data-log-control>파일 저장</button><button type="button" data-log-close data-log-control>닫기</button><label><input type="checkbox" data-log-live checked data-log-control>실시간 갱신</label></div><p data-log-status></p><pre data-server-output tabindex="0" aria-label="서버 출력"></pre><details ${video?'hidden':''}><summary>이미지 요청·오류·재시도 기록</summary><pre data-request-output tabindex="0" aria-label="이미지 요청 기록"></pre></details></section>`);
+ root.insertAdjacentHTML('beforeend',`<button type="button" data-show-server-logs data-log-control>${video?'영상 웹 서버 로그':'이미지 서버 로그'}</button><section data-server-log-panel hidden aria-label="서버 로그"><div><strong>서버 로그</strong><button type="button" data-log-refresh data-log-control>새로고침</button><button type="button" data-log-copy data-log-control>로그 복사</button><button type="button" data-log-save data-log-control>파일 저장</button><button type="button" data-log-close data-log-control>닫기</button><label><input type="checkbox" data-log-live checked data-log-control>실시간 갱신</label></div><label><input type="checkbox" data-log-history data-log-control>이전 실행 기록 포함</label><p data-log-status role="status" aria-live="polite"></p><pre data-server-output tabindex="0" aria-label="서버 출력"></pre><details ${video?'hidden':''}><summary>이미지 요청·오류·재시도 기록</summary><pre data-request-output tabindex="0" aria-label="이미지 요청 기록"></pre></details></section>`);
  for(const group of ['web','image']){try{q('[data-control-'+group+']').value=localStorage.getItem(key+'.'+group)||'';q('[data-key-'+group+']').value=sessionStorage.getItem(key+'.key.'+group)||'';}catch{}}
  const message=(text,error=false)=>{status.textContent=text;status.classList.toggle('error',error);};
  let busy=false,controller=null,recoveryObserver=null,lastTarget=null;
@@ -23,48 +23,83 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  const selectedImage=()=>imageTarget(getProvider()||'qwen-image');
  const update=()=>{const target=selectedImage(),button=q('[data-restart-image]'),standard=q('[data-restart-vllm]');if(button)button.hidden=!target||target==='vllm-image';if(standard)standard.hidden=target!=='vllm-image';};update();document.addEventListener('maker:provider-change',update);document.addEventListener('change',update);document.addEventListener('click',event=>{if(event.target.closest('[data-tab]'))update();});
  root.addEventListener('input',()=>{for(const group of ['web','image'])try{localStorage.setItem(key+'.'+group,q('[data-control-'+group+']').value.trim());sessionStorage.setItem(key+'.key.'+group,q('[data-key-'+group+']').value);}catch{}});
- async function address(target){
-  const group=target.endsWith('-web')||target.startsWith('video-')?'web':'image',custom=q('[data-control-'+group+']').value.trim();let base=getWebBase()||location.origin;
+ async function address(target,options={}){
+  const group=target.endsWith('-web')||target.startsWith('video-')?'web':'image',custom=options.custom??q('[data-control-'+group+']').value.trim();let base=options.base||getWebBase()||location.origin;
   if(!custom&&group==='image'){
    const cacheKey='maker-control.image-host.'+base+'.'+target;
-   try{const response=await fetch(base.replace(/\/$/,'')+'/api/config',{signal:boundedSignal(2000)});if(!response.ok)throw Error();const config=await response.json(),endpoint=config[target==='image-turbo'?'qwenTurbo':target==='image-quantized'?'qwenQuantized':'qwen'];if(endpoint){const selected=new URL(endpoint.split(',')[0].trim()),webHost=new URL(getWebBase()||location.origin).hostname;if(['localhost','127.0.0.1','[::1]'].includes(selected.hostname)&&!['localhost','127.0.0.1','[::1]'].includes(webHost))selected.hostname=webHost;base=selected.href;try{localStorage.setItem(cacheKey,helperAddress(base));}catch{}}}catch{try{base=localStorage.getItem(cacheKey)||base;}catch{}}
+   try{const response=await fetch(base.replace(/\/$/,'')+'/api/config',{signal:options.signal||boundedSignal(2000)});if(!response.ok)throw Error();const config=await response.json(),endpoint=config[target==='image-turbo'?'qwenTurbo':target==='image-quantized'?'qwenQuantized':'qwen'];if(endpoint){const selected=new URL(endpoint.split(',')[0].trim()),webHost=new URL(options.base||getWebBase()||location.origin).hostname;if(['localhost','127.0.0.1','[::1]'].includes(selected.hostname)&&!['localhost','127.0.0.1','[::1]'].includes(webHost))selected.hostname=webHost;base=selected.href;try{localStorage.setItem(cacheKey,helperAddress(base));}catch{}}}catch{try{base=localStorage.getItem(cacheKey)||base;}catch{}}
   }
   const url=new URL(custom||helperAddress(base));if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw Error('복구 주소는 http 또는 https 주소로 입력하세요.');
-  return {base:url.href.replace(/\/$/,''),secret:q('[data-key-'+group+']').value};
+  return {base:url.href.replace(/\/$/,''),secret:options.secret??q('[data-key-'+group+']').value};
  }
  async function request(connection,target,restart=false){
   let response;try{response=await fetch(connection.base+'/api/control/'+target+(restart?'/restart':''),{method:restart?'POST':'GET',headers:{'x-maker-control':'1',...(restart?{'content-type':'application/json'}:{}),...(connection.secret?{authorization:'Bearer '+connection.secret}:{})},...(restart?{body:'{}'}:{}),signal:boundedSignal(12000)});}catch{checkCancelled();throw Error('복구 도우미에 연결하지 못했습니다. 서버 PC의 도우미 실행 상태·복구 주소·브라우저의 로컬 네트워크 접근을 확인하세요.');}
   checkCancelled();const data=await response.json();if(!response.ok)throw Error(data.error||'복구 요청을 처리하지 못했습니다.');return data;
  }
  const providerFor=target=>({'vllm-image':'qwen-image','image-turbo':'qwen-image-turbo','image-quantized':'qwen-image-quantized'}[target]);
- async function webImage(target,action='status'){
-  const provider=providerFor(target);if(!provider||q('[data-control-image]').value.trim())return null;
+ async function webImage(target,action='status',options={}){
+  const provider=providerFor(target);if(!provider||(options.customImage??q('[data-control-image]').value.trim()))return null;
   let response;
-  try{response=await fetch((getWebBase()||location.origin).replace(/\/$/,'')+'/api/image-server/'+provider+(action==='status'?'':'/'+action),{method:action==='restart'?'POST':'GET',headers:action==='restart'?{'content-type':'application/json'}:{},...(action==='restart'?{body:'{}'}:{}),signal:action==='logs'?AbortSignal.timeout(10000):boundedSignal(12000)});}
-  catch(error){if(action!=='logs')checkCancelled();throw Error('웹 서버에 재시작 요청을 보내지 못했습니다. 웹 서버 연결 주소와 실행 상태를 확인하세요.');}
+  try{response=await fetch((options.base||getWebBase()||location.origin).replace(/\/$/,'')+'/api/image-server/'+provider+(action==='status'?'':'/'+action)+(options.query||''),{method:action==='restart'?'POST':'GET',headers:action==='restart'?{'content-type':'application/json'}:{},...(action==='restart'?{body:'{}'}:{}),signal:options.signal||(action==='logs'?AbortSignal.timeout(10000):boundedSignal(12000))});}
+  catch(error){if(options.signal?.aborted)throw error;if(action!=='logs')checkCancelled();throw Error(action==='logs'?'서버 로그를 읽지 못했습니다. 웹 서버 연결을 확인하세요.':'웹 서버에 재시작 요청을 보내지 못했습니다. 웹 서버 연결 주소와 실행 상태를 확인하세요.');}
   const data=await response.json().catch(()=>({}));
   if(response.status===404||data.code==='REMOTE_IMAGE_SERVER')return null;
   if(!response.ok)throw Error(data.error||'이미지 서버 요청 실패 ('+response.status+')');if(data.id!==target||action==='restart'&&!data.operation?.id)return null;return data;
  }
- let logTimer=null,logTarget=null,logLoading=false;
- async function refreshLogs(){
-  if(logLoading||q('[data-server-log-panel]').hidden)return;logLoading=true;clearTimeout(logTimer);
-  try{
-   const target=logTarget||selectedImage()||kind;
-   let data=await webImage(target,'logs');
-   if(!data){const connection=await address(target),response=await fetch(connection.base+'/api/control/'+target+'/logs',{headers:{'x-maker-control':'1',...(connection.secret?{authorization:'Bearer '+connection.secret}:{})},signal:AbortSignal.timeout(10000)});data=await response.json();if(!response.ok)throw Error(data.error||'서버 로그를 읽지 못했습니다.');}
-   q('[data-log-status]').textContent=(data.label||'서버')+(data.url?' · '+data.url:'')+(data.pid?' · PID '+data.pid:'')+' · '+new Date().toLocaleTimeString('ko-KR');q('[data-server-output]').textContent=data.text||data.message||'아직 서버 출력이 없습니다.';
-  }catch(error){q('[data-log-status]').textContent=error.message;}
-  finally{
-   if(!video&&providerFor(logTarget))try{const response=await fetch((getWebBase()||location.origin).replace(/\/$/,'')+'/api/image-logs?provider='+providerFor(logTarget),{signal:AbortSignal.timeout(10000)}),data=await response.json();q('[data-request-output]').textContent=response.ok?data.text||data.message:data.error||'이미지 요청 기록을 읽지 못했습니다.';}catch{q('[data-request-output]').textContent='웹 서버 연결을 확인하세요.';}
-   logLoading=false;if(!q('[data-server-log-panel]').hidden&&q('[data-log-live]').checked)logTimer=setTimeout(refreshLogs,3000);
-  }
+ let logTimer=null,logTarget=null,logEpoch=0,logController=null,logSelection={},logProvider=null;
+ const logBase=()=>String(getWebBase()||location.origin).replace(/\/$/,'');
+ const connectionKey=()=>JSON.stringify([logBase(),...['web','image'].flatMap(group=>[q('[data-control-'+group+']').value,q('[data-key-'+group+']').value])]);
+ let logConnection=connectionKey();
+ function invalidateLogs(){
+  clearTimeout(logTimer);logEpoch++;logController?.abort();logController=null;
+  q('[data-log-status]').textContent='';q('[data-server-output]').textContent='';q('[data-request-output]').textContent='';
  }
- function showLogs(target){logTarget=target||selectedImage()||kind;q('[data-server-log-panel]').hidden=false;void refreshLogs();}
- document.addEventListener('maker:show-logs',event=>{showLogs(imageTarget(event.detail?.provider)||kind);root.scrollIntoView({behavior:'smooth',block:'start'});});
+ async function refreshLogs(){
+  if(q('[data-server-log-panel]').hidden)return;
+  invalidateLogs();const epoch=logEpoch,abort=new AbortController();logController=abort;
+  const signal=AbortSignal.any([abort.signal,AbortSignal.timeout(12000)]),base=logSelection.base||logBase(),target=logTarget||selectedImage()||kind;
+  const selected={...logSelection},history=q('[data-log-history]').checked,provider=providerFor(target),group=target.endsWith('-web')||target.startsWith('video-')?'web':'image';
+  const custom=q('[data-control-'+group+']').value.trim(),secret=q('[data-key-'+group+']').value,customImage=q('[data-control-image]').value.trim();
+  const current=()=>epoch===logEpoch&&!q('[data-server-log-panel]').hidden&&logConnection===connectionKey();
+  const query=new URLSearchParams();if(history)query.set('history','1');if(selected.requestId&&!history)query.set('requestId',selected.requestId);if(Number.isInteger(selected.endpointIndex))query.set('endpoint',selected.endpointIndex);if(selected.endpoint)query.set('expectedEndpoint',selected.endpoint);
+  q('[data-log-status]').textContent='서버 상태와 기록을 확인하고 있습니다…';
+  const output=async()=>{
+   try{
+    let data=await webImage(target,'logs',{base,signal,query:query.size?'?'+query:'',customImage});
+    if(!data){const connection=await address(target,{base,signal,custom,secret});signal.throwIfAborted();const response=await fetch(connection.base+'/api/control/'+target+'/logs'+(query.size?'?'+query:''),{headers:{'x-maker-control':'1',...(connection.secret?{authorization:'Bearer '+connection.secret}:{})},signal});data=await response.json();if(!response.ok)throw Error(data.error||'서버 로그를 읽지 못했습니다.');if(data.id!==target)throw Error('선택한 서버와 다른 기록이 반환되었습니다.');if(selected.endpoint&&data.url){const expected=new URL(selected.endpoint),actual=new URL(data.url),host=new URL(connection.base).hostname;const normalized=url=>['localhost','127.0.0.1','[::1]'].includes(url.hostname)?host:url.hostname;if(normalized(expected)!==normalized(actual)||expected.port!==actual.port)throw Error('요청을 보낸 이미지 서버와 로그 서버가 다릅니다. 연결 주소를 확인하세요.');}}
+    if(!current())return;
+    const health=data.health?.status==='ready'?'현재 서버: 연결됨':data.health?.message?'현재 서버: '+data.health.message:'현재 연결 상태를 확인하지 못했습니다.';
+    q('[data-log-status]').textContent=health+' · '+(data.label||'서버')+(data.url?' · '+data.url:'')+(data.pid?' · PID '+data.pid:'')+(selected.requestId?' · 요청 '+selected.requestId:'')+' · '+new Date().toLocaleTimeString('ko-KR');
+    q('[data-server-output]').textContent=(history?'이전 실행 포함 · 현재 서버 상태와 다를 수 있습니다.\n\n':'')+(data.text||data.message||'일치하는 서버 출력이 없습니다.');
+   }catch(error){if(current()){q('[data-log-status]').textContent=error.message;q('[data-server-output]').textContent='서버 출력을 가져오지 못했습니다.';}}
+  };
+  const requests=async()=>{
+   if(video||!provider)return;
+   try{
+    const params=new URLSearchParams({provider});if(selected.requestId)params.set('requestId',selected.requestId);if(selected.endpoint)params.set('endpoint',selected.endpoint);
+    const response=await fetch(base+'/api/image-logs?'+params,{signal}),data=await response.json();
+    if(current())q('[data-request-output]').textContent=response.ok?data.text||data.message:data.error||'이미지 요청 기록을 읽지 못했습니다.';
+   }catch{if(current())q('[data-request-output]').textContent='이미지 요청 기록을 가져오지 못했습니다.';}
+  };
+  await Promise.allSettled([output(),requests()]);
+  if(current()&&q('[data-log-live]').checked)logTimer=setTimeout(refreshLogs,3000);
+ }
+ function showLogs(target,selection={}){
+  invalidateLogs();logTarget=target||selectedImage()||kind;logSelection=selection;logProvider=selectedImage();logConnection=connectionKey();q('[data-log-history]').checked=false;q('[data-server-log-panel]').hidden=false;void refreshLogs();
+ }
+ function syncLogs(){
+  if(q('[data-server-log-panel]').hidden)return;
+  const changed=logConnection!==connectionKey();
+  if(changed||(!video&&logProvider!==selectedImage()))showLogs(video?kind:selectedImage());
+ }
+ document.addEventListener('maker:show-logs',event=>{const {provider,...selection}=event.detail||{};showLogs(imageTarget(provider)||kind,selection);root.scrollIntoView({behavior:'smooth',block:'start'});});
+ document.addEventListener('maker:provider-change',syncLogs);document.addEventListener('maker:connection-change',syncLogs);document.addEventListener('change',syncLogs);
+ root.addEventListener('input',event=>{if(event.target.matches('[data-control-web],[data-control-image],[data-key-web],[data-key-image]'))syncLogs();});
  q('[data-show-server-logs]').onclick=()=>showLogs(video?kind:selectedImage());
- q('[data-log-refresh]').onclick=()=>{clearTimeout(logTimer);void refreshLogs();};q('[data-log-live]').onchange=()=>{clearTimeout(logTimer);if(q('[data-log-live]').checked)void refreshLogs();};
- q('[data-log-close]').onclick=()=>{q('[data-server-log-panel]').hidden=true;clearTimeout(logTimer);};
+ q('[data-log-refresh]').onclick=()=>{if(logConnection!==connectionKey())showLogs(video?kind:selectedImage());else void refreshLogs();};
+ q('[data-log-history]').onchange=()=>void refreshLogs();
+ q('[data-log-live]').onchange=()=>{clearTimeout(logTimer);if(q('[data-log-live]').checked)void refreshLogs();};
+ q('[data-log-close]').onclick=()=>{q('[data-server-log-panel]').hidden=true;invalidateLogs();};
  const logText=()=>[q('[data-log-status]').textContent,q('[data-server-output]').textContent,q('[data-request-output]').textContent].filter(Boolean).join('\n\n');
  q('[data-log-copy]').onclick=async()=>{try{await navigator.clipboard.writeText(logText());q('[data-log-status]').textContent='로그를 복사했습니다.';}catch{const text=document.createElement('textarea');text.value=logText();text.style.position='fixed';text.style.opacity='0';root.append(text);text.select();const copied=document.execCommand('copy');text.remove();q('[data-log-status]').textContent=copied?'로그를 복사했습니다.':'파일 저장을 누르거나 로그를 선택해 복사하세요.';}};
  q('[data-log-save]').onclick=()=>{const url=URL.createObjectURL(new Blob([logText()],{type:'text/plain;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='image-server-'+new Date().toISOString().replace(/[:.]/g,'-')+'.log';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
