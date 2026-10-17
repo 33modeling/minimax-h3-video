@@ -870,6 +870,8 @@ class VideoStudio:
         except Paused:
             task.update(status='paused', message='저장하고 중지했습니다. 설정을 수정하거나 저장한 지점에서 이어 할 수 있습니다.')
         except Exception as error:
+            import logging
+            logging.getLogger(__name__).exception('영상 편집 작업 실패: %s', task.get('operation'))
             task.update(status='error', error=str(error), message='작업을 완료하지 못했습니다. 기존 결과는 유지됩니다.')
         finally:
             with self.lock:
