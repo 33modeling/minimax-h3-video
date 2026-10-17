@@ -9,7 +9,7 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  const message=(text,error=false)=>{status.textContent=text;status.classList.toggle('error',error);};
  let busy=false;
  const selectedImage=()=>({'qwen-image-turbo':'image-turbo','qwen-image-quantized':'image-quantized'}[getProvider()]||'vllm-image');
- const update=()=>q('[data-restart-image]').hidden=selectedImage()==='vllm-image'||kind==='video-web';update();document.addEventListener('change',update);
+ const update=()=>q('[data-restart-image]').hidden=selectedImage()==='vllm-image'||kind==='video-web';update();document.addEventListener('change',update);document.addEventListener('click',event=>{if(event.target.closest('[data-tab]'))update();});
  root.addEventListener('input',()=>{for(const group of ['web','image'])try{localStorage.setItem(key+'.'+group,q('[data-control-'+group+']').value.trim());sessionStorage.setItem(key+'.key.'+group,q('[data-key-'+group+']').value);}catch{}});
  async function address(target){
   const group=target.endsWith('-web')?'web':'image',custom=q('[data-control-'+group+']').value.trim();let base=getWebBase()||location.origin;
