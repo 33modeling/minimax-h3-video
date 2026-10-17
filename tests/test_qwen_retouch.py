@@ -15,6 +15,51 @@ from h3video.web import parse_multipart
 
 
 class QwenRetouchTest(unittest.TestCase):
+    def test_oom_settings_are_reused_by_remaining_video_frames(self):
+        calls=[]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_POST(self):
+                fields=parse_multipart(self.headers['Content-Type'],self.rfile.read(int(self.headers['Content-Length'])))
+                calls.append({key:value[0][1].decode() for key,value in fields.items() if key!='image'})
+                if len(calls)==1:
+                    body=json.dumps({'error':'CUDA out of memory','code':'GPU_OOM'}).encode();self.send_response(503)
+                else:
+                    body=json.dumps({'data':[{'b64_json':base64.b64encode(fields['image'][0][1]).decode()}]}).encode();self.send_response(200)
+                self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
+        self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
+        p=self.create();clip=p['clips'][0]
+        with patch.dict(os.environ,{'QWEN_IMAGE_BASE_URL':f'http://127.0.0.1:{server.server_address[1]}'}):
+            self.studio.start(p['id'],'upscale',{'clip':clip['id'],'scale':2,'engine':'qwen-realesrgan','retouchPrompt':'Preserve this scene.'})
+            result=self.wait(p['id'])
+        self.assertEqual(len(calls),5,'one OOM retry for four frames, rather than restarting recovery for every frame')
+        self.assertTrue(all(call['memory_saving']=='true' for call in calls[1:]))
+        self.assertTrue(all(int(call['reference_max_edge'])<=512 for call in calls[1:]))
+        self.assertTrue(result['clips'][0]['variants'][-1]['retouchSettings'])
+
+    def test_stopping_frame_retouch_closes_actual_image_request(self):
+        started,closed=threading.Event(),threading.Event()
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_POST(self):
+                self.rfile.read(int(self.headers['Content-Length']));started.set()
+                self.connection.settimeout(10)
+                try:
+                    if not self.connection.recv(1):closed.set()
+                except OSError:pass
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
+        self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
+        p=self.create();clip=p['clips'][0]
+        with patch.dict(os.environ,{'QWEN_IMAGE_BASE_URL':f'http://127.0.0.1:{server.server_address[1]}'}):
+            self.studio.start(p['id'],'upscale',{'clip':clip['id'],'scale':2,'engine':'qwen-realesrgan','retouchPrompt':'Keep this frame.'})
+            self.assertTrue(started.wait(8))
+            self.studio.pause(p['id'],immediate=True)
+            self.assertTrue(closed.wait(8),'stop must terminate the HTTP client, without an orphan image request')
+            result=self.wait(p['id'])
+        self.assertEqual(result['task']['status'],'paused')
+        self.assertEqual(result['clips'][0]['selected'],clip['selected'])
+
     setUpClass=classmethod(base.VideoEditingTest.setUpClass.__func__)
     tearDownClass=classmethod(base.VideoEditingTest.tearDownClass.__func__)
     setUp=base.VideoEditingTest.setUp

@@ -17,12 +17,12 @@ if [[ -f "$_REPO_ROOT/.cluster_env.local.sh" ]]; then _H3_IN_LOCAL_ENV=1; source
 
 export GROUP_VOLUME_ROOT="${GROUP_VOLUME_ROOT:-/group-volume}"
 export STORAGE_ROOT="${STORAGE_ROOT:-$GROUP_VOLUME_ROOT/minsoo3.kim/$REPO_NAME}"
-export MODELS_DIR="${MODELS_DIR:-$GROUP_VOLUME_ROOT/models}"
-# 모델 위치: ① 기본 /group-volume/models/MiniMax-H3 → 없으면 ② 저장해 둔 경로(.cluster_env.local.sh·셸의 H3_MODEL_DIR)
+export MODELS_DIR="${MODELS_DIR:-/rdata/models}"
+# 모델 위치: ① 기본 /rdata/models/MiniMax-H3 → 없으면 ② 저장해 둔 경로(.cluster_env.local.sh·셸의 H3_MODEL_DIR)
 #            → ③ group-volume 검색 → 그래도 없으면 ④ up.sh·provision.sh 가 경로를 묻는다. 받기는 하지 않는다.
-H3_MODEL_DEFAULT="$GROUP_VOLUME_ROOT/models/MiniMax-H3"
+H3_MODEL_DEFAULT="$MODELS_DIR/MiniMax-H3"
 _h3_model_saved="${H3_MODEL_DIR:-}"
-h3_model_ok() { [[ -d "$1" ]] && { [[ -f "$1/model_index.json" ]] || compgen -G "$1/[Ff][Ll]2[Vv][Aa]" >/dev/null; }; }
+h3_model_ok() { [[ -d "$1" ]] && { [[ -f "$1/model_index.json" || -f "$1/modular_model_index.json" ]] || compgen -G "$1/[Ff][Ll]2[Vv][Aa]" >/dev/null; }; }
 # 한 폴더 안의 구조 맞추기: 한 단계 더 들어간 폴더, HF 캐시(models--…/snapshots/<해시>), 대소문자 다른 이름
 h3_resolve_model() {
   local base="$1" d f
@@ -37,16 +37,16 @@ h3_resolve_model() {
     d="$(dirname "$f")"
     case "${d##*/}" in [Ff][Ll]2[Vv][Aa]|[Rr][Ee][Ff]2[Vv][Aa]) d="$(dirname "$d")" ;; esac
     h3_model_ok "$d" && { echo "$d"; return 0; }
-  done < <(timeout 20 find -L "$base" -maxdepth 5 -iname model_index.json 2>/dev/null | sort)
+  done < <(timeout 20 find -L "$base" -maxdepth 5 \( -iname model_index.json -o -iname modular_model_index.json \) 2>/dev/null | sort)
   return 1
 }
 # group-volume 검색: model_index.json 과 fl2va 폴더가 있는 곳
 h3_find_models() {
   local f d
-  timeout 30 find -L "$GROUP_VOLUME_ROOT/models" "$GROUP_VOLUME_ROOT/minsoo3.kim" -maxdepth 6 -iname model_index.json 2>/dev/null | sort | while read -r f; do
+  timeout 30 find -L "$MODELS_DIR" "$GROUP_VOLUME_ROOT/models" "$GROUP_VOLUME_ROOT/minsoo3.kim" -maxdepth 6 \( -iname model_index.json -o -iname modular_model_index.json \) 2>/dev/null | sort | while read -r f; do
     d="$(dirname "$f")"
     case "${d##*/}" in [Ff][Ll]2[Vv][Aa]|[Rr][Ee][Ff]2[Vv][Aa]) d="$(dirname "$d")" ;; esac
-    compgen -G "$d/[Ff][Ll]2[Vv][Aa]" >/dev/null && h3_model_ok "$d" && realpath -m -- "$d"
+    if compgen -G "$d/[Ff][Ll]2[Vv][Aa]" >/dev/null || [[ -f "$d/modular_model_index.json" ]]; then h3_model_ok "$d" && realpath -m -- "$d"; fi
   done
 }
 # 그래도 못 찾았을 때 경로를 묻는다 (up.sh·provision.sh 가 부른다). 정한 경로는 .cluster_env.local.sh 에 저장해 다음부터 묻지 않는다.
@@ -213,7 +213,9 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
   # Diffusers 형식 폴더: 공유 모델 폴더에 이미 있으면 그대로, 없으면 내 저장 공간에 (텍스트 인코더는 FL2VA 것을 링크로 재사용)
   if [[ -z "${H3_DIFFUSERS_DIR:-}" ]]; then
     if [[ -f "$H3_MODEL_DIR/modular_model_index.json" && -d "$H3_MODEL_DIR/transformer" ]]; then H3_DIFFUSERS_DIR="$H3_MODEL_DIR"
-    else H3_DIFFUSERS_DIR="$STORAGE_ROOT/models/MiniMax-H3-diffusers"; fi
+    elif [[ -f "$MODELS_DIR/MiniMax-H3-diffusers/modular_model_index.json" ]]; then H3_DIFFUSERS_DIR="$MODELS_DIR/MiniMax-H3-diffusers"
+    elif [[ -f "$STORAGE_ROOT/models/MiniMax-H3-diffusers/modular_model_index.json" ]]; then H3_DIFFUSERS_DIR="$STORAGE_ROOT/models/MiniMax-H3-diffusers"
+    else H3_DIFFUSERS_DIR="$MODELS_DIR/MiniMax-H3-diffusers"; fi
   fi
   export H3_DIFFUSERS_DIR
   export H3_GUIDE_DIR="${H3_GUIDE_DIR:-$STORAGE_ROOT/h3-guides}"   # MiniMax 공식 프롬프트 작성 가이드 (provision.sh 가 받는다)

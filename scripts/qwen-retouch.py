@@ -6,10 +6,20 @@ from pathlib import Path
 import sys
 import urllib.request
 import uuid
+import shutil
+import tempfile
 from PIL import Image
 
 
 def edit(v):
+    shared=Path(os.environ.get('STORYBOOK_MAKER_ROOT',Path(__file__).resolve().parents[2]/'storybook-maker'))/'scripts/retouch-frame.mjs'
+    if shared.is_file() and shutil.which('node'):
+        # Replace this process, so studio stop terminates the actual HTTP client
+        # and does not leave an image generation running in an orphan child.
+        with tempfile.TemporaryFile() as payload:
+            payload.write(json.dumps(v).encode());payload.seek(0)
+            os.dup2(payload.fileno(),0)
+            os.execv(shutil.which('node'),['node',str(shared)])
     turbo=v.get('provider')=='qwen-image-turbo'
     quantized=v.get('provider')=='qwen-image-quantized'
     prefix='QWEN_IMAGE_QUANTIZED' if quantized else 'QWEN_IMAGE_TURBO' if turbo else 'QWEN_IMAGE'
@@ -45,7 +55,9 @@ def edit(v):
         temporary.replace(out)
         print(json.dumps(dict(model=model,width=size[0],height=size[1])))
     except Exception as error:
-        raise RuntimeError('로컬 Qwen Image Edit 요청 실패. 선택한 이미지 서버의 편집 API와 모델을 확인하세요. 원본은 보존됩니다. '+type(error).__name__) from None
+        import urllib.error
+        detail=error.read().decode(errors='replace')[:1500] if isinstance(error,urllib.error.HTTPError) else str(error)
+        raise RuntimeError('로컬 Qwen Image Edit 요청 실패. 원본은 보존됩니다. '+type(error).__name__+': '+detail) from None
 
 
 if __name__=='__main__':edit(json.load(sys.stdin))

@@ -762,9 +762,14 @@ class VideoStudio:
         if abs(measured['duration'] - info['duration']) > max(.12, 2 / info['fps']):
             raise H3Error('업스케일 결과 길이가 달라 원본을 유지했습니다.')
         current = self.find(p, clip['id'])
+        retouch_settings=None
+        try:
+            settings=json.loads((retouched/'.qwen-memory.json').read_text())
+            retouch_settings={'maxEdge':settings['edge'],'referenceMaxEdge':settings['referenceMaxEdge']}
+        except (OSError,ValueError,KeyError):pass
         variant = self.copy_variant(p, current, final, 'ai-upscale', scale=options['scale'], model=model,
                                     bakedCorrections=clip['corrections'], engine='Qwen Image UC GGUF + Real-ESRGAN' if options.get('engine')=='qwen-quantized-realesrgan' else 'Qwen Image Turbo + Real-ESRGAN' if options.get('engine')=='qwen-turbo-realesrgan' else 'Qwen Image Edit + Real-ESRGAN' if options.get('engine')=='qwen-realesrgan' else 'Real-ESRGAN',
-                                    retouchPrompt=options.get('retouchPrompt'), parent=variant['id'])
+                                    retouchPrompt=options.get('retouchPrompt'), retouchSettings=retouch_settings,parent=variant['id'])
         current['selected'] = variant['id']
         current['corrections'] = copy.deepcopy(DEFAULT_COLOR)
         task['result'] = variant['id']

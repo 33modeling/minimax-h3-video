@@ -55,7 +55,7 @@ class GenerationCancelled(RuntimeError):
 
 
 class WorkerDied(RuntimeError):
-    """영상 모델 워커(torchrun)가 끝났다. 서버도 끝내서 up.sh 가 알아채고 정리하게 한다."""
+    """The owned model workers ended; the API can reload them without killing the web server."""
 
 
 def local_path(uri: str) -> str:
@@ -100,6 +100,11 @@ class Engine:
     """파이프라인 적재와 생성. 작업은 한 번에 하나 (GPU 하나를 나눠 쓰지 않는다)."""
 
     def __init__(self, model_dir: str, variant: str, devices: list[str], dtype: str = "bfloat16", attn: str | None = None):
+        model_path = Path(model_dir).expanduser().resolve()
+        if not model_path.is_dir():
+            raise ValueError(f'기존 로컬 영상 모델 폴더를 찾지 못했습니다: {model_path}. 자동 다운로드는 하지 않습니다.')
+        model_dir = str(model_path)
+        self.reload_options = dict(model_dir=model_dir, variant=variant, devices=list(devices), dtype=dtype, attn=attn)
         import torch
         from diffusers import ComponentsManager, ModularPipeline
         from diffusers.modular_pipelines import SequentialPipelineBlocks
@@ -291,7 +296,8 @@ class Engine:
                "--master_port", str(port), "-m", "h3video.dworker", "--model-dir", model_dir, "--variant", variant,
                "--address", f"127.0.0.1:{self._listener.address[1]}", "--dtype", dtype]
         log(f"영상 모델 워커 {len(devs)}개 시작 (GPU {env.get('CUDA_VISIBLE_DEVICES', 'cpu')}): torchrun … -m h3video.dworker")
-        self._proc = subprocess.Popen(cmd, env=env)
+        self._proc = subprocess.Popen(cmd, env=env, start_new_session=True)
+        self._worker_group = self._proc.pid
         atexit.register(self._stop_workers)
 
     def _wait_workers(self) -> None:
@@ -319,15 +325,36 @@ class Engine:
                 raise WorkerDied(f"영상 모델 워커가 끝났다 (종료 코드 {self._proc.returncode}). 바로 위 [dworker] 로그가 원인")
 
     def _stop_workers(self) -> None:
-        if self._proc is None or self._proc.poll() is not None:
-            return
+        import atexit
+        atexit.unregister(self._stop_workers)
+        proc = self._proc
         try:
-            self._conn and self._conn.send_bytes(b"STOP")
-            self._proc.wait(timeout=30)
+            if proc is not None and proc.poll() is None:
+                self._conn and self._conn.send_bytes(b"STOP")
+                proc.wait(timeout=10)
         except Exception:   # noqa: BLE001 — 끄는 길이라 실패해도 아래에서 강제로 끈다
             pass
-        if self._proc.poll() is None:
-            self._proc.terminate()
+        finally:
+            if proc is not None:
+                import signal
+                # This group was created solely for this engine's torchrun and ranks.
+                try:
+                    if getattr(self,'_worker_group',None) == proc.pid:
+                        os.killpg(proc.pid, signal.SIGTERM)
+                    elif proc.poll() is None:
+                        proc.terminate()
+                    proc.wait(timeout=10)
+                except ProcessLookupError:
+                    pass
+                except Exception:
+                    try:
+                        if getattr(self,'_worker_group',None) == proc.pid: os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError: pass
+            for connection in (getattr(self,'_conn',None),getattr(self,'_listener',None)):
+                if connection:
+                    try: connection.close()
+                    except OSError: pass
+            self._proc, self._conn = None, None
 
     def _denoise_remote(self, state, g, gen: dict) -> dict:
         import torch
@@ -628,6 +655,8 @@ class Server:
         self.jobs: dict[str, dict] = {}
         self.lock = threading.RLock()
         self.q: queue.Queue = queue.Queue()
+        self.engine_options = getattr(engine, 'reload_options', None)
+        self.engine_status, self.engine_error = 'ready', None
         out_dir.mkdir(parents=True, exist_ok=True)
 
     def meta_path(self, vid: str) -> Path:
@@ -669,6 +698,8 @@ class Server:
         return {"prompt": job["prompt_used"], "task": plan["task"], "num_frames": plan["num_frames"]}
 
     def submit(self, body: dict) -> dict:
+        if self.engine_status != 'ready' or self.engine is None:
+            raise RuntimeError(self.engine_error or '영상 모델을 복구 중입니다. 준비 상태를 확인한 뒤 이어 만들어 주세요.')
         plan = self.engine.plan(body)
         vid = "video_" + uuid.uuid4().hex[:16]
         job = {"id": vid, "status": "queued", "progress": 0.0, "error": None, "created_at": int(time.time()),
@@ -679,6 +710,61 @@ class Server:
         self.q.put(vid)
         log(f"접수 {vid} ({plan['task']}, 대기 {self.q.qsize()})")
         return {"id": vid, "status": "queued"}
+
+    def reload_engine(self, error=None):
+        from .memory import release_request_memory
+        self.engine_status, self.engine_error = 'recovering', None
+        try:
+            if not self.engine_options:
+                # Injected/custom engines may handle cleanup without re-instantiating a GPU model.
+                release_request_memory(error, getattr(self.engine, 'torch', None))
+                return
+            if self.engine is not None and hasattr(self.engine, '_stop_workers'):
+                self.engine._stop_workers()
+            self.engine = None
+            release_request_memory(error)
+            self.engine = Engine(**self.engine_options)
+        except Exception as failure:
+            self.engine_status, self.engine_error = 'unavailable', str(failure)
+            raise
+        else:
+            self.engine_status = 'ready'
+        finally:
+            if self.engine is not None and self.engine_status == 'recovering': self.engine_status = 'ready'
+
+    def recover(self):
+        with self.lock:
+            if any(job.get('status') in ('queued','in_progress','cancelling') for job in self.jobs.values()):
+                raise BadRequest('진행 중인 영상을 중지하고 저장한 뒤 모델을 복구하세요.')
+            vid = 'video_' + uuid.uuid4().hex[:16]
+            job = dict(id=vid,kind='recover',status='queued',progress=0,error=None,created_at=int(time.time()))
+            self.jobs[vid] = job
+            self.engine_status = 'recovering'
+            self.q.put(vid)
+        return {'id':vid,'status':'queued'}
+
+    def run_with_recovery(self, job, out):
+        from .memory import release_request_memory, is_memory_failure
+        for attempt in range(3):
+            if job.get('cancel_requested'): raise GenerationCancelled('영상 생성을 중지했습니다.')
+            try:
+                if self.engine is None: raise RuntimeError(self.engine_error or '영상 모델 복구가 필요합니다.')
+                self.engine._cancel_file = self.out_dir / f"{job['id']}.cancel"
+                self.engine.on_stage = lambda stage: job.__setitem__('stage', stage)
+                return self.engine.run(job['plan'], out, lambda progress: job.__setitem__('progress', round(progress,3)))
+            except Exception as error:
+                if not (is_memory_failure(error) or isinstance(error,WorkerDied)) or attempt >= 2:
+                    raise
+                traceback.print_exc()
+                release_request_memory(error, getattr(self.engine,'torch',None))
+                if job.get('cancel_requested'): raise GenerationCancelled('영상 생성을 중지했습니다.') from error
+                edge = min(job['plan'].get('short_edge',768), (576,448)[attempt])
+                job['plan']['short_edge'] = edge
+                job.update(progress=0,stage=f'메모리 복구 · {edge}px로 재시도 {attempt+1}/2',recovery=dict(attempt=attempt+1,short_edge=edge))
+                self.save(job)
+                out.with_suffix('.part.mp4').unlink(missing_ok=True)
+                # Model paths, prompts, seeds, duration and references remain the same.
+                self.reload_engine(error)
 
     def cancel(self, vid: str) -> dict:
         with self.lock:
@@ -706,12 +792,22 @@ class Server:
 
     def _one(self, vid: str) -> None:
         job = self.jobs[vid]
+        if job.get('kind') == 'recover':
+            job['status'] = 'in_progress'
+            try:
+                self.reload_engine()
+                job.update(status='completed',progress=1)
+            except Exception as error:
+                traceback.print_exc()
+                job.update(status='failed',error=str(error))
+            self.save(job)
+            return
         if job.get('cancel_requested'):
             job.update(status='cancelled', finished_at=int(time.time()))
             self.save(job)
             (self.out_dir / f'{vid}.cancel').unlink(missing_ok=True)
             return
-        self.engine._cancel_file = self.out_dir / f'{vid}.cancel'
+        if self.engine is not None: self.engine._cancel_file = self.out_dir / f'{vid}.cancel'
         job["status"], job["started_at"] = "in_progress", int(time.time())
         if job.get("kind") != "rewrite":
             self.save(job)
@@ -723,8 +819,7 @@ class Server:
                 job["finished_at"] = int(time.time())
                 job["done"].set()
                 return
-            self.engine.on_stage = lambda s, j=job: j.__setitem__("stage", s)
-            used = self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
+            used = self.run_with_recovery(job, out)
             job.update(status="completed", progress=1.0, file=str(out), prompt_used=used)
             log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
         except GenerationCancelled as error:
@@ -732,11 +827,6 @@ class Server:
             release_request_memory(error, getattr(self.engine, 'torch', None))
             job.update(status="cancelled", error=None)
             out.with_suffix(".part.mp4").unlink(missing_ok=True)
-        except WorkerDied as e:   # 워커 묶음이 죽으면 이후 요청도 못 한다 → 서버를 끝내 up.sh 가 정리하게
-            job.update(status="failed", error=str(e), finished_at=int(time.time()))
-            self.save(job)
-            log(f"실패 {vid}: {e} → 서버를 끝낸다")
-            os._exit(3)
         except Exception as e:   # noqa: BLE001 — 실패는 작업 상태로 돌려주고 서버는 계속 돈다
             traceback.print_exc()
             job.update(status="failed", error=f"{type(e).__name__}: {e}")
@@ -748,7 +838,7 @@ class Server:
                 job["done"].set()
                 return
         finally:
-            self.engine._cancel_file = None
+            if self.engine is not None: self.engine._cancel_file = None
             (self.out_dir / f'{vid}.cancel').unlink(missing_ok=True)
         job["finished_at"] = int(time.time())
         self.save(job)
@@ -802,8 +892,13 @@ def make_handler(srv: Server):
                     return self._json(400, {"error": str(e)})
                 return self._json(200, {"max_seconds": m, "gpus": getattr(srv.engine, "cp_world", 1)})
             if path == "/health":
-                return self._json(200, {"status": "ok", "engine": "diffusers", "variant": srv.variant})
+                with srv.lock: active=sum(job.get('status')=='in_progress' for job in srv.jobs.values())
+                return self._json(200 if srv.engine_status=='ready' else 503,
+                                  {"status": srv.engine_status, "engine": "diffusers", "variant": srv.variant,
+                                   "error":srv.engine_error,"model_path":(srv.engine_options or {}).get('model_dir'),
+                                   "active":active})
             if path == "/v1/models":
+                if srv.engine_status != 'ready': return self._json(503,{'error':srv.engine_error or '영상 모델 복구 중'})
                 return self._json(200, {"object": "list", "data": [{"id": "MiniMaxAI/MiniMax-H3", "object": "model",
                                                                     "engine": "diffusers", "variant": srv.variant}]})
             parts = path.split("/")
@@ -829,6 +924,14 @@ def make_handler(srv: Server):
 
         def do_POST(self):
             path = urllib.parse.urlparse(self.path).path.rstrip("/")
+            if path == '/v1/recover':
+                if not self.headers.get('Content-Type','').startswith('application/json'):
+                    return self._json(415,{'error':'JSON 요청이 필요합니다.'})
+                size=int(self.headers.get('Content-Length') or 0)
+                if size>1024:return self._json(413,{'error':'요청이 너무 큽니다.'})
+                if size:self.rfile.read(size)
+                try:return self._json(202,srv.recover())
+                except BadRequest as error:return self._json(409,{'error':str(error)})
             match = re.fullmatch(r'/v1/videos/(video_[a-f0-9]+)/cancel', path)
             if match:
                 n = int(self.headers.get('Content-Length') or 0)

@@ -146,8 +146,13 @@ def main(argv=None) -> int:
         except Exception as e:   # noqa: BLE001 — 실패는 본체에 돌려준다 (모든 rank 가 같은 입력이라 같이 실패한다)
             traceback.print_exc()
             result = {"ok": False, "error": f"{type(e).__name__}: {e}", "cancelled": "H3_GENERATION_CANCELLED" in str(e)}
-            from .memory import release_request_memory
+            from .memory import release_request_memory, is_memory_failure
             release_request_memory(e)
+            if is_memory_failure(e):
+                # One failed rank cannot return to the next broadcast while peers
+                # are still waiting in attention collectives. torchrun replaces
+                # the owned ranks through the API server's bounded recovery.
+                raise
         finally:
             stop.set()
             if th:

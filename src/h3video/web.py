@@ -497,6 +497,12 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 return self._json({"service": "h3video-web", "pid": os.getpid(), "activeCount": sum(job["status"] in ("pending", "queued", "running") for job in app.store.list()) + len(app.studio.active) + len(app.motion.active) + len(app.references.active)})
             if p == "/api/health":
                 return self._json(app.health())
+            engine_status=re.fullmatch(r'/api/engines/(fl2va|ref2va)(?:/(video_[a-f0-9]+))?',p)
+            if engine_status:
+                target,job=engine_status.groups()
+                client=app.client if target=='fl2va' else app.ref_client
+                try:return self._json(client.status(job) if job else client._request('GET','/health',timeout=3))
+                except H3Error as error:return self._json({'error':str(error)},503)
             if p == "/api/feed":
                 return self._json(app.feed())
             if p == "/api/plan":
@@ -578,6 +584,18 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 return self._json({"error": str(e)}, 400)
 
         def _do_post(self):
+            engine_recovery=re.fullmatch(r'/api/engines/(fl2va|ref2va)/recover',urllib.parse.urlparse(self.path).path)
+            if engine_recovery:
+                if not self.headers.get('Content-Type','').startswith('application/json'):
+                    return self._json({'error':'JSON 요청이 필요합니다.'},415)
+                size=int(self.headers.get('Content-Length') or 0)
+                if size>1024:return self._json({'error':'요청이 너무 큽니다.'},413)
+                if size:self.rfile.read(size)
+                active=sum(job['status'] in ('pending','queued','running') for job in app.store.list())+len(app.studio.active)
+                if active:return self._json({'error':'진행 중인 영상을 중지하고 저장한 뒤 모델을 복구하세요.'},409)
+                client=app.client if engine_recovery[1]=='fl2va' else app.ref_client
+                try:return self._json(client.recover(),202)
+                except H3Error as error:return self._json({'error':'영상 엔진 복구 요청 실패: '+str(error)},503)
             p = urllib.parse.urlparse(self.path).path
             from .motion_proxy import motion_route
             if motion_route(self, app, cors_origins):

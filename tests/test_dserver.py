@@ -176,6 +176,69 @@ class FakeRunEngine:
 
 
 class HttpTest(unittest.TestCase):
+    def test_oom_retries_lower_resolution_with_same_prompt_seed_duration_and_api_survives(self):
+        original=self.engine.run
+        calls=[]
+        def failing(plan,out,progress):
+            calls.append(dict(plan))
+            if len(calls)<3:raise MemoryError('CUDA out of memory')
+            return original(plan,out,progress)
+        self.engine.run=failing
+        vid=self.client.submit(VideoRequest(prompt='same scene',task='t2va',seed=41,duration_seconds=8))
+        self.client.wait(vid,poll=.01,timeout=5)
+        self.assertEqual([p['short_edge'] for p in calls],[768,576,448])
+        self.assertTrue(all(p['prompt']=='same scene' and p['seed']==41 and p['seconds']==8 for p in calls))
+        self.assertTrue(self.client.healthy())
+
+    def test_worker_death_recovers_without_exiting_other_servers(self):
+        original=self.engine.run
+        calls=[]
+        def dying(plan,out,progress):
+            calls.append(plan)
+            if len(calls)==1:raise dserver.WorkerDied('worker process ended')
+            return original(plan,out,progress)
+        self.engine.run=dying
+        vid=self.client.submit(VideoRequest(prompt='after worker death',task='t2va'))
+        self.client.wait(vid,poll=.01,timeout=5)
+        self.assertEqual(len(calls),2);self.assertTrue(self.client.healthy())
+
+    def test_repeated_oom_is_bounded_and_next_request_can_still_run(self):
+        original=self.engine.run
+        calls=[]
+        def failing(plan,out,progress):
+            calls.append(plan)
+            raise MemoryError('CUDA out of memory')
+        self.engine.run=failing
+        vid=self.client.submit(VideoRequest(prompt='too big',task='t2va'))
+        with self.assertRaises(H3Error):self.client.wait(vid,poll=.01,timeout=5)
+        self.assertEqual(len(calls),3)
+        self.engine.run=original
+        vid=self.client.submit(VideoRequest(prompt='new scene',task='t2va'))
+        self.client.wait(vid,poll=.01,timeout=5)
+        self.assertTrue(self.client.healthy())
+
+    def test_explicit_model_recovery_keeps_api_up(self):
+        data=self.client.recover()
+        self.client.wait(data['id'],poll=.01,timeout=5)
+        self.assertTrue(self.client.healthy())
+
+    def test_web_model_recovery_routes_to_configured_engine(self):
+        import json,urllib.request
+        from h3video.web import App,make_handler
+        app=App(self.client.endpoint,self.client.endpoint,Path(self.tmp.name)/'web',None,poll=.01)
+        web=ThreadingHTTPServer(('127.0.0.1',0),make_handler(app,{'*'}))
+        threading.Thread(target=web.serve_forever,daemon=True).start()
+        try:
+            base=f'http://127.0.0.1:{web.server_address[1]}'
+            request=urllib.request.Request(base+'/api/engines/fl2va/recover',data=b'{}',headers={'Content-Type':'application/json'},method='POST')
+            with urllib.request.urlopen(request) as response:
+                self.assertEqual(response.status,202);job=json.load(response)
+            self.client.wait(job['id'],poll=.01,timeout=5)
+            with urllib.request.urlopen(base+'/api/engines/fl2va/'+job['id']) as response:
+                self.assertEqual(json.load(response)['status'],'completed')
+        finally:
+            web.shutdown();web.server_close();app.studio.close();app.motion.close()
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.engine = FakeRunEngine()

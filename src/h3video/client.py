@@ -159,6 +159,9 @@ class H3Client:
                 continue
         return False
 
+    def recover(self):
+        return self._request('POST','/v1/recover',{},timeout=10)
+
     def max_seconds(self, aspect: str, short_edge: int, keyframes: int = 1, images: int = 0, video_seconds: float = 0,
                     timeout: float = 10.0):
         """서버 GPU 에 들어가는 한 장면의 최대 초. 모르면 None (옛 서버·sglang·여유 모름)."""

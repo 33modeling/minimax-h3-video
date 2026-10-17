@@ -6,11 +6,13 @@ const pause=(ms,signal)=>new Promise((resolve,reject)=>{
 const helperAddress=base=>{const url=new URL(base||location.origin,location.origin);url.port='8798';url.pathname='/';url.search=url.hash=url.username=url.password='';return url.origin;};
 export function mountServerControls(root,{getWebBase,kind='storybook-web',getProvider=()=> 'qwen-image',getRecovery=()=>null,onConnected=()=>{}}){
  if(!root||root.dataset.mounted)return;root.dataset.mounted='true';
+ installWorkspaceLayout();
  if(!document.getElementById('maker-server-control-style')){const style=document.createElement('style');style.id='maker-server-control-style';style.textContent='.maker-server-control{box-sizing:border-box;max-width:1540px;margin:16px auto;padding:16px 20px;border:1px solid #cbd9ce;border-radius:12px;background:#f4f7ef;color:#29463b;font:14px/1.6 system-ui}.maker-server-control>div{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.maker-server-control strong{margin-right:auto}.maker-server-control button{min-height:44px;padding:9px 14px;border:1px solid #abc1b1;border-radius:8px;background:white;color:#29463b;font:600 13px system-ui;cursor:pointer}.maker-server-control button:disabled{opacity:.5;cursor:wait}.maker-server-control [data-recover-generation]{background:#29463b;color:white;border-color:#29463b}.maker-server-control progress{width:100%;height:8px;margin-top:12px;accent-color:#29463b}.maker-server-control details>div{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.maker-server-control p{margin:8px 0 0;overflow-wrap:anywhere}.maker-server-control details{margin-top:8px}.maker-server-control summary{cursor:pointer}.maker-server-control label{display:block;margin-top:10px}.maker-server-control input{box-sizing:border-box;display:block;width:100%;min-height:44px;padding:8px;border:1px solid #abc1b1;border-radius:8px;background:white;color:#29463b;font:14px system-ui}.maker-server-control [hidden]{display:none!important}.maker-server-control .maker-recovery-heading{display:flex;justify-content:space-between;gap:12px;align-items:center}.maker-server-control [data-recovery-state]{padding:3px 9px;border-radius:20px;background:#e0eadf;font-size:12px}.maker-server-control .maker-recovery-settings{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0}.maker-server-control .maker-recovery-settings label{margin:0;flex:1 1 220px}.maker-server-control select{box-sizing:border-box;width:100%;min-height:44px;padding:8px;border:1px solid #abc1b1;border-radius:8px;background:white;color:#29463b;font:14px system-ui}.maker-server-control [data-cancel-recovery]{color:#a63c29;border-color:#d4a896}.maker-server-control [data-server-log-panel]{margin-top:14px;border-top:1px solid #cbd9ce;padding-top:14px}.maker-server-control [data-server-log-panel]>div{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.maker-server-control [data-server-log-panel] label{margin:0;display:flex;gap:6px;align-items:center}.maker-server-control [data-server-log-panel] input{width:18px;min-height:18px}.maker-server-control pre{box-sizing:border-box;background:#17251e;color:#e5f1e9;padding:14px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;font:12px/1.6 ui-monospace,monospace}.maker-server-control .error{color:#a63c29}@media(max-width:560px){.maker-server-control{margin:10px;padding:14px}.maker-server-control>div strong{flex-basis:100%}.maker-server-control>div button{flex:1 1 140px}}';document.head.append(style);}
  const video=kind==='video-web';
  root.className='maker-server-control';root.setAttribute('aria-label',video?'영상 작업 복구':'이미지 생성 복구');
  root.innerHTML=`<div class="maker-recovery-heading"><strong>${video?'영상 작업 복구':'이미지 작업 복구'}</strong><span data-recovery-state>준비</span></div><div class="maker-recovery-settings"><label>${video?'남은 영상 해상도 · 짧은 변':'남은 그림 해상도 · 긴 변'}<select data-recovery-size>${video?'<option value="576">최대 576px · 가벼운 생성</option><option value="448">최대 448px · 메모리 절약</option>':'<option value="512">최대 512px · 메모리 절약</option><option value="768">최대 768px</option>'}<option value="0">현재 설정 유지</option></select></label><button type="button" data-recover-generation>${video?'저장한 영상 이어 만들기':'생성 복구 · 이어 만들기'}</button><button type="button" data-cancel-recovery hidden>복구 대기 취소</button></div><p role="status" aria-live="polite">${video?'중지한 작업을 저장하고 남은 장면부터 이어 만듭니다. 완성한 영상은 보관합니다.':'진행 중인 작업을 저장하고 이미지 모델을 다시 켠 뒤 남은 그림만 이어 만듭니다. 완성한 그림은 보관합니다.'}</p><progress data-recovery-progress max="4" value="0" hidden aria-label="복구 진행"></progress><div class="maker-server-actions"><button type="button" data-restart-web>웹 서버만 다시 켜기</button>${video?'':'<button type="button" data-restart-vllm>이미지 모델만 다시 켜기</button><button type="button" data-restart-image>선택 이미지 모델만 다시 켜기</button>'}</div><details><summary>서버 연결·상세 설정</summary><p>${video?'웹 서버 재시작은 영상 생성 엔진을 끄지 않습니다. 영상 엔진 연결 오류는 아래 상태에서 확인하세요.':'웹 서버와 이미지 모델은 각각 다시 켤 수 있습니다. 모델을 다시 불러오는 동안에는 복구 대기를 취소할 수 있습니다.'}</p><label>웹 서버 복구 주소<input type="url" data-control-web placeholder="자동 · 웹 서버 PC의 8798 포트"></label><label ${video?'hidden':''}>이미지 서버 복구 주소<input type="url" data-control-image placeholder="자동 · 이미지 서버 PC의 8798 포트"></label><label>웹 복구 접속 키 (설정한 경우)<input type="password" autocomplete="off" data-key-web></label><label ${video?'hidden':''}>이미지 복구 접속 키 (설정한 경우)<input type="password" autocomplete="off" data-key-image></label><button type="button" data-control-check>서버 연결 확인</button></details>`;
  const status=root.querySelector('[role=status]'),q=selector=>root.querySelector(selector),key='maker-control.'+kind;
+ if(video)root.querySelector('.maker-server-actions').insertAdjacentHTML('beforeend','<button type="button" data-recover-video="fl2va">영상 모델 복구</button><button type="button" data-recover-video="ref2va">참고 영상 모델 복구</button>');
  root.insertAdjacentHTML('beforeend',`<button type="button" data-show-server-logs data-log-control>${video?'영상 웹 서버 로그':'이미지 서버 로그'}</button><section data-server-log-panel hidden aria-label="서버 로그"><div><strong>서버 로그</strong><button type="button" data-log-refresh data-log-control>새로고침</button><button type="button" data-log-copy data-log-control>로그 복사</button><button type="button" data-log-save data-log-control>파일 저장</button><button type="button" data-log-close data-log-control>닫기</button><label><input type="checkbox" data-log-live checked data-log-control>실시간 갱신</label></div><p data-log-status></p><pre data-server-output tabindex="0" aria-label="서버 출력"></pre><details ${video?'hidden':''}><summary>이미지 요청·오류·재시도 기록</summary><pre data-request-output tabindex="0" aria-label="이미지 요청 기록"></pre></details></section>`);
  for(const group of ['web','image']){try{q('[data-control-'+group+']').value=localStorage.getItem(key+'.'+group)||'';q('[data-key-'+group+']').value=sessionStorage.getItem(key+'.key.'+group)||'';}catch{}}
  const message=(text,error=false)=>{status.textContent=text;status.classList.toggle('error',error);};
@@ -119,6 +121,57 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  q('[data-recover-generation]').onclick=recover;
  q('[data-restart-web]').onclick=()=>run(kind);
  if(!video){q('[data-restart-vllm]').onclick=q('[data-restart-image]').onclick=()=>{const target=selectedImage();if(target)return run(target);return exclusive(async()=>{throw Error('선택한 모델은 이 PC의 이미지 모델 재시작 대상이 아닙니다.');});};}
+ if(video)for(const button of root.querySelectorAll('[data-recover-video]'))button.onclick=()=>exclusive(async()=>{
+  const target=button.dataset.recoverVideo,base=(getWebBase()||location.origin).replace(/\/$/,'');
+  message('영상 모델을 복구하고 있습니다. 기존 로컬 모델을 다시 사용합니다.');
+  const response=await fetch(base+'/api/engines/'+target+'/recover',{method:'POST',headers:{'content-type':'application/json'},body:'{}',signal:boundedSignal(12000)}),data=await response.json();
+  if(!response.ok||!data.id)throw Error(data.error||'영상 모델 복구를 지원하는 서버인지 확인하세요.');
+  for(let n=0;n<1800;n++){
+   checkCancelled();await pause(1000,controller.signal);
+   const response=await fetch(base+'/api/engines/'+target+'/'+data.id,{signal:boundedSignal(10000)}),state=await response.json();
+   if(!response.ok)throw Error(state.error||'영상 모델 복구 상태 확인 실패');
+   if(state.status==='failed')throw Error(state.error||'영상 모델 복구 실패');
+   if(state.status==='completed'){await onConnected(kind);message('영상 모델 복구 완료 · 저장한 영상은 보관되어 있습니다. 이어 만들기를 누르세요.');return;}
+  }
+  throw Error('영상 모델 시작 확인 시간이 지났습니다. 서버 로그를 확인하세요.');
+ });
  q('[data-control-check]').onclick=()=>run(kind,true);
  return {restart:target=>run(target||kind),recover,showLogs};
+}
+
+function installWorkspaceLayout(){
+ if(document.getElementById('maker-workspace-layout'))return;
+ const style=document.createElement('style');style.id='maker-workspace-layout';
+ style.textContent=`
+ .maker-server-control{width:auto;min-width:0;margin:16px clamp(16px,3vw,42px);font-size:13px}
+ .maker-server-control *{box-sizing:border-box;min-width:0}
+ .maker-server-control .maker-recovery-heading{flex-wrap:nowrap}
+ .maker-server-control .maker-recovery-heading strong{flex-basis:auto;margin:0;font-size:15px}
+ .maker-server-control [data-recovery-state]{flex-shrink:0;white-space:nowrap}
+ .maker-server-control button{max-width:100%;overflow-wrap:anywhere;line-height:1.5}
+ .maker-server-control .maker-server-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));margin:12px 0 8px}
+ .maker-server-control .maker-recovery-settings label{flex:1 1 200px;margin:0}
+ .maker-server-control>p{font-size:12px;line-height:1.6}
+ .maker-server-control>details>label{margin:12px 0}
+ .maker-server-control pre{max-width:100%;tab-size:2}
+ body:has(#jobControls,#imageJobDock,#liveJobControls){padding-bottom:var(--maker-dock-space,0px)!important}
+ #jobControls,#imageJobDock,#liveJobControls{max-height:45dvh;overflow-y:auto;overscroll-behavior:contain}
+ @media(max-width:560px){
+ .maker-server-control{margin:12px 16px;padding:14px}
+ .maker-server-control .maker-recovery-heading strong{flex-basis:auto}
+ .maker-server-control .maker-server-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .maker-server-control .maker-server-actions button{font-size:12px;padding:8px}
+ .maker-server-control .maker-recovery-settings{align-items:stretch;gap:8px}
+ .maker-server-control .maker-recovery-settings label{flex-basis:100%}
+ .maker-server-control .maker-recovery-settings button{flex:1 1 130px}
+ .maker-server-control [data-server-log-panel]>div>strong{flex-basis:100%}
+ }
+ `;document.head.append(style);
+ const docks=[...document.querySelectorAll('#jobControls,#imageJobDock,#liveJobControls')];
+ let scheduled=false;
+ const update=()=>{scheduled=false;const height=Math.max(0,...docks.map(el=>el.getBoundingClientRect().height));document.body.style.setProperty('--maker-dock-space',height?`${Math.ceil(height)+16}px`:'0px');};
+ const schedule=()=>{if(!scheduled){scheduled=true;requestAnimationFrame(update);}};
+ const size=new ResizeObserver(schedule),visibility=new MutationObserver(schedule);
+ for(const dock of docks){size.observe(dock);visibility.observe(dock,{attributes:true,attributeFilter:['hidden','style'],childList:true,subtree:true});}
+ window.addEventListener('resize',schedule);schedule();
 }
