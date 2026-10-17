@@ -24,7 +24,7 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  const update=()=>{const target=selectedImage(),button=q('[data-restart-image]'),standard=q('[data-restart-vllm]');if(button)button.hidden=!target||target==='vllm-image';if(standard)standard.hidden=target!=='vllm-image';};update();document.addEventListener('maker:provider-change',update);document.addEventListener('change',update);document.addEventListener('click',event=>{if(event.target.closest('[data-tab]'))update();});
  root.addEventListener('input',()=>{for(const group of ['web','image'])try{localStorage.setItem(key+'.'+group,q('[data-control-'+group+']').value.trim());sessionStorage.setItem(key+'.key.'+group,q('[data-key-'+group+']').value);}catch{}});
  async function address(target){
-  const group=target.endsWith('-web')?'web':'image',custom=q('[data-control-'+group+']').value.trim();let base=getWebBase()||location.origin;
+  const group=target.endsWith('-web')||target.startsWith('video-')?'web':'image',custom=q('[data-control-'+group+']').value.trim();let base=getWebBase()||location.origin;
   if(!custom&&group==='image'){
    const cacheKey='maker-control.image-host.'+base+'.'+target;
    try{const response=await fetch(base.replace(/\/$/,'')+'/api/config',{signal:boundedSignal(2000)});if(!response.ok)throw Error();const config=await response.json(),endpoint=config[target==='image-turbo'?'qwenTurbo':target==='image-quantized'?'qwenQuantized':'qwen'];if(endpoint){const selected=new URL(endpoint.split(',')[0].trim()),webHost=new URL(getWebBase()||location.origin).hostname;if(['localhost','127.0.0.1','[::1]'].includes(selected.hostname)&&!['localhost','127.0.0.1','[::1]'].includes(webHost))selected.hostname=webHost;base=selected.href;try{localStorage.setItem(cacheKey,helperAddress(base));}catch{}}}catch{try{base=localStorage.getItem(cacheKey)||base;}catch{}}
@@ -106,7 +106,7 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
   checkCancelled();if(!online)await restart(kind);checkCancelled();
   progress.value=1;
   if(video){
-   if(recovery){message('2/4 · 선택한 영상 작업을 중지하고 저장하고 있습니다…');await recovery.prepare({signal:controller.signal});checkCancelled();progress.value=2;message('3/4 · 영상 엔진과 저장한 장면을 확인하고 있습니다…');const resumed=await recovery.resume({maxEdge:Number(q('[data-recovery-size]').value),signal:controller.signal});checkCancelled();await onConnected(kind);progress.value=4;q('details').open=false;message(resumed?'복구 완료 · 완성한 영상은 보관하고 남은 장면부터 이어 만들고 있습니다.':'복구 완료 · 작업실에 연결되었습니다. 저장한 영상을 선택하면 이어 만들 수 있습니다.');}
+   if(recovery){message('2/4 · 선택한 영상 작업을 중지하고 저장하고 있습니다…');await recovery.prepare({signal:controller.signal});checkCancelled();progress.value=2;message('3/4 · 영상 엔진과 저장한 장면을 확인하고 있습니다…');const engine=await recovery.engine?.({signal:controller.signal});if(engine){const health=await fetch((getWebBase()||location.origin).replace(/\/$/,'')+'/api/health',{signal:boundedSignal(15000)}).then(response=>response.json());if(!health[engine])await recoverVideoEngine(engine);}checkCancelled();const resumed=await recovery.resume({maxEdge:Number(q('[data-recovery-size]').value),signal:controller.signal});checkCancelled();await onConnected(kind);progress.value=4;q('details').open=false;message(resumed?'복구 완료 · 완성한 영상은 보관하고 남은 장면부터 이어 만들고 있습니다.':'복구 완료 · 작업실에 연결되었습니다. 저장한 영상을 선택하면 이어 만들 수 있습니다.');}
    else{await onConnected(kind);checkCancelled();progress.value=4;q('details').open=false;message('복구 완료 · 작업실에 다시 연결되었습니다. 중지한 영상은 아래 작업 목록에서 선택해 이어 만드세요.');}return;
   }
   const provider=await recovery?.resolve({signal:controller.signal})||getProvider()||'qwen-image',target=imageTarget(provider);
@@ -121,11 +121,11 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  q('[data-recover-generation]').onclick=recover;
  q('[data-restart-web]').onclick=()=>run(kind);
  if(!video){q('[data-restart-vllm]').onclick=q('[data-restart-image]').onclick=()=>{const target=selectedImage();if(target)return run(target);return exclusive(async()=>{throw Error('선택한 모델은 이 PC의 이미지 모델 재시작 대상이 아닙니다.');});};}
- if(video)for(const button of root.querySelectorAll('[data-recover-video]'))button.onclick=()=>exclusive(async()=>{
-  const target=button.dataset.recoverVideo,base=(getWebBase()||location.origin).replace(/\/$/,'');
+ async function recoverVideoEngine(target){
+  const base=(getWebBase()||location.origin).replace(/\/$/,'');
   message('영상 모델을 복구하고 있습니다. 기존 로컬 모델을 다시 사용합니다.');
   const response=await fetch(base+'/api/engines/'+target+'/recover',{method:'POST',headers:{'content-type':'application/json'},body:'{}',signal:boundedSignal(12000)}),data=await response.json();
-  if(!response.ok||!data.id)throw Error(data.error||'영상 모델 복구를 지원하는 서버인지 확인하세요.');
+  if(!response.ok||!data.id){await restart('video-'+target);checkCancelled();await onConnected(kind);message('영상 모델을 다시 시작했습니다. 저장한 작업에서 이어 만드세요.');return;}
   for(let n=0;n<1800;n++){
    checkCancelled();await pause(1000,controller.signal);
    const response=await fetch(base+'/api/engines/'+target+'/'+data.id,{signal:boundedSignal(10000)}),state=await response.json();
@@ -134,7 +134,8 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
    if(state.status==='completed'){await onConnected(kind);message('영상 모델 복구 완료 · 저장한 영상은 보관되어 있습니다. 이어 만들기를 누르세요.');return;}
   }
   throw Error('영상 모델 시작 확인 시간이 지났습니다. 서버 로그를 확인하세요.');
- });
+ }
+ if(video)for(const button of root.querySelectorAll('[data-recover-video]'))button.onclick=()=>exclusive(async()=>{await getRecovery()?.prepare({signal:controller.signal});checkCancelled();await recoverVideoEngine(button.dataset.recoverVideo);});
  q('[data-control-check]').onclick=()=>run(kind,true);
  return {restart:target=>run(target||kind),recover,showLogs};
 }

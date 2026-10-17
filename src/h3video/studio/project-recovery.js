@@ -14,6 +14,11 @@ export function createVideoRecovery({getBase,kind,id,save=async()=>{}}){
   return {data,busy:['pending','running','pausing'].includes(data.status)};
  }
  return {
+  async engine({signal}={}){
+   const {data}=await read(signal);
+   const needs=kind!=='studio/projects'||data.clips.some(c=>c.pendingCandidates?.some(p=>['paused','failed','pending'].includes(p.status)));
+   return needs?(kind==='jobs'&&data.task==='ref2va'?'ref2va':'fl2va'):null;
+  },
   async prepare({signal}={}){
    let state=await read(signal);
    if(state.busy){await request(path+'/stop',{},signal);for(let n=0;n<120;n++){signal?.throwIfAborted();await new Promise(resolve=>setTimeout(resolve,250));state=await read(signal);if(!state.busy)break;}}
