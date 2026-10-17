@@ -18,7 +18,7 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  const boundedSignal=ms=>controller?AbortSignal.any([controller.signal,AbortSignal.timeout(ms)]):AbortSignal.timeout(ms);
  const imageTarget=provider=>({'qwen-image':'vllm-image','qwen-image-turbo':'image-turbo','qwen-image-quantized':'image-quantized'}[provider]||null);
  const selectedImage=()=>imageTarget(getProvider()||'qwen-image');
- const update=()=>{const target=selectedImage(),button=q('[data-restart-image]'),standard=q('[data-restart-vllm]');if(button)button.hidden=!target||target==='vllm-image';if(standard)standard.hidden=target!=='vllm-image';};update();document.addEventListener('change',update);document.addEventListener('click',event=>{if(event.target.closest('[data-tab]'))update();});
+ const update=()=>{const target=selectedImage(),button=q('[data-restart-image]'),standard=q('[data-restart-vllm]');if(button)button.hidden=!target||target==='vllm-image';if(standard)standard.hidden=target!=='vllm-image';};update();document.addEventListener('maker:provider-change',update);document.addEventListener('change',update);document.addEventListener('click',event=>{if(event.target.closest('[data-tab]'))update();});
  root.addEventListener('input',()=>{for(const group of ['web','image'])try{localStorage.setItem(key+'.'+group,q('[data-control-'+group+']').value.trim());sessionStorage.setItem(key+'.key.'+group,q('[data-key-'+group+']').value);}catch{}});
  async function address(target){
   const group=target.endsWith('-web')?'web':'image',custom=q('[data-control-'+group+']').value.trim();let base=getWebBase()||location.origin;
@@ -85,7 +85,7 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  });}
  q('[data-recover-generation]').onclick=recover;
  q('[data-restart-web]').onclick=()=>run(kind);
- if(!video){q('[data-restart-vllm]').onclick=()=>run('vllm-image');q('[data-restart-image]').onclick=()=>run(selectedImage());}
+ if(!video){q('[data-restart-vllm]').onclick=q('[data-restart-image]').onclick=()=>{const target=selectedImage();if(target)return run(target);return exclusive(async()=>{throw Error('선택한 모델은 이 PC의 이미지 모델 재시작 대상이 아닙니다.');});};}
  q('[data-control-check]').onclick=()=>run(kind,true);
  return {restart:target=>run(target||kind),recover};
 }
