@@ -493,6 +493,8 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                                    "ref_endpoint": app.ref_endpoint, "output_dir": str(app.store.root),
                                    "model": spec.MODEL_ID, "audio": spec.AUDIO, "languages": spec.LANGUAGES, "hardware": spec.PARAMS,
                                    "scene_min": spec.SCENE_MIN, "sizes": list(SIZES), "steps_default": spec.STEPS_DEFAULT})
+            if p == "/api/runtime":
+                return self._json({"service": "h3video-web", "pid": os.getpid(), "activeCount": sum(job["status"] in ("pending", "queued", "running") for job in app.store.list()) + len(app.studio.active) + len(app.motion.active) + len(app.references.active)})
             if p == "/api/health":
                 return self._json(app.health())
             if p == "/api/feed":

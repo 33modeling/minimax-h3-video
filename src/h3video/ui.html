@@ -242,7 +242,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
     <button type="button" class="btn main" id="base-save">연결</button></div>
   <div class="help" id="conn-msg"></div>
 </div></div>
-<div class="banners" id="banners"></div>
+<section id="serverControls"></section><div class="banners" id="banners"></div>
 <div style="max-width:1540px;margin:18px auto 0;padding:0 28px;display:flex;gap:12px;flex-wrap:wrap"><button class="btn main" id="openVideoStudio" type="button" disabled>영상 편집실 · 초안·보정·AI 업스케일·자막·출력</button><button class="btn main" id="openMotionStudio" type="button" disabled>Hyperframes · 모션·타임라인 영상</button></div>
 <section id="videoWorkbench" class="vw" hidden aria-label="영상 편집실"></section>
 <main class="layout">
@@ -1157,6 +1157,7 @@ addEventListener('message',event=>{
  const data=event.data.project;if(!data?.board?.scenes)return;
  setMode('story');addFiles('json',[new File([JSON.stringify(data)],'frame-storyboard.json',{type:'application/json'})]);toast('영상 콘티를 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');
 });
+import('./studio/server-control.js').then(({mountServerControls})=>mountServerControls(document.getElementById('serverControls'),{kind:'video-web',getWebBase:()=>BASE||location.origin,onConnected:async()=>{await loadSpec();await checkHealth();await poll();}})).catch(error=>toast(error.message));
 import('./studio/motion.js').then(({mountMotionStudio})=>mountMotionStudio({api,full,toast})).catch(error=>toast('모션 편집기를 불러오지 못했습니다: '+error.message));
 import('./studio/editor.js').then(({mountVideoStudio})=>mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null})).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));
 if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');
