@@ -26,7 +26,10 @@ class QwenRetouchTest(unittest.TestCase):
     def test_turbo_edit_uses_separate_endpoint_eight_steps_cfg_one_and_preserves_video(self):
         self.run_edit(True)
 
-    def run_edit(self, turbo):
+    def test_quantized_edit_uses_independent_local_model_and_preserves_video(self):
+        self.run_edit(False, quantized=True)
+
+    def run_edit(self, turbo, quantized=False):
         calls=[]
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*args):pass
@@ -38,15 +41,15 @@ class QwenRetouchTest(unittest.TestCase):
         server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
         self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
         p=self.create();c=p['clips'][0];original=self.studio.file(p['id'],c['variants'][0]['file']).read_bytes()
-        prefix='QWEN_IMAGE_TURBO' if turbo else 'QWEN_IMAGE'
+        prefix='QWEN_IMAGE_QUANTIZED' if quantized else 'QWEN_IMAGE_TURBO' if turbo else 'QWEN_IMAGE'
         with patch.dict(os.environ,{prefix+'_BASE_URL':f'http://127.0.0.1:{server.server_address[1]}',prefix+'_MODEL':'local-qwen-image-edit'}):
-            self.studio.start(p['id'],'upscale',{'clip':c['id'],'scale':2,'engine':'qwen-turbo-realesrgan' if turbo else 'qwen-realesrgan','retouchPrompt':'Reduce noise, keep text unchanged.'})
+            self.studio.start(p['id'],'upscale',{'clip':c['id'],'scale':2,'engine':'qwen-quantized-realesrgan' if quantized else 'qwen-turbo-realesrgan' if turbo else 'qwen-realesrgan','retouchPrompt':'Reduce noise, keep text unchanged.'})
             result=self.wait(p['id'])
         self.assertEqual(len(calls),4);self.assertIn('Reduce noise',calls[0]['prompt']);self.assertEqual(calls[0]['size'],'96x64')
         self.assertEqual(calls[0]['model'],'local-qwen-image-edit')
         self.assertEqual(calls[0]['num_inference_steps'],'8' if turbo else '40')
         self.assertEqual(calls[0]['true_cfg_scale'],'1' if turbo else '4')
-        variant=result['clips'][0]['variants'][-1];self.assertEqual(variant['engine'],'Qwen Image Turbo + Real-ESRGAN' if turbo else 'Qwen Image Edit + Real-ESRGAN')
+        variant=result['clips'][0]['variants'][-1];self.assertEqual(variant['engine'],'Qwen Image UC GGUF + Real-ESRGAN' if quantized else 'Qwen Image Turbo + Real-ESRGAN' if turbo else 'Qwen Image Edit + Real-ESRGAN')
         self.assertEqual((variant['width'],variant['height']),(192,128));self.assertTrue(variant['audio'])
         self.assertEqual(original,self.studio.file(p['id'],c['variants'][0]['file']).read_bytes())
 

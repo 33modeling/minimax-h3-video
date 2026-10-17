@@ -11,9 +11,10 @@ from PIL import Image
 
 def edit(v):
     turbo=v.get('provider')=='qwen-image-turbo'
-    prefix='QWEN_IMAGE_TURBO' if turbo else 'QWEN_IMAGE'
-    endpoint=os.environ.get(prefix+'_BASE_URL','http://127.0.0.1:8093' if turbo else 'http://127.0.0.1:8091').rstrip('/')
-    model=os.environ.get(prefix+'_MODEL','Qwen/Qwen-Image-2.1-Turbo' if turbo else 'Qwen/Qwen-Image-2.1')
+    quantized=v.get('provider')=='qwen-image-quantized'
+    prefix='QWEN_IMAGE_QUANTIZED' if quantized else 'QWEN_IMAGE_TURBO' if turbo else 'QWEN_IMAGE'
+    endpoint=os.environ.get(prefix+'_BASE_URL','http://127.0.0.1:8094' if quantized else 'http://127.0.0.1:8093' if turbo else 'http://127.0.0.1:8091').rstrip('/')
+    model=os.environ.get(prefix+'_MODEL','abenzerps/Qwen-Image-2.1-Uncensored-Quantized' if quantized else 'Qwen/Qwen-Image-2.1-Turbo' if turbo else 'Qwen/Qwen-Image-2.1')
     image=Path(v['input']);size=Image.open(image).size
     boundary='qwen-'+uuid.uuid4().hex;parts=[]
     fields=dict(model=model,prompt=v['prompt'],size=f'{size[0]}x{size[1]}',response_format='b64_json',

@@ -501,9 +501,9 @@ class VideoStudio:
                 options['scale'] = int(number(options.get('scale', 2), 2, 4, '업스케일 배율'))
                 if options['scale'] not in (2, 4) or options.get('model', 'illustration') not in ('illustration', 'photo', 'anime'):
                     raise H3Error('업스케일 배율·모델을 확인하세요.')
-                if options.get('engine', 'realesrgan') not in ('realesrgan', 'qwen-realesrgan', 'qwen-turbo-realesrgan'):
+                if options.get('engine', 'realesrgan') not in ('realesrgan', 'qwen-realesrgan', 'qwen-turbo-realesrgan', 'qwen-quantized-realesrgan'):
                     raise H3Error('업스케일 방식을 확인하세요.')
-                if options.get('engine') in ('qwen-realesrgan', 'qwen-turbo-realesrgan'):
+                if options.get('engine') in ('qwen-realesrgan', 'qwen-turbo-realesrgan', 'qwen-quantized-realesrgan'):
                     options['retouchPrompt'] = str(options.get('retouchPrompt') or '').strip()
                     if not options['retouchPrompt']:
                         raise H3Error('Qwen Image 보정 지시를 입력하세요.')
@@ -733,7 +733,7 @@ class VideoStudio:
                 continue
             temporary = restored / (image.stem + '.working.png')
             source_image = image
-            if options.get('engine') in ('qwen-realesrgan', 'qwen-turbo-realesrgan'):
+            if options.get('engine') in ('qwen-realesrgan', 'qwen-turbo-realesrgan', 'qwen-quantized-realesrgan'):
                 source_image = retouched / image.name
                 if not source_image.exists():
                     self.progress(p, .05 + .85 * index / len(images), f'Qwen Image 보정 {index+1}/{len(images)} · 원본 구도 유지')
@@ -742,7 +742,7 @@ class VideoStudio:
                         raise H3Error('이미지 편집 도구를 설치하세요: npm run install:studio')
                     self.command(p, [python, ROOT / 'scripts/qwen-retouch.py'],
                                  dict(input=str(image), output=str(source_image), seed=0,
-                                      provider='qwen-image-turbo' if options.get('engine')=='qwen-turbo-realesrgan' else 'qwen-image',
+                                      provider='qwen-image-quantized' if options.get('engine')=='qwen-quantized-realesrgan' else 'qwen-image-turbo' if options.get('engine')=='qwen-turbo-realesrgan' else 'qwen-image',
                                       prompt='Preserve exact composition, identities, geometry and typography across this video frame. ' + options['retouchPrompt']))
             self.progress(p, .05 + .85 * index / len(images), f'AI 업스케일 {index+1}/{len(images)} 프레임 · 완료한 프레임 자동 저장')
             self.command(p, [binary, '-i', source_image, '-o', temporary, '-s', str(options['scale']), '-t', '64',
@@ -761,7 +761,7 @@ class VideoStudio:
             raise H3Error('업스케일 결과 길이가 달라 원본을 유지했습니다.')
         current = self.find(p, clip['id'])
         variant = self.copy_variant(p, current, final, 'ai-upscale', scale=options['scale'], model=model,
-                                    bakedCorrections=clip['corrections'], engine='Qwen Image Turbo + Real-ESRGAN' if options.get('engine')=='qwen-turbo-realesrgan' else 'Qwen Image Edit + Real-ESRGAN' if options.get('engine')=='qwen-realesrgan' else 'Real-ESRGAN',
+                                    bakedCorrections=clip['corrections'], engine='Qwen Image UC GGUF + Real-ESRGAN' if options.get('engine')=='qwen-quantized-realesrgan' else 'Qwen Image Turbo + Real-ESRGAN' if options.get('engine')=='qwen-turbo-realesrgan' else 'Qwen Image Edit + Real-ESRGAN' if options.get('engine')=='qwen-realesrgan' else 'Real-ESRGAN',
                                     retouchPrompt=options.get('retouchPrompt'), parent=variant['id'])
         current['selected'] = variant['id']
         current['corrections'] = copy.deepcopy(DEFAULT_COLOR)
