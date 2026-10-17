@@ -171,6 +171,11 @@ class VideoStudio:
                 job = self.app.store.get(candidate['job'])
                 candidate['status'] = job.status if job else 'missing'
                 candidate['error'] = job.error if job else '작업 기록 없음'
+                if job:
+                    active_scene = next((s for s in job.scenes if s.status != 'completed'), None)
+                    candidate['progress'] = (sum(1 if s.status == 'completed' else s.progress for s in job.scenes) / len(job.scenes)) if job.scenes else None
+                    candidate['stage'] = active_scene.stage if active_scene else None
+                    candidate['elapsed'] = job.to_json()['elapsed']
         for output in result.get('outputs', []):
             output['url'] = url(output['file'])
         result['captionsStale'] = bool(result.get('captionTimeline') and result['captionTimeline'] != timeline_key(project))

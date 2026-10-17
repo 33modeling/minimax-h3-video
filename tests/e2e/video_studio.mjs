@@ -13,9 +13,10 @@ try{
  const host=process.env.H3_STUDIO_UI||config.url+'/';
  browser=await chromium.launch({headless:true});const context=await browser.newContext({acceptDownloads:true,viewport:{width:1440,height:1000}});
  await context.addInitScript(url=>localStorage.setItem('h3video.server',url),config.url);
- if(process.env.H3_STUDIO_UI){const worker=await fs.readFile('/home/kms/dev/33modeling-site/_worker.js','utf8'),pw=worker.match(/const PASSWORD = "([^"]+)"/)[1];assert.ok((await context.request.post(new URL('/',host).href,{form:{pw}})).ok());await context.grantPermissions(['local-network-access']);}
+ if(process.env.H3_STUDIO_UI){const local=process.env.H3_STUDIO_PROFILE==='local',worker=await fs.readFile(local?'/home/kms/dev/33modeling-local-arcade/server.mjs':'/home/kms/dev/33modeling-site/_worker.js','utf8'),pw=worker.match(local?/AUTH_PASSWORD = process.env.ARCADE_PASSWORD \|\| '([^']+)'/:/const PASSWORD = "([^"]+)"/)[1];assert.ok((await context.request.post(new URL('/',host).href,{form:{pw}})).ok());await context.grantPermissions(['local-network-access']);}
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(host);
  await page.locator('#openVideoStudio').click();const work=page.locator('#videoWorkbench');await work.locator('[data-shot="first"]').waitFor();
+ await work.locator('[data-shot="first"] [data-action="edit-shot"]').click();await page.waitForFunction(()=>document.querySelector('#videoWorkbench [data-clip-field="prompt"]')===document.activeElement);assert.match(await work.locator('[data-shot="first"]').textContent(),/영상 완성|확정됨/);
  const get=()=>fetch(config.url+'/api/studio/projects/'+config.project).then(r=>r.json());
  const settle=async()=>{await page.waitForFunction(()=>!document.querySelector('#videoWorkbench [data-status-text]')?.textContent.includes('작업을 등록하고 있습니다'));for(let n=0;n<2400;n++){const p=await get();if(!p.busy){assert.notEqual(p.task?.status,'error',p.task?.error);await page.waitForTimeout(1500);return p;}await page.waitForTimeout(100);}throw Error('editor timed out');};
  await work.locator('[data-action="move"][data-id="second"][data-direction="-1"]').click();await page.waitForTimeout(1000);assert.equal((await get()).clips[0].id,'second');

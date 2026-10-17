@@ -34,3 +34,5 @@
 }
 @media(max-width:560px){.vw{padding-inline:12px}.vw-surface{padding:12px}.vw-library{flex-wrap:wrap;max-height:170px;overflow-y:auto}.vw-library button{max-width:100%;flex:1 1 160px}}
 .vw label.vw-draft-import{display:inline-flex;align-items:center;justify-content:center;position:relative;overflow:hidden;padding:9px 14px;min-height:44px;border:1px solid var(--line);border-radius:10px;cursor:pointer;flex:1 1 145px}.vw-draft-import input{position:absolute;inset:0;opacity:0;cursor:pointer;margin:0}.vw-draft-import:focus-within{outline:3px solid var(--acc);outline-offset:3px}
+
+.vw-shot-thumbnail{width:72px;height:48px;max-width:100%;object-fit:cover;border-radius:6px}.vw-shot small{white-space:normal;overflow-wrap:anywhere}.vw-shot-controls{display:flex;flex-wrap:wrap;gap:4px}.vw-shot-controls [data-action=edit-shot]{flex-basis:100%;min-height:40px}

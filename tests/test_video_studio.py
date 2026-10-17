@@ -113,6 +113,26 @@ class VideoEditingTest(unittest.TestCase):
         with self.assertRaises(H3Error):
             self.studio.candidates(p['id'],{'clips':['scene-0']})
 
+    def test_scene_view_exposes_current_native_progress_stage_and_elapsed(self):
+        from unittest.mock import patch
+        from h3video.jobs import Scene
+        p = self.create()
+        with patch.object(self.app.worker, 'enqueue', side_effect=self.app.store.add):
+            p = self.studio.candidates(p['id'], {'clips': ['scene-0'], 'count': 1})
+        candidate = p['clips'][0]['pendingCandidates'][0]
+        job = self.app.store.get(candidate['job'])
+        job.status = 'running'
+        job.started = time.time() - 10
+        job.scenes = [Scene(0, 'first', 1, 'fl2va', status='completed', progress=1),
+                      Scene(1, 'second', 1, 'fl2va', status='in_progress', progress=.4, stage='디코딩')]
+        self.app.store.save(job)
+        current = self.studio.get(p['id'])['clips'][0]['pendingCandidates'][0]
+        self.assertAlmostEqual(current['progress'], .7)
+        self.assertEqual(current['stage'], '디코딩')
+        self.assertGreaterEqual(current['elapsed'], 10)
+        job.status = 'paused'
+        self.app.store.save(job)
+
     def test_failed_native_candidates_resume_with_lower_size_and_keep_selected_original(self):
         from unittest.mock import patch
         p=self.create();original=p['clips'][0]['selected']
