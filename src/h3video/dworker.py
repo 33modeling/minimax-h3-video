@@ -139,19 +139,22 @@ def main(argv=None) -> int:
         th = threading.Thread(target=ticker, daemon=True) if rank == 0 else None
         if th:
             th.start()
+        out = None
         try:
             out = pipe(state=state, generator=gen, output=["latents", "audio_latents"], **job["kwargs"])
             result = {"ok": True, "latents": out["latents"].cpu(), "audio_latents": out["audio_latents"].cpu()}
         except Exception as e:   # noqa: BLE001 — 실패는 본체에 돌려준다 (모든 rank 가 같은 입력이라 같이 실패한다)
             traceback.print_exc()
             result = {"ok": False, "error": f"{type(e).__name__}: {e}", "cancelled": "H3_GENERATION_CANCELLED" in str(e)}
+            from .memory import release_request_memory
+            release_request_memory(e)
         finally:
             stop.set()
             if th:
                 th.join()
-        del state, job
-        if use_cuda:
-            torch.cuda.empty_cache()
+        del out, state, job
+        from .memory import release_request_memory
+        release_request_memory(torch=torch if use_cuda else None)
         if rank == 0:
             buf = io.BytesIO()
             torch.save(result, buf)

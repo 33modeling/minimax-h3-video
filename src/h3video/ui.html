@@ -345,7 +345,7 @@ const WEB_CMD = SERVED ? 'bash scripts/web.sh' : location.origin === 'https://33
   : `bash scripts/web.sh --cors ${location.protocol === 'file:' ? "'*'" : location.origin}`;
 async function api(path, opt) {
   let r;
-  try { r = await fetch(BASE + path, opt); }
+  try { r = await fetch(BASE + path, {signal:AbortSignal.timeout(opt?.body instanceof FormData?180000:30000),...opt}); }
   catch (e) {   // 서버가 꺼졌거나 주소가 틀림 (브라우저는 'Failed to fetch' 라고만 한다)
     throw new Error(SERVED ? '웹 서버에 연결하지 못했어요. 서버 컴퓨터에서 bash scripts/web.sh 로 다시 켜세요'
       : `웹 서버(${BASE})에 연결하지 못했어요. 위의 서버 주소를 확인하세요`);
@@ -1157,7 +1157,10 @@ addEventListener('message',event=>{
  const data=event.data.project;if(!data?.board?.scenes)return;
  setMode('story');addFiles('json',[new File([JSON.stringify(data)],'frame-storyboard.json',{type:'application/json'})]);toast('영상 콘티를 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');
 });
-import('./studio/server-control.js').then(({mountServerControls})=>mountServerControls(document.getElementById('serverControls'),{kind:'video-web',getWebBase:()=>BASE||location.origin,onConnected:async()=>{await loadSpec();await checkHealth();await poll();}})).catch(error=>toast(error.message));
+Promise.all([import('./studio/server-control.js'),import('./studio/project-recovery.js')]).then(([{mountServerControls},{createVideoRecovery}])=>mountServerControls(document.getElementById('serverControls'),{kind:'video-web',getWebBase:()=>BASE||location.origin,getRecovery:()=>{
+ const [group,...parts]=liveSelection.split(':'),id=parts.join(':');if(!id)return null;
+ return createVideoRecovery({getBase:()=>BASE||location.origin,kind:group,id,save:async()=>{const pending=[];window.dispatchEvent(new CustomEvent('h3:save-project',{detail:{id,waitUntil:promise=>pending.push(promise)}}));await Promise.all(pending);}});
+},onConnected:async()=>{await loadSpec();await checkHealth();await poll();window.dispatchEvent(new Event('h3:refresh-project'));}})).catch(error=>toast(error.message));
 import('./studio/motion.js').then(({mountMotionStudio})=>mountMotionStudio({api,full,toast})).catch(error=>toast('모션 편집기를 불러오지 못했습니다: '+error.message));
 import('./studio/editor.js').then(({mountVideoStudio})=>mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null})).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));
 if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');

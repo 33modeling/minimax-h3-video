@@ -294,19 +294,27 @@ class Worker(threading.Thread):
         for scene in job.scenes:
             if not scene.video_id or scene.status == 'completed':
                 continue
-            client = self.ref_client if scene.task == 'ref2va' else self.client
-            if not hasattr(client, 'cancel'):
-                job.remote_stop = 'unsupported'
-                continue
-            try:
-                response = client.cancel(scene.video_id)
-                job.remote_stop = response.get('status')
-                if job.remote_stop in ('cancelled', 'cancelling'):
-                    scene.video_id, scene.status = None, 'pending'
-            except H3Error:
-                job.remote_stop = 'unavailable'
+            self._cancel_scene(job, scene)
         self.store.save(job)
         return job
+
+    def _cancel_scene(self, job, scene):
+        # submit() may return after the user stopped. Cancel that late request too.
+        video_id = scene.video_id
+        if not video_id or scene.status == 'completed':
+            return
+        client = self.ref_client if scene.task == 'ref2va' else self.client
+        if not hasattr(client, 'cancel'):
+            job.remote_stop = 'unsupported'
+            return
+        try:
+            response = client.cancel(video_id)
+            with self.cv:
+                job.remote_stop = response.get('status')
+                if job.remote_stop in ('cancelled', 'cancelling') and scene.video_id == video_id and scene.status != 'completed':
+                    scene.video_id, scene.status = None, 'pending'
+        except H3Error:
+            job.remote_stop = 'unavailable'
 
     def configure_recovery(self, job_id: str, short_edge: int):
         if short_edge not in (0, 448, 576, 768):
@@ -400,8 +408,16 @@ class Worker(threading.Thread):
             sc.task = req.task
             client = self.ref_client if sc.task == "ref2va" else self.client
             sc.status = "queued"; self.store.save(job)
-            if not sc.video_id:
-                sc.video_id = client.submit(req)
+            try:
+                if not sc.video_id:
+                    sc.video_id = client.submit(req)
+            except Exception:
+                if not job.stop_requested:
+                    raise
+                job.status, job.finished = 'paused', time.time()
+                self.store.save(job)
+                return
+            video_id = sc.video_id
 
             def on_progress(st, sc=sc, job=job):
                 if job.stop_requested:
@@ -413,18 +429,34 @@ class Worker(threading.Thread):
 
             try:
                 if job.stop_requested:
+                    self._cancel_scene(job, sc)
                     raise JobStopped()
-                st = client.wait(sc.video_id, poll=self.poll, timeout=WAIT_TIMEOUT, on_progress=on_progress)
+                st = client.wait(video_id, poll=self.poll, timeout=WAIT_TIMEOUT, on_progress=on_progress)
             except JobStopped:
+                job.status, job.finished = 'paused', time.time()
+                self.store.save(job)
+                return
+            except Exception as error:
+                if job.stop_requested:
+                    job.status, job.finished = 'paused', time.time()
+                    self.store.save(job)
+                    return
+                sc.error = str(error)
+                if sc.status in ('failed', 'cancelled') or re.search(r'out.of.memory|GPU[_ -]*OOM|메모리.*부족|생성 실패', str(error), re.I):
+                    sc.status = 'failed'
+                self.store.save(job)
+                raise
+            # A cancellation can finish between the last progress event and wait's return.
+            if job.stop_requested and sc.video_id != video_id:
                 job.status, job.finished = 'paused', time.time()
                 self.store.save(job)
                 return
             out = job_dir / f"scene{sc.index + 1:02d}.mp4"
             if st.get("prompt_used"):   # 서버가 실제로 쓴 프롬프트 (Diffusers 엔진이 다듬은 것)
                 (job_dir / f"scene{sc.index + 1:02d}.prompt.txt").write_text(st["prompt_used"], encoding="utf-8")
-            client.download(sc.video_id, out)
+            client.download(video_id, out)
             (job_dir / f"scene{sc.index + 1:02d}.request.json").write_text(json.dumps(req.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
-            sc.status, sc.progress, sc.output = "completed", 1.0, str(out)
+            sc.status, sc.progress, sc.output, sc.error = "completed", 1.0, str(out), None
             parts.append(out)
             self.store.save(job)
             if sc.index < len(job.scenes) - 1:

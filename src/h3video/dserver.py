@@ -727,7 +727,9 @@ class Server:
             used = self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
             job.update(status="completed", progress=1.0, file=str(out), prompt_used=used)
             log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
-        except GenerationCancelled:
+        except GenerationCancelled as error:
+            from .memory import release_request_memory
+            release_request_memory(error, getattr(self.engine, 'torch', None))
             job.update(status="cancelled", error=None)
             out.with_suffix(".part.mp4").unlink(missing_ok=True)
         except WorkerDied as e:   # 워커 묶음이 죽으면 이후 요청도 못 한다 → 서버를 끝내 up.sh 가 정리하게
@@ -738,6 +740,9 @@ class Server:
         except Exception as e:   # noqa: BLE001 — 실패는 작업 상태로 돌려주고 서버는 계속 돈다
             traceback.print_exc()
             job.update(status="failed", error=f"{type(e).__name__}: {e}")
+            from .memory import release_request_memory
+            release_request_memory(e, getattr(self.engine, 'torch', None))
+            out.with_suffix('.part.mp4').unlink(missing_ok=True)
             log(f"실패 {vid}: {job['error']}")
             if job.get("kind") == "rewrite":
                 job["done"].set()

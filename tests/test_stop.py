@@ -4,6 +4,59 @@ from pathlib import Path
 from h3video.jobs import JobStore, Worker, new_job
 
 class StopTest(unittest.TestCase):
+    def test_remote_failure_retries_new_request_after_reload_and_keeps_finished_scene(self):
+        from unittest.mock import patch
+        from h3video.client import H3Error
+        with tempfile.TemporaryDirectory() as root:
+            store=JobStore(Path(root));job=new_job('two scenes',seconds=20,scene_seconds=10);job.max_scene=10;store.add(job)
+            class Client:
+                submitted=[]
+                waits=[]
+                def submit(self,request):
+                    self.submitted.append(request);return 'remote-'+str(len(self.submitted))
+                def wait(self,video_id,**kwargs):
+                    self.waits.append(video_id)
+                    if video_id=='remote-2':raise H3Error('CUDA out of memory')
+                    return {'status':'completed'}
+                def download(self,video_id,out):out.write_bytes(video_id.encode())
+            client=Client();worker=Worker(store,client,inbox_dir=None)
+            def frame(video,out):out.write_bytes(b'frame');return out
+            def join(parts,out):out.write_bytes(b''.join(p.read_bytes() for p in parts));return out
+            with patch('h3video.jobs.extract_last_frame',frame),patch('h3video.jobs.concat_videos',join):
+                with self.assertRaisesRegex(H3Error,'out of memory'):worker.process(job)
+                self.assertEqual(job.scenes[1].status,'failed')
+                job.status='failed';store.save(job)
+                original=Path(job.scenes[0].output).read_bytes()
+                worker.store=JobStore(Path(root));job=worker.store.get(job.id)
+                worker.resume(job.id);worker.process(job)
+                self.assertEqual(job.status,'completed')
+                self.assertEqual(client.waits,['remote-1','remote-2','remote-3'])
+                self.assertEqual(Path(job.scenes[0].output).read_bytes(),original)
+                self.assertEqual(client.submitted[1].seed,client.submitted[2].seed)
+
+    def test_stop_during_submit_cancels_late_remote_request_and_stays_paused(self):
+        with tempfile.TemporaryDirectory() as root:
+            store=JobStore(Path(root));job=new_job('stop while submitting',seconds=6);job.max_scene=15;store.add(job)
+            class Client:
+                cancelled=[]
+                def submit(self,request):worker.stop(job.id);return 'late-remote'
+                def cancel(self,video_id):self.cancelled.append(video_id);return {'status':'cancelled'}
+                def wait(self,*args,**kwargs):raise AssertionError('stopped request must not be awaited')
+            client=Client();worker=Worker(store,client,inbox_dir=None);worker.process(job)
+            self.assertEqual(job.status,'paused');self.assertEqual(client.cancelled,['late-remote'])
+            self.assertIsNone(job.scenes[0].video_id)
+
+    def test_remote_cancel_error_during_wait_still_leaves_resumable_job(self):
+        from h3video.client import H3Error
+        with tempfile.TemporaryDirectory() as root:
+            store=JobStore(Path(root));job=new_job('cancel race',seconds=6);job.max_scene=15;store.add(job)
+            class Client:
+                def submit(self,request):return 'remote'
+                def cancel(self,video_id):return {'status':'cancelled'}
+                def wait(self,*args,**kwargs):worker.stop(job.id);raise H3Error('remote cancelled')
+            worker=Worker(store,Client(),inbox_dir=None);worker.process(job)
+            self.assertEqual(job.status,'paused');self.assertIsNone(job.error)
+
     def test_stop_exits_current_wait_and_resume_reuses_submitted_video(self):
         with tempfile.TemporaryDirectory() as root:
             store=JobStore(Path(root));job=new_job('A single scene',seconds=6);job.max_scene=15;store.add(job)
