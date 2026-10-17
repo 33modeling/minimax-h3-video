@@ -113,6 +113,19 @@ class VideoEditingTest(unittest.TestCase):
         with self.assertRaises(H3Error):
             self.studio.candidates(p['id'],{'clips':['scene-0']})
 
+    def test_failed_native_candidates_resume_with_lower_size_and_keep_selected_original(self):
+        from unittest.mock import patch
+        p=self.create();original=p['clips'][0]['selected']
+        with patch.object(self.app.worker,'enqueue',side_effect=self.app.store.add):
+            p=self.studio.candidates(p['id'],{'clips':['scene-0'],'count':2,'phase':'final'})
+        for candidate in p['clips'][0]['pendingCandidates']:
+            job=self.app.store.get(candidate['job']);job.status='failed';job.error='CUDA out of memory';self.app.store.save(job)
+        self.studio.dispatch(p['id'],'recovery',{'shortEdge':448})
+        self.studio.start(p['id'],'resume');p=self.wait(p['id'])
+        self.assertEqual(p['clips'][0]['selected'],original)
+        self.assertEqual(len(p['clips'][0]['variants']),3)
+        self.assertTrue(all(self.app.store.get(c['job']).short_edge==448 for c in p['clips'][0]['pendingCandidates']))
+
     def test_inspection_reports_real_black_freeze_silence_and_stale_captions(self):
         black=self.directory/'black.mp4'
         subprocess.run(['ffmpeg','-loglevel','error','-y','-f','lavfi','-i','color=c=black:s=96x64:r=4',

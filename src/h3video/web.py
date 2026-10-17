@@ -274,8 +274,11 @@ class App:
         st["paused"]=False
         SR.save_state(d,st)
         for job in existing:
+            job.group_id=name
             self.worker.resume(job.id)
+        self.worker.blocked_groups.discard(name)
         for job in jobs:
+            job.group_id=name
             self.worker.enqueue(job)
         return {"id":name,**SR.summary(st),"redo":len(jobs)+len(existing)}
 
@@ -566,6 +569,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 d = SR.new_story_dir(app.store.root)
                 SR.save_state(d, state)
                 for job in jobs:
+                    job.group_id=d.name
                     app.worker.enqueue(job)
                 return self._json({"id": d.name, **state, **SR.summary(state)}, 201)
             except (H3Error, ValueError) as e:
@@ -660,7 +664,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                     return self._json({'error': '프로젝트·파일·필수 입력을 찾지 못했습니다.'}, 404)
                 except (H3Error, ValueError, TypeError) as error:
                     return self._json({'error': str(error)}, 400)
-            recovery=re.fullmatch(r"/api/(jobs|story)/([\w-]+)/(pause|stop|continue|restart|edit|restore)",p)
+            recovery=re.fullmatch(r"/api/(jobs|story)/([\w-]+)/(pause|stop|continue|restart|edit|restore|recovery)",p)
             if recovery:
                 kind, name, action = recovery.groups()
                 try:
@@ -669,6 +673,9 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                         elif action=="stop": result=app.worker.stop(name).to_json()
                         elif action=="restart": result=app.retry(name).to_json()
                         elif action=="continue": result=app.worker.resume(name).to_json()
+                        elif action=="recovery":
+                            body=json.loads(self.rfile.read(int(self.headers.get("Content-Length",0))) or b"{}")
+                            result=app.worker.configure_recovery(name,int(body.get('shortEdge',0))).to_json()
                         elif action=="edit":
                             body=json.loads(self.rfile.read(int(self.headers.get("Content-Length",0))) or b"{}")
                             result=edit_job(app.store,name,body).to_json()
@@ -685,6 +692,15 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                                     if job and job.status in ("pending","running"):
                                         (app.worker.stop if action=="stop" else app.worker.pause)(job.id)
                                 SR.save_state(d,state);result={"id":name,"paused":True}
+                            elif action=="recovery":
+                                body=json.loads(self.rfile.read(int(self.headers.get("Content-Length",0))) or b"{}")
+                                edge=int(body.get('shortEdge',0))
+                                if edge not in (0,448,576,768):raise H3Error('재개 해상도를 선택하세요.')
+                                for clip in state['clips']:
+                                    job=app.store.get(clip.get('job_id'))
+                                    if not clip.get('output') and job:app.worker.configure_recovery(job.id,edge)
+                                if edge:state.setdefault('params',{})['size']=min(state.get('params',{}).get('size') or 768,edge)
+                                SR.save_state(d,state);result={'ok':True}
                             elif action=="continue": result=app.resume_story(name)
                             elif action=="restart":
                                 if any(app.store.get(c.get('job_id')) and app.store.get(c['job_id']).status in ('pending','running') for c in state['clips'] if c.get('job_id')):

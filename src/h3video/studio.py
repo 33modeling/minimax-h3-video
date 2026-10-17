@@ -447,6 +447,7 @@ class VideoStudio:
                 raise H3Error('확정을 해제한 장면을 선택하세요.')
             if any(not c['prompt'].strip() for c in targets):
                 raise H3Error('생성할 장면의 프롬프트를 입력하세요.')
+            self.app.worker.blocked_groups.discard(project_id)
             for c in targets:
                 c.setdefault('pendingCandidates', [])
                 for index in range(count):
@@ -454,6 +455,7 @@ class VideoStudio:
                     job = new_job(c['prompt'] + narration_line(c['text']), seconds=max(4, round(c['seconds'])), aspect_ratio=p['delivery']['ratios'][0],
                                   seed=seed + index, first_image=first, short_edge=576 if phase == 'draft' else 768,
                                   steps=20 if phase == 'draft' else 50, title=p['title'] + ' · ' + c['label'])
+                    job.group_id = project_id
                     self.app.worker.enqueue(job)
                     c['pendingCandidates'].append(dict(job=job.id, phase=phase, seed=job.seed))
             self.save(p)
@@ -486,7 +488,7 @@ class VideoStudio:
                     for c in p['clips']:
                         for candidate in c.get('pendingCandidates', []):
                             job = self.app.store.get(candidate['job'])
-                            if job and job.status == 'paused':
+                            if job and job.status in ('paused', 'failed'):
                                 self.app.worker.resume(job.id)
                                 resumed = True
                     if not resumed:
@@ -891,6 +893,18 @@ class VideoStudio:
             return self.select(project_id, body)
         if action == 'candidates':
             return self.candidates(project_id, body)
+        if action == 'recovery':
+            with self.lock:
+                project=self.load(project_id)
+                if self.busy(project):raise H3Error('먼저 작업을 중지하세요.')
+                edge=int(body.get('shortEdge',0))
+                if edge not in (0,448,576,768):raise H3Error('재개 해상도를 선택하세요.')
+                for clip in project['clips']:
+                    for candidate in clip.get('pendingCandidates',[]):
+                        job=self.app.store.get(candidate['job'])
+                        if job and job.status in ('paused','failed'):self.app.worker.configure_recovery(job.id,edge)
+                self.save(project)
+                return self.view(project)
         if action in ('pause', 'stop'):
             return self.pause(project_id, immediate=action=='stop')
         if action == 'restart':

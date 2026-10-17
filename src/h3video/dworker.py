@@ -15,6 +15,7 @@ import os
 import threading
 import time
 import traceback
+from pathlib import Path
 
 
 def log(rank: int, msg: str) -> None:
@@ -93,7 +94,15 @@ def main(argv=None) -> int:
         # anything: H3 는 텍스트·조건·오디오·영상을 한 시퀀스로 묶어 길이가 제멋대로라 N 으로 안 나누어떨어질 수 있다 (헤드 56 도 3 으로 안 나뉨)
         tr.enable_parallelism(config=ContextParallelConfig(ulysses_degree=world, ulysses_anything=True))
     steps = [0]
-    tr.register_forward_hook(lambda *_: steps.__setitem__(0, steps[0] + 1))
+    cancel_file = [None]
+    def count_step(*_):
+        # Every rank takes the same branch before the next attention collective.
+        flag = [bool(cancel_file[0] and Path(cancel_file[0]).is_file()) if rank == 0 else None]
+        dist.broadcast_object_list(flag, src=0)
+        if flag[0]:
+            raise RuntimeError('H3_GENERATION_CANCELLED')
+        steps[0] += 1
+    tr.register_forward_hook(count_step)
     log(rank, f"준비 ({time.time() - t0:.0f}초): {tname} 을 {world}장에 나눔 (Ulysses {world}, 헤드 {heads})")
 
     conn = Client(tuple_addr(a.address), authkey=os.environ["H3_CP_AUTHKEY"].encode()) if rank == 0 else None
@@ -115,6 +124,7 @@ def main(argv=None) -> int:
         if msg == b"STOP":
             break
         job = torch.load(io.BytesIO(msg), weights_only=False, map_location="cpu")
+        cancel_file[0] = job.get("cancel_file")
         state = job["state"]
         for k in job.get("cuda_keys", []):   # 본체에서 GPU 에 있던 값만 GPU 로 (diffusers 가 CPU 에 두는 값은 그대로)
             state.values[k] = to_device(state.values[k], device)
@@ -134,7 +144,7 @@ def main(argv=None) -> int:
             result = {"ok": True, "latents": out["latents"].cpu(), "audio_latents": out["audio_latents"].cpu()}
         except Exception as e:   # noqa: BLE001 — 실패는 본체에 돌려준다 (모든 rank 가 같은 입력이라 같이 실패한다)
             traceback.print_exc()
-            result = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+            result = {"ok": False, "error": f"{type(e).__name__}: {e}", "cancelled": "H3_GENERATION_CANCELLED" in str(e)}
         finally:
             stop.set()
             if th:

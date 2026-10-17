@@ -206,6 +206,8 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 @media (max-width:820px),(pointer:coarse){input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,textarea{font-size:16px!important}}
 @media (pointer:coarse){button,.btn,.pill,.mode,select,input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]){min-height:44px}input[type=checkbox],input[type=radio]{width:32px;height:32px}label.chk{min-height:44px;display:flex;align-items:center}}
 @media (pointer:coarse) and (max-width:560px){.servers{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.servers::-webkit-scrollbar{display:none}.servers .pill{flex:none;white-space:nowrap}}
+
+.video-resume-dialog{box-sizing:border-box;width:min(480px,calc(100% - 24px));padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--ink);font:15px/1.7 system-ui}.video-resume-dialog::backdrop{background:#152c2477}.video-resume-dialog select{display:block;width:100%;min-height:46px;margin:10px 0 20px}.live-job-controls{align-items:center;justify-content:center;box-shadow:0 -4px 20px #15221b18}.live-job-controls label{max-width:340px;min-width:0}.live-job-controls select{display:block;width:100%;min-height:44px;max-width:340px;border:1px solid var(--line);border-radius:8px;padding:7px;color:var(--ink);background:var(--card)}.live-job-controls .stop-now{background:#a63f32;color:white;border-color:#90382d;min-height:46px}.live-job-controls button{min-height:46px}.live-job-controls[hidden]{display:none!important}@media(max-width:520px){.live-job-controls{gap:6px!important}.live-job-controls label{width:100%;max-width:none}.live-job-controls select{max-width:none}.live-job-controls span{flex:1;font-size:12px}.live-job-controls button{min-width:120px}}
 </style><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
@@ -322,7 +324,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 </section>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button type="button" id="toast-b" hidden></button></div>
-<aside id="liveJobControls" hidden aria-label="진행 작업 중지" style="position:fixed;bottom:0;left:0;right:0;z-index:80;padding:12px max(12px,env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px"></aside><dialog id="recovery-dialog" style="width:min(640px,94vw);max-height:90vh;overflow:auto;border:1px solid var(--line);border-radius:18px;padding:24px;background:var(--card);color:var(--ink)"><form id="recovery-form"><h2>저장한 장면 일부 수정</h2><p>완성한 원본과 수정 전 저장본은 남습니다. 이어 만들기는 수정한 장면부터 진행합니다.</p><label class="lab">수정할 장면<select id="recovery-scene" style="width:100%"></select></label><label class="lab">영상 프롬프트<textarea id="recovery-prompt" rows="6" required style="width:100%"></textarea></label><label class="lab" id="recovery-text-label">내레이션·글<textarea id="recovery-text" rows="3" style="width:100%"></textarea></label><label class="lab" id="recovery-seconds-label">전체 장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" role="alert"></p><div class="actions"><button type="submit" class="btn main">수정 저장</button><button type="button" class="btn" id="recovery-close">닫기</button></div></form></dialog>
+<aside id="liveJobControls" class="live-job-controls" hidden aria-label="진행 작업 중지" style="position:fixed;bottom:0;left:0;right:0;z-index:120;padding:12px max(12px,env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px"></aside><dialog id="recovery-dialog" style="width:min(640px,94vw);max-height:90vh;overflow:auto;border:1px solid var(--line);border-radius:18px;padding:24px;background:var(--card);color:var(--ink)"><form id="recovery-form"><h2>저장한 장면 일부 수정</h2><p>완성한 원본과 수정 전 저장본은 남습니다. 이어 만들기는 수정한 장면부터 진행합니다.</p><label class="lab">수정할 장면<select id="recovery-scene" style="width:100%"></select></label><label class="lab">영상 프롬프트<textarea id="recovery-prompt" rows="6" required style="width:100%"></textarea></label><label class="lab" id="recovery-text-label">내레이션·글<textarea id="recovery-text" rows="3" style="width:100%"></textarea></label><label class="lab" id="recovery-seconds-label">전체 장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" role="alert"></p><div class="actions"><button type="submit" class="btn main">수정 저장</button><button type="button" class="btn" id="recovery-close">닫기</button></div></form></dialog>
 <script>
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -877,7 +879,7 @@ function stateText(it) {
     const run = it.clips.find(c => c.status === 'running' || c.status === 'in_progress');
     return ['만드는 중', `${it.done}/${it.total} 완성${run ? ` · ${run.label} ${Math.round((run.progress || 0) * 100)}%` : it.done === it.total ? ' · 이어 붙이는 중' : ''}`];
   }
-  if(it.status==='paused')return ['일시중지','저장본에서 수정·이어 만들기'];
+  if(it.status==='paused')return ['일시중지',['unsupported','unavailable'].includes(it.remote_stop)?'현재 영상 서버는 실행 중인 장면 취소를 지원하지 않습니다. 이어 만들기에서 같은 장면의 결과를 확인합니다.':'저장본에서 수정·이어 만들기'];
   if(it.status==='pausing')return ['일시중지 중','현재 장면을 마친 뒤 저장합니다'];
   if (it.status === 'completed') return ['완성', ''];
   if (it.status === 'failed') return ['실패', ''];
@@ -974,8 +976,17 @@ function cardHtml(it) {
     ${media}<div class="c-body">${body}<div class="actions">${acts.join('')}</div>
     <div class="cmd" ${o.cmd ? '' : 'hidden'}>${cmdBlock(it)}<div class="help">서버 주소가 다르면 <code>h3video config set endpoint 주소</code> 로 한 번 저장해 두세요.</div></div>${settings}</div>`;
 }
+const editorTasks=new Map();let liveSelection='',liveRequest=false;
+function renderLiveControls(){
+ const normal=(typeof feedItems==='undefined'?[]:feedItems).filter(it=>['pending','running','pausing','paused','failed'].includes(it.status)).map(it=>({id:it.id,kind:it.kind==='story'?'story':'jobs',title:it.title||it.prompt||'영상 생성',busy:['pending','running','pausing'].includes(it.status),status:it.status}));
+ const choices=[...editorTasks.values(),...normal];if(!choices.some(it=>it.kind+':'+it.id===liveSelection)){const first=choices.find(it=>it.busy)||choices[0];liveSelection=first?first.kind+':'+first.id:'';}
+ const current=choices.find(it=>it.kind+':'+it.id===liveSelection),controls=$('#liveJobControls');controls.hidden=!current;controls.style.display=current?'flex':'none';document.body.style.paddingBottom=current?'150px':'';if(!current){controls.hidden=false;controls.style.display='flex';document.body.style.paddingBottom='130px';controls.innerHTML='<span role="status">생성 시작 후 여기에서 중지·재개할 수 있습니다.</span><button class="btn stop-now" disabled>즉시 중지</button><button class="btn" disabled>이어 만들기</button><button class="btn" disabled>설정 바꿔 재개</button>';return;}
+ const html=`<label>현재 작업<select data-live-select aria-label="중지·재개할 영상 작업">${choices.map(it=>`<option value="${esc(it.kind+':'+it.id)}" ${it===current?'selected':''}>${esc(it.title.slice(0,45))} · ${it.busy?'진행 중':'중지·실패'}</option>`).join('')}</select></label><span role="status">${liveRequest?'요청 처리 중…':current.busy?'완료한 장면을 보존하며 중지할 수 있습니다.':'저장한 지점에서 이어 만들 수 있습니다.'}</span><button class="btn stop-now" data-live-action="stop" data-kind="${current.kind}" data-id="${esc(current.id)}" ${liveRequest||!current.busy?'disabled':''}>즉시 중지</button><button class="btn main" data-live-action="resume" data-kind="${current.kind}" data-id="${esc(current.id)}" ${liveRequest||current.busy?'disabled':''}>이어 만들기</button><button class="btn" data-live-action="recovery" data-kind="${current.kind}" data-id="${esc(current.id)}" ${liveRequest||current.busy?'disabled':''}>설정 바꿔 재개</button>`;
+ if(controls.innerHTML!==html)controls.innerHTML=html;
+}
+window.addEventListener('h3:editor-state',event=>{const state=event.detail;if(state.busy||state.resumable)editorTasks.set('studio/projects:'+state.id,{...state,kind:'studio/projects'});else editorTasks.delete('studio/projects:'+state.id);renderLiveControls();});
 function renderFeed(data) {
-  const active=data.items.filter(it=>['pending','running','pausing'].includes(it.status));const controls=$('#liveJobControls');controls.hidden=!active.length;controls.style.display=active.length?'flex':'none';controls.innerHTML=active.map(it=>`<div style="display:flex;align-items:center;gap:8px"><span>${esc((it.title||it.prompt||'영상 생성').slice(0,32))}</span><button class="btn" style="min-height:44px" data-live-stop="${esc(it.id)}" data-kind="${it.kind==='story'?'story':'jobs'}">지금 중지 · 결과 보존</button></div>`).join('');document.body.style.paddingBottom=active.length?'140px':'';
+  feedItems=data.items;renderLiveControls();
   feedItems = data.items; feedAt = Date.now(); serverNow = data.now || Date.now() / 1000;
   const box = $('#feed'); const keep = new Set(data.items.map(x => x.id));
   $('#feed-count').textContent = data.items.length ? `${data.items.length}개` : '';
@@ -1095,7 +1106,12 @@ setMode(mode);
 boot();
 setInterval(checkHealth, 10000);
 
-$('#liveJobControls').onclick=async event=>{const button=event.target.closest('[data-live-stop]');if(!button)return;button.disabled=true;try{await api(`/api/${button.dataset.kind}/${encodeURIComponent(button.dataset.liveStop)}/stop`,{method:'POST'});toast('중지를 요청했습니다. 완료한 구간은 보존합니다.');poll();}catch(error){button.disabled=false;toast(error.message);}};
+
+function openVideoRecovery(kind,id){
+ const dialog=document.createElement('dialog');dialog.className='video-resume-dialog';dialog.setAttribute('aria-label','영상 설정 바꿔 재개');dialog.innerHTML='<form><h2>남은 장면 이어 만들기</h2><p>완성한 장면은 보존합니다. 메모리가 부족했다면 남은 생성 장면의 해상도를 낮춰 주세요.</p><label>생성 해상도 · 짧은 변<select name="shortEdge"><option value="0">현재 설정 유지</option><option value="576">최대 576px · 가벼운 생성</option><option value="448">최대 448px · 메모리 절약</option><option value="768">최대 768px</option></select></label><p role="status"></p><button type="submit" class="btn main">설정 적용 · 이어 만들기</button><button type="button" class="btn" data-close>닫기</button></form>';document.body.append(dialog);dialog.showModal();dialog.onclose=()=>dialog.remove();dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.querySelector('form').onsubmit=async event=>{event.preventDefault();dialog.querySelectorAll('button').forEach(b=>b.disabled=true);try{await api(`/api/${kind}/${encodeURIComponent(id)}/recovery`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shortEdge:Number(dialog.querySelector('select').value)})});await api(`/api/${kind}/${encodeURIComponent(id)}/${kind==='studio/projects'?'resume':'continue'}`,{method:'POST'});dialog.close();await poll();window.dispatchEvent(new Event('h3:refresh-project'));}catch(error){dialog.querySelector('[role=status]').textContent=error.message;dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}};
+}
+$('#liveJobControls').onchange=event=>{if(event.target.matches('[data-live-select]')){liveSelection=event.target.value;renderLiveControls();}};
+$('#liveJobControls').onclick=async event=>{const button=event.target.closest('[data-live-action]');if(!button||liveRequest)return;const action=button.dataset.liveAction,kind=button.dataset.kind;if(action==='recovery'){openVideoRecovery(kind,button.dataset.id);return;}liveRequest=true;renderLiveControls();try{await api(`/api/${kind}/${encodeURIComponent(button.dataset.id)}/${action==='resume'?(kind==='studio/projects'?'resume':'continue'):'stop'}`,{method:'POST'});toast(action==='stop'?'중지하고 저장하는 중입니다. 완료한 결과는 보존합니다.':'저장한 지점부터 이어 만듭니다.');await poll();window.dispatchEvent(new Event('h3:refresh-project'));}catch(error){toast(error.message);}finally{liveRequest=false;renderLiveControls();}};
 let recoveryTarget=null;
 $('#recovery-close').onclick=()=>$('#recovery-dialog').close();
 const recoveryChoices=it=>it.kind==='story'?it.clips:it.scenes;
@@ -1110,7 +1126,7 @@ $('#feed').addEventListener('click',async event=>{
    $('#recovery-text-label').hidden=kind!=='story';$('#recovery-seconds-label').hidden=kind!=='story';fillRecovery();$('#recovery-dialog').showModal();return;
  }
  button.disabled=true;
- try{await api(`/api/${kind}/${encodeURIComponent(item.id)}/${action}`,{method:'POST'});toast(action==='stop'?'작업을 중지합니다. 이미 제출한 원격 장면은 이어할 때 같은 요청으로 확인하며, 완료 구간은 보존합니다':action==='restart'?'기존 결과를 보존하고 새 작업을 시작했습니다':action==='pause'?'현재 장면을 마친 뒤 저장하고 멈춥니다':action==='restore'?'수정 전 저장본을 복원했습니다':'완성한 장면을 유지하고 이어 만듭니다');poll();}
+ try{await api(`/api/${kind}/${encodeURIComponent(item.id)}/${action}`,{method:'POST'});toast(action==='stop'?'중지하고 저장하는 중입니다. 완료한 구간은 보존합니다':action==='restart'?'기존 결과를 보존하고 새 작업을 시작했습니다':action==='pause'?'현재 장면을 마친 뒤 저장하고 멈춥니다':action==='restore'?'수정 전 저장본을 복원했습니다':'완성한 장면을 유지하고 이어 만듭니다');poll();}
  catch(error){toast(error.message);button.disabled=false;}
 });
 $('#recovery-form').onsubmit=async event=>{

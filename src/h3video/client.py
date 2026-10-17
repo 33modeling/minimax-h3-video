@@ -187,6 +187,14 @@ class H3Client:
     def status(self, video_id: str) -> dict:
         return self._request("GET", f"/v1/videos/{video_id}")
 
+    def cancel(self, video_id: str) -> dict:
+        try:
+            return self._request('POST', f'/v1/videos/{video_id}/cancel', {}, timeout=5)
+        except H3Error as error:
+            if any(f'HTTP {code}' in str(error) for code in (404, 405, 501)):
+                return {'id': video_id, 'status': 'unsupported'}
+            raise
+
     def content(self, video_id: str) -> bytes:
         return self._request("GET", f"/v1/videos/{video_id}/content", raw=True)
 
@@ -202,7 +210,7 @@ class H3Client:
             s = st.get("status")
             if s == "completed":
                 return st
-            if s == "failed":
+            if s in ("failed", "cancelled"):
                 raise H3Error(f"생성 실패 {video_id}: {st.get('error')}")
             if time.monotonic() - t0 > timeout:
                 raise H3Error(f"대기 시간 초과 {video_id} ({int(timeout)}초, 마지막 상태 {s}). 서버에서는 계속될 수 있으니 "

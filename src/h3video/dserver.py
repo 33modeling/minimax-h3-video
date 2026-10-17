@@ -50,6 +50,10 @@ class BadRequest(ValueError):
     pass
 
 
+class GenerationCancelled(RuntimeError):
+    pass
+
+
 class WorkerDied(RuntimeError):
     """영상 모델 워커(torchrun)가 끝났다. 서버도 끝내서 up.sh 가 알아채고 정리하게 한다."""
 
@@ -178,10 +182,16 @@ class Engine:
         log(f"적재 완료 ({time.time() - t0:.0f}초): variant={variant} 작업={'/'.join(TASKS[variant])} "
             f"캔버스 배수={self.geo.canvas_multiple} 기본 짧은 변={self.short_edge}")
 
+    def _check_cancel(self):
+        if getattr(self, "_cancel_file", None) and self._cancel_file.is_file():
+            raise GenerationCancelled("영상 생성을 중지했습니다.")
+
     def _count(self, *_):
+        self._check_cancel()
         self._steps_done += 1
 
     def _stage(self, name: str) -> None:
+        self._check_cancel()
         self.stage, self._stage_t0 = name, time.time()
         if getattr(self, "on_stage", None):
             self.on_stage(name)
@@ -327,7 +337,7 @@ class Engine:
         cuda_keys = [k for k, v in state.values.items() if _on_cuda(v)]   # diffusers 가 CPU 에 둔 값(text_token_tags 등)은 CPU 로 둔다
         state.values = _to_cpu(state.values)
         buf = io.BytesIO()
-        torch.save({"state": state, "gen_state": g.get_state(), "kwargs": gen, "cuda_keys": cuda_keys}, buf)
+        torch.save({"state": state, "gen_state": g.get_state(), "kwargs": gen, "cuda_keys": cuda_keys, "cancel_file": str(self._cancel_file) if getattr(self, "_cancel_file", None) else None}, buf)
         self._conn.send_bytes(buf.getvalue())
         while True:
             m = self._recv()
@@ -335,6 +345,8 @@ class Engine:
                 self._steps_done = int(m[5:])
             elif m.startswith(b"DONE"):
                 res = torch.load(io.BytesIO(m[4:]), weights_only=False)
+                if res.get("cancelled"):
+                    raise GenerationCancelled("영상 생성을 중지했습니다.")
                 if not res["ok"]:
                     raise RuntimeError("영상 모델 워커: " + res["error"])   # OOM 이면 run() 이 할 일을 붙인다
                 return res
@@ -601,18 +613,20 @@ class Engine:
         log(f"걸린 시간: 다듬기 {t_rw:.0f}초 · " + " · ".join(f"{k} {v:.0f}초" for k, v in times.items())
             + (f" (스텝당 {times['디노이징'] / steps:.1f}초 × {steps})" if "디노이징" in times else "")
             + f" · 전체 {time.time() - t_all:.0f}초")
+        self._check_cancel()
         tmp = out_path.with_suffix(".part.mp4")
         encode_video(r["videos"][0], fps=24, output_path=str(tmp), audio=r["audio"][0],
                      audio_sample_rate=r["sampling_rate"])
+        self._check_cancel()
         tmp.replace(out_path)
         return inputs["prompt"]
 
 
 class Server:
     def __init__(self, engine: Engine | None, out_dir: Path, variant: str):
-        self.engine, self.out_dir, self.variant = engine, out_dir, variant
+        self.engine, self.out_dir, self.variant = engine, out_dir.resolve(), variant
         self.jobs: dict[str, dict] = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.q: queue.Queue = queue.Queue()
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -620,10 +634,10 @@ class Server:
         return self.out_dir / f"{vid}.json"
 
     def save(self, job: dict) -> None:
-        tmp = self.meta_path(job["id"]).with_suffix(".tmp")
-        tmp.write_text(json.dumps({k: v for k, v in job.items() if k not in ("plan", "done")}, ensure_ascii=False, indent=2))
-        tmp.replace(self.meta_path(job["id"]))
-
+        with self.lock:
+            tmp = self.meta_path(job["id"]).with_suffix(".tmp")
+            tmp.write_text(json.dumps({k: v for k, v in job.items() if k not in ("plan", "done")}, ensure_ascii=False, indent=2))
+            tmp.replace(self.meta_path(job["id"]))
     def get(self, vid: str) -> dict | None:
         with self.lock:
             if vid in self.jobs:
@@ -631,7 +645,9 @@ class Server:
         p = self.meta_path(vid)   # 서버를 다시 띄운 뒤에도 끝난 결과는 받을 수 있게
         if "/" not in vid and p.is_file():
             job = json.loads(p.read_text())
-            if job.get("status") not in ("completed", "failed"):
+            if job.get("cancel_requested"):
+                job.update(status="cancelled", error=None)
+            elif job.get("status") not in ("completed", "failed", "cancelled"):
                 job.update(status="failed", error="서버가 생성 도중 꺼졌다")
             return job
         return None
@@ -664,6 +680,18 @@ class Server:
         log(f"접수 {vid} ({plan['task']}, 대기 {self.q.qsize()})")
         return {"id": vid, "status": "queued"}
 
+    def cancel(self, vid: str) -> dict:
+        with self.lock:
+            job = self.get(vid)
+            if job is None:
+                raise KeyError(vid)
+            if job['status'] not in ('completed', 'failed', 'cancelled'):
+                job['cancel_requested'] = True
+                (self.out_dir / f'{vid}.cancel').touch()
+                job['status'] = 'cancelled' if job['status'] == 'queued' else 'cancelling'
+                self.save(job)
+            return {'id': vid, 'status': job['status']}
+
     def worker(self) -> None:
         while True:
             vid = self.q.get()
@@ -678,6 +706,12 @@ class Server:
 
     def _one(self, vid: str) -> None:
         job = self.jobs[vid]
+        if job.get('cancel_requested'):
+            job.update(status='cancelled', finished_at=int(time.time()))
+            self.save(job)
+            (self.out_dir / f'{vid}.cancel').unlink(missing_ok=True)
+            return
+        self.engine._cancel_file = self.out_dir / f'{vid}.cancel'
         job["status"], job["started_at"] = "in_progress", int(time.time())
         if job.get("kind") != "rewrite":
             self.save(job)
@@ -693,6 +727,9 @@ class Server:
             used = self.engine.run(job["plan"], out, lambda p, j=job: j.__setitem__("progress", round(p, 3)))
             job.update(status="completed", progress=1.0, file=str(out), prompt_used=used)
             log(f"완료 {vid} → {out} ({out.stat().st_size / 1e6:.1f}MB, {int(time.time()) - job['started_at']}초)")
+        except GenerationCancelled:
+            job.update(status="cancelled", error=None)
+            out.with_suffix(".part.mp4").unlink(missing_ok=True)
         except WorkerDied as e:   # 워커 묶음이 죽으면 이후 요청도 못 한다 → 서버를 끝내 up.sh 가 정리하게
             job.update(status="failed", error=str(e), finished_at=int(time.time()))
             self.save(job)
@@ -705,6 +742,9 @@ class Server:
             if job.get("kind") == "rewrite":
                 job["done"].set()
                 return
+        finally:
+            self.engine._cancel_file = None
+            (self.out_dir / f'{vid}.cancel').unlink(missing_ok=True)
         job["finished_at"] = int(time.time())
         self.save(job)
 
@@ -784,6 +824,15 @@ def make_handler(srv: Server):
 
         def do_POST(self):
             path = urllib.parse.urlparse(self.path).path.rstrip("/")
+            match = re.fullmatch(r'/v1/videos/(video_[a-f0-9]+)/cancel', path)
+            if match:
+                n = int(self.headers.get('Content-Length') or 0)
+                if n:
+                    self.rfile.read(n)
+                try:
+                    return self._json(200, srv.cancel(match[1]))
+                except KeyError:
+                    return self._json(404, {'error': '영상 작업을 찾지 못했습니다.'})
             if path not in ("/v1/videos", "/v1/prompts/rewrite"):
                 return self._json(404, {"error": f"없는 경로: {path}"})
             n = int(self.headers.get("Content-Length") or 0)

@@ -86,6 +86,8 @@ class Job:
     title: str = ""
     pause_requested: bool = False
     stop_requested: bool = False
+    remote_stop: str | None = None
+    group_id: str | None = None
 
     def to_json(self) -> dict:
         d = asdict(self)
@@ -257,11 +259,16 @@ class Worker(threading.Thread):
         self.queue: list[str] = []
         self.cv = threading.Condition()
         self.current: str | None = None
+        self.blocked_groups = set()
 
     def enqueue(self, job: Job):
         job.host, job.pid = HOST, os.getpid()
         self.store.add(job)
         with self.cv:
+            if job.group_id and job.group_id in self.blocked_groups:
+                job.status, job.pause_requested = 'paused', True
+                self.store.save(job)
+                return
             self.queue.append(job.id)
             self.cv.notify()
 
@@ -284,6 +291,45 @@ class Worker(threading.Thread):
             if job.status in ('running', 'pending', 'paused'):
                 job.stop_requested = True
                 self.store.save(job)
+        for scene in job.scenes:
+            if not scene.video_id or scene.status == 'completed':
+                continue
+            client = self.ref_client if scene.task == 'ref2va' else self.client
+            if not hasattr(client, 'cancel'):
+                job.remote_stop = 'unsupported'
+                continue
+            try:
+                response = client.cancel(scene.video_id)
+                job.remote_stop = response.get('status')
+                if job.remote_stop in ('cancelled', 'cancelling'):
+                    scene.video_id, scene.status = None, 'pending'
+            except H3Error:
+                job.remote_stop = 'unavailable'
+        self.store.save(job)
+        return job
+
+    def configure_recovery(self, job_id: str, short_edge: int):
+        if short_edge not in (0, 448, 576, 768):
+            raise H3Error('재개 해상도를 선택하세요.')
+        job = self.store.get(job_id)
+        if not job:
+            raise KeyError(job_id)
+        if job.status in ('pending', 'running'):
+            raise H3Error('먼저 작업을 중지하세요.')
+        if short_edge:
+            for scene in job.scenes:
+                if scene.status == 'completed' or not scene.video_id:
+                    continue
+                client = self.ref_client if scene.task == 'ref2va' else self.client
+                state = client.status(scene.video_id) if hasattr(client, 'status') else {'status': scene.status}
+                if state.get('status') not in ('completed', 'failed', 'cancelled'):
+                    result = client.cancel(scene.video_id) if hasattr(client, 'cancel') else {}
+                    if result.get('status') not in ('cancelled', 'cancelling'):
+                        raise H3Error('연결한 영상 서버가 진행 중인 장면 취소를 지원하지 않습니다. 현재 장면이 완료된 뒤 설정을 바꿔 주세요.')
+                if state.get('status') != 'completed':
+                    scene.video_id, scene.status, scene.error = None, 'pending', None
+            job.short_edge = min(job.short_edge, short_edge)
+        self.store.save(job)
         return job
 
     def resume(self, job_id: str):
@@ -292,6 +338,7 @@ class Worker(threading.Thread):
             raise KeyError(job_id)
         if job.status in ("pending", "running"):
             raise H3Error("아직 만드는 중입니다. 일시중지가 끝난 뒤 이어 만드세요.")
+        self.blocked_groups.discard(job.group_id)
         job.pause_requested, job.stop_requested, job.status, job.error, job.finished = False, False, "pending", None, None
         self.enqueue(job)
         return job
@@ -309,6 +356,15 @@ class Worker(threading.Thread):
                     self.process(job)
                 except Exception as e:  # noqa: BLE001
                     job.status, job.error, job.finished = "failed", str(e), time.time()
+                    if job.group_id and re.search(r'out.of.memory|메모리.*부족|OOM', str(e), re.I):
+                        with self.cv:
+                            self.blocked_groups.add(job.group_id)
+                            for queued_id in list(self.queue):
+                                queued=self.store.get(queued_id)
+                                if queued and queued.group_id == job.group_id:
+                                    self.queue.remove(queued_id)
+                                    queued.status,queued.pause_requested='paused',True
+                                    self.store.save(queued)
                     self.store.save(job)
                 finally:
                     self.current = None

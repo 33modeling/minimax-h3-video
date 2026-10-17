@@ -190,6 +190,28 @@ class HttpTest(unittest.TestCase):
         self.httpd.server_close()
         self.tmp.cleanup()
 
+    def test_cancel_queued_and_active_generation_then_accept_next_request(self):
+        original=self.engine.run
+        started=threading.Event()
+        def slow(plan,out,on_progress):
+            if plan['prompt']=='slow-cancel':
+                started.set()
+                for _ in range(100):
+                    if self.engine._cancel_file.is_file():
+                        raise dserver.GenerationCancelled('stopped')
+                    time.sleep(.01)
+                self.fail('active generation did not stop')
+            return original(plan,out,on_progress)
+        self.engine.run=slow
+        active=self.client.submit(VideoRequest(prompt='slow-cancel',task='t2va'));self.assertTrue(started.wait(2))
+        queued=self.client.submit(VideoRequest(prompt='must-never-run',task='t2va'))
+        self.assertEqual(self.client.cancel(queued)['status'],'cancelled')
+        self.assertEqual(self.client.cancel(active)['status'],'cancelling')
+        with self.assertRaises(H3Error):self.client.wait(active,poll=.01,timeout=2)
+        self.assertEqual(self.client.status(queued)['status'],'cancelled')
+        fresh=self.client.submit(VideoRequest(prompt='after-cancel',task='t2va'));self.client.wait(fresh,poll=.01,timeout=2)
+        self.assertFalse(any(p['prompt']=='must-never-run' for p in self.engine.ran))
+
     def test_generate_roundtrip(self):
         self.assertTrue(self.client.healthy())
         img = Path(self.tmp.name, "first.png")

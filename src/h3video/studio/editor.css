@@ -7,3 +7,5 @@
 @media (max-width:560px){.vw-focus-guide,.vw-badge{font-size:11px}}
 
 .vw-toolbar:has([data-action="pause"]){position:sticky;top:0;z-index:30;background:#fffdf6;padding:12px;flex-wrap:wrap}.vw-toolbar button{min-height:44px}
+
+.vw-toolbar{position:sticky;top:8px;z-index:105;background:#fffefa;border:1px solid #d9e3d5;border-radius:12px;padding:10px}.vw-toolbar [data-action=pause]{background:#a63f32;color:white;border-color:#90382d;min-height:46px}.vw-toolbar [data-action=resume]{background:#264a3d;color:white;min-height:46px}
