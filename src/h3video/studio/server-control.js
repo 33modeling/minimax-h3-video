@@ -26,25 +26,26 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  async function address(target,options={}){
   const group=target.endsWith('-web')||target.startsWith('video-')?'web':'image',custom=options.custom??q('[data-control-'+group+']').value.trim();let base=options.base||getWebBase()||location.origin;
   if(!custom&&group==='image'){
-   const cacheKey='maker-control.image-host.'+base+'.'+target;
-   try{const response=await fetch(base.replace(/\/$/,'')+'/api/config',{signal:options.signal||boundedSignal(2000)});if(!response.ok)throw Error();const config=await response.json(),endpoint=config[target==='image-turbo'?'qwenTurbo':target==='image-quantized'?'qwenQuantized':'qwen'];if(endpoint){const selected=new URL(endpoint.split(',')[0].trim()),webHost=new URL(options.base||getWebBase()||location.origin).hostname;if(['localhost','127.0.0.1','[::1]'].includes(selected.hostname)&&!['localhost','127.0.0.1','[::1]'].includes(webHost))selected.hostname=webHost;base=selected.href;try{localStorage.setItem(cacheKey,helperAddress(base));}catch{}}}catch{try{base=localStorage.getItem(cacheKey)||base;}catch{}}
+   const cacheKey='maker-control.image-host.'+base+'.'+target+'.'+(options.endpointIndex||0);
+   try{const response=await fetch(base.replace(/\/$/,'')+'/api/config',{signal:options.signal||boundedSignal(2000)});if(!response.ok)throw Error();const config=await response.json(),endpoint=config[target==='image-turbo'?'qwenTurbo':target==='image-quantized'?'qwenQuantized':'qwen'];if(endpoint){const selected=new URL(endpoint.split(',')[options.endpointIndex||0].trim()),webHost=new URL(options.base||getWebBase()||location.origin).hostname;if(['localhost','127.0.0.1','[::1]'].includes(selected.hostname)&&!['localhost','127.0.0.1','[::1]'].includes(webHost))selected.hostname=webHost;base=selected.href;try{localStorage.setItem(cacheKey,helperAddress(base));}catch{}}}catch{try{base=localStorage.getItem(cacheKey)||base;}catch{}}
   }
   const url=new URL(custom||helperAddress(base));if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw Error('복구 주소는 http 또는 https 주소로 입력하세요.');
   return {base:url.href.replace(/\/$/,''),secret:options.secret??q('[data-key-'+group+']').value};
  }
- async function request(connection,target,restart=false){
-  let response;try{response=await fetch(connection.base+'/api/control/'+target+(restart?'/restart':''),{method:restart?'POST':'GET',headers:{'x-maker-control':'1',...(restart?{'content-type':'application/json'}:{}),...(connection.secret?{authorization:'Bearer '+connection.secret}:{})},...(restart?{body:'{}'}:{}),signal:boundedSignal(12000)});}catch{checkCancelled();throw Error('복구 도우미에 연결하지 못했습니다. 서버 PC의 도우미 실행 상태·복구 주소·브라우저의 로컬 네트워크 접근을 확인하세요.');}
-  checkCancelled();const data=await response.json();if(!response.ok)throw Error(data.error||'복구 요청을 처리하지 못했습니다.');return data;
+ const connectionError=message=>Object.assign(Error(message),{retryable:true});
+ async function request(connection,target,restart=false,requestId){
+  let response;try{response=await fetch(connection.base+'/api/control/'+target+(restart?'/restart':''),{method:restart?'POST':'GET',headers:{'x-maker-control':'1',...(restart?{'content-type':'application/json'}:{}),...(connection.secret?{authorization:'Bearer '+connection.secret}:{})},...(restart?{body:JSON.stringify({requestId})}:{}),signal:boundedSignal(12000)});}catch{checkCancelled();throw connectionError('복구 도우미에 연결하지 못했습니다. 서버 PC의 도우미 실행 상태·복구 주소·브라우저의 로컬 네트워크 접근을 확인하세요.');}
+  checkCancelled();const data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(Error(data.error||'복구 요청을 처리하지 못했습니다.'),{retryable:!restart&&[408,429,502,503,504].includes(response.status)});if(data.id!==target)throw Error('선택한 서버의 상태를 확인하지 못했습니다. 복구 주소를 확인하세요.');return data;
  }
  const providerFor=target=>({'vllm-image':'qwen-image','image-turbo':'qwen-image-turbo','image-quantized':'qwen-image-quantized'}[target]);
  async function webImage(target,action='status',options={}){
   const provider=providerFor(target);if(!provider||(options.customImage??q('[data-control-image]').value.trim()))return null;
   let response;
-  try{response=await fetch((options.base||getWebBase()||location.origin).replace(/\/$/,'')+'/api/image-server/'+provider+(action==='status'?'':'/'+action)+(options.query||''),{method:action==='restart'?'POST':'GET',headers:action==='restart'?{'content-type':'application/json'}:{},...(action==='restart'?{body:'{}'}:{}),signal:options.signal||(action==='logs'?AbortSignal.timeout(10000):boundedSignal(12000))});}
-  catch(error){if(options.signal?.aborted)throw error;if(action!=='logs')checkCancelled();throw Error(action==='logs'?'서버 로그를 읽지 못했습니다. 웹 서버 연결을 확인하세요.':'웹 서버에 재시작 요청을 보내지 못했습니다. 웹 서버 연결 주소와 실행 상태를 확인하세요.');}
+  try{response=await fetch((options.base||getWebBase()||location.origin).replace(/\/$/,'')+'/api/image-server/'+provider+(action==='status'?'':'/'+action)+(options.query||''),{method:action==='restart'?'POST':'GET',headers:action==='restart'?{'content-type':'application/json'}:{},...(action==='restart'?{body:JSON.stringify({requestId:options.requestId})}:{}),signal:options.signal||(action==='logs'?AbortSignal.timeout(10000):boundedSignal(12000))});}
+  catch(error){if(options.signal?.aborted)throw error;if(action!=='logs')checkCancelled();throw connectionError(action==='logs'?'서버 로그를 읽지 못했습니다. 웹 서버 연결을 확인하세요.':'웹 서버에 연결하지 못했습니다. 웹 서버 연결 주소와 실행 상태를 확인하세요.');}
   const data=await response.json().catch(()=>({}));
   if(response.status===404||data.code==='REMOTE_IMAGE_SERVER')return null;
-  if(!response.ok)throw Error(data.error||'이미지 서버 요청 실패 ('+response.status+')');if(data.id!==target||action==='restart'&&!data.operation?.id)return null;return data;
+  if(!response.ok)throw Object.assign(Error(data.error||'이미지 서버 요청 실패 ('+response.status+')'),{retryable:action==='status'&&[408,429,502,503,504].includes(response.status)});if(data.id!==target||action==='restart'&&!data.operation?.id)throw Error('선택한 이미지 서버의 상태를 확인하지 못했습니다. 웹 서버를 업데이트하고 연결을 확인하세요.');return data;
  }
  let logTimer=null,logTarget=null,logEpoch=0,logController=null,logSelection={},logProvider=null;
  const logBase=()=>String(getWebBase()||location.origin).replace(/\/$/,'');
@@ -104,14 +105,31 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
  q('[data-log-copy]').onclick=async()=>{try{await navigator.clipboard.writeText(logText());q('[data-log-status]').textContent='로그를 복사했습니다.';}catch{const text=document.createElement('textarea');text.value=logText();text.style.position='fixed';text.style.opacity='0';root.append(text);text.select();const copied=document.execCommand('copy');text.remove();q('[data-log-status]').textContent=copied?'로그를 복사했습니다.':'파일 저장을 누르거나 로그를 선택해 복사하세요.';}};
  q('[data-log-save]').onclick=()=>{const url=URL.createObjectURL(new Blob([logText()],{type:'text/plain;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='image-server-'+new Date().toISOString().replace(/[:.]/g,'-')+'.log';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
  async function restart(target){
-  lastTarget=target;let data=await webImage(target,'restart');const direct=Boolean(data),connection=direct?null:await address(target);if(!data)data=await request(connection,target,true);
-  const operation=data.operation?.id;
+  lastTarget=target;
+  // Keep the destination fixed until this operation ends, including after a reconnect.
+  const base=String(getWebBase()||location.origin).replace(/\/$/,''),customImage=q('[data-control-image]').value.trim(),requestId=crypto.randomUUID();
+  const selected=logTarget===target&&(!logSelection.base||logSelection.base.replace(/\/$/,'')===base)?{...logSelection}:{};
+  const query=new URLSearchParams();if(Number.isInteger(selected.endpointIndex))query.set('endpoint',selected.endpointIndex);if(selected.endpoint)query.set('expectedEndpoint',selected.endpoint);
+  const options={base,customImage,requestId,query:query.size?'?'+query:'',endpointIndex:selected.endpointIndex};
+  let direct=Boolean(providerFor(target)&&!customImage),connection=null,data=null,uncertain=false;
+  try{if(direct){data=await webImage(target,'restart',options);if(!data)direct=false;}if(!direct){connection=await address(target,{base,endpointIndex:selected.endpointIndex});checkCancelled();data=await request(connection,target,true,requestId);}}
+  catch(error){if(!error.retryable)throw error;uncertain=true;message('재시작 응답을 받지 못해 접수 상태를 다시 확인하고 있습니다…');}
+  const read=()=>direct?webImage(target,'status',options):request(connection,target);
+  let operation=data?.operation?.id,failures=0,confirmations=0;
   for(let n=0;n<1800;n++){
-   checkCancelled();message(data.label+' · '+data.message);
-   if(data.operation?.status==='ready')return;
-   if(['failed','timeout'].includes(data.operation?.status))throw Error(data.operation.error||data.message);
-   await pause(1000,controller.signal);data=direct?await webImage(target):await request(connection,target);
-   if(operation&&data.operation?.id!==operation)throw Error('복구 도우미가 다시 시작되었습니다. 복구를 다시 누르세요.');
+   checkCancelled();
+   if(data){
+    if(uncertain){if(data.operation?.requestId===requestId){uncertain=false;operation=data.operation.id;}else if(++confirmations>=5)throw Error('재시작 접수 여부를 확인하지 못했습니다. 서버 로그와 현재 상태를 확인한 뒤 다시 시도하세요.');}
+    if(!uncertain){
+     if(!operation||data.operation?.id!==operation)throw Error('재시작 요청이 변경되었습니다. 서버 상태를 확인한 뒤 다시 시도하세요.');
+     message(data.label+' · '+data.message);
+     if(data.operation.status==='ready'){if(data.status!=='ready')throw Error('재시작 후 서버가 응답하지 않습니다. 서버 로그를 확인하세요.');return;}
+     if(['failed','timeout'].includes(data.operation.status))throw Error(data.operation.error||data.message);
+    }
+   }
+   await pause(1000,controller.signal);
+   try{data=await read();if(!data)throw Error('이미지 서버 연결 설정이 변경되었습니다. 현재 주소를 확인하세요.');failures=0;}
+   catch(error){checkCancelled();if(!error.retryable||++failures>=5)throw error;data=null;message('서버가 다시 연결되는 동안 상태를 다시 확인하고 있습니다… ('+failures+'/5)');}
   }
   throw Error('모델 시작 확인 시간이 지났습니다. 고급 설정에서 연결을 확인하세요.');
  }
@@ -120,13 +138,14 @@ export function mountServerControls(root,{getWebBase,kind='storybook-web',getPro
   const regions=[];const collect=el=>{if(el===root)return;if(!el.contains(root)){regions.push(el);return;}for(const child of el.children)if(!['SCRIPT','STYLE'].includes(child.tagName))collect(child);};for(const main of document.querySelectorAll('main'))collect(main);
   const panels=regions.map(el=>[el,el.inert]);for(const [el]of panels)el.inert=true;
   const cancel=q('[data-cancel-recovery]'),badge=q('[data-recovery-state]');cancel.hidden=false;badge.textContent='복구 중';
-  root.setAttribute('aria-busy','true');root.querySelectorAll('button,input,select').forEach(el=>el.disabled=el!==cancel&&!el.matches('[data-log-control]'));
+  const controls=[...root.querySelectorAll('button,input,select')].map(el=>[el,el.disabled]);
+  root.setAttribute('aria-busy','true');for(const [el,disabled]of controls)el.disabled=disabled||el!==cancel&&!el.matches('[data-log-control]');
   try{await action();checkCancelled();badge.textContent='연결됨';}
   catch(error){
    if(controller.signal.aborted){badge.textContent='대기 취소됨';message('복구 대기를 취소했습니다. 저장한 결과는 보관됩니다. 이미 접수된 서버 재시작이나 생성 요청은 계속될 수 있습니다. 아래 작업의 진행 상태를 확인하세요.');}
    else{badge.textContent='확인 필요';message('복구를 완료하지 못했습니다. '+error.message+' 저장한 결과와 입력은 유지됩니다.',true);q('details').open=true;if(lastTarget)showLogs(lastTarget);}
   }
-  finally{if(controller.signal.aborted)void recoveryObserver?.refresh?.().catch(()=>{});recoveryObserver=null;for(const [el,inert]of panels)el.inert=inert;busy=false;controller=null;cancel.hidden=true;root.removeAttribute('aria-busy');root.querySelectorAll('button,input,select').forEach(el=>el.disabled=false);update();if(label)trigger.textContent=label;}
+  finally{if(controller.signal.aborted)void recoveryObserver?.refresh?.().catch(()=>{});recoveryObserver=null;for(const [el,inert]of panels)el.inert=inert;busy=false;controller=null;cancel.hidden=true;root.removeAttribute('aria-busy');for(const [el,disabled]of controls)el.disabled=disabled;update();if(label)trigger.textContent=label;}
  }
  q('[data-cancel-recovery]').onclick=()=>{controller?.abort(new DOMException('복구 대기 취소','AbortError'));};
  async function run(target,check=false){lastTarget=target;return exclusive(async()=>{
