@@ -22,7 +22,8 @@ from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 
 from .client import H3Error
-from .jobs import new_job
+from .jobs import new_job, plan_job
+from .recovery import edit_job
 from .story import narration_line
 from . import storyrun as SR
 
@@ -494,6 +495,19 @@ class VideoStudio:
                         for candidate in c.get('pendingCandidates', []):
                             job = self.app.store.get(candidate['job'])
                             if job and job.status in ('paused', 'failed'):
+                                prompt = c['prompt'] + narration_line(c['text'])
+                                if job.prompt != prompt:
+                                    planned = copy.copy(job)
+                                    planned.prompt = prompt
+                                    scenes = plan_job(planned) if job.scenes else []
+                                    first = next((i for i, scene in enumerate(job.scenes)
+                                                  if scene.status != 'completed' or not scene.output or not Path(scene.output).is_file()), None)
+                                    if first is not None:
+                                        edit_job(self.app.store, job.id, {'scene': first, 'prompt': scenes[first].prompt})
+                                        for scene, updated in zip(job.scenes[first:], scenes[first:]):
+                                            scene.prompt = updated.prompt
+                                    job.prompt = prompt
+                                    self.app.store.save(job)
                                 self.app.worker.resume(job.id)
                                 resumed = True
                     if not resumed:
