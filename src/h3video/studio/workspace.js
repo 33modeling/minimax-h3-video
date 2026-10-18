@@ -40,5 +40,5 @@ export function mountWorkspace(root,{kind='image',onAction=()=>{}}={}){
   finally{pending=false;render();}
  });
  render();
- return {update(next){if(next.id!==data.id){filter='all';selected=null;}data=next;render();}};
+ return {update(next){if(next.id!==data.id){filter='all';selected=null;}if(next.selectedId&&next.items?.some(it=>it.id===next.selectedId))selected=next.selectedId;data=next;render();}};
 }
