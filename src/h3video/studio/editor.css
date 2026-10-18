@@ -53,3 +53,7 @@
  .vw-tabs button{font-size:13px;line-height:1.5}
  .vw-status{padding:12px;gap:9px}
 }
+
+.video-start{max-width:1540px;margin:24px auto 0;padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:20px}.video-start p{color:var(--mut);font-size:10px;letter-spacing:.12em;margin:0 0 6px}.video-start h2{font-size:30px;letter-spacing:-.04em;margin:0 0 8px}.video-start span{font-size:13px;color:var(--mut)}.video-start-actions{display:flex;gap:8px;flex-wrap:wrap}.vw-header h2{font-size:24px}.vw-header .vw-note{margin:8px 0 0}.vw .mw-board{margin:0 0 22px}.vw .mw-board button{font-family:inherit}.vw .mw-board button:disabled{cursor:default}.vw .mw-board h2{color:#f5f5e9}.vw .mw-board h3{color:#f2f5e7}.vw .mw-board .mw-primary{background:#d8e5ab;color:#193c32;border-color:#d8e5ab}@media(max-width:700px){.video-start{padding:0 16px;align-items:flex-start;flex-direction:column}.video-start-actions{width:100%}.video-start-actions button{flex:1 1 160px}.vw-header .vw-actions button{min-height:44px}}
+
+.video-overview{max-width:1540px;padding:0 28px;margin:22px auto 0}body:has(#videoWorkbench:not([hidden])) .video-overview{display:none}@media(max-width:560px){.video-overview{padding-inline:12px}}

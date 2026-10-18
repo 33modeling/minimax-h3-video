@@ -208,7 +208,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 @media (pointer:coarse) and (max-width:560px){.servers{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.servers::-webkit-scrollbar{display:none}.servers .pill{flex:none;white-space:nowrap}}
 
 .video-resume-dialog{box-sizing:border-box;width:min(480px,calc(100% - 24px));padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--ink);font:15px/1.7 system-ui}.video-resume-dialog::backdrop{background:#152c2477}.video-resume-dialog select{display:block;width:100%;min-height:46px;margin:10px 0 20px}.live-job-controls{align-items:center;justify-content:center;box-shadow:0 -4px 20px #15221b18}.live-job-controls label{max-width:340px;min-width:0}.live-job-controls select{display:block;width:100%;min-height:44px;max-width:340px;border:1px solid var(--line);border-radius:8px;padding:7px;color:var(--ink);background:var(--card)}.live-job-controls .stop-now{background:#a63f32;color:white;border-color:#90382d;min-height:46px}.live-job-controls button{min-height:46px}.live-job-controls[hidden]{display:none!important}@media(max-width:520px){.live-job-controls{gap:6px!important}.live-job-controls label{width:100%;max-width:none}.live-job-controls select{max-width:none}.live-job-controls span{flex:1;font-size:12px}.live-job-controls button{min-width:120px}}
-</style><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"></head><body>
+</style><link rel="stylesheet" href="./studio/workspace.css"><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></symbol>
@@ -242,8 +242,9 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
     <button type="button" class="btn main" id="base-save">연결</button></div>
   <div class="help" id="conn-msg"></div>
 </div></div>
-<section id="serverControls"></section><div class="banners" id="banners"></div>
-<div style="max-width:1540px;margin:18px auto 0;padding:0 28px;display:flex;gap:12px;flex-wrap:wrap"><button class="btn main" id="openVideoStudio" type="button" disabled>영상 편집실 · 초안·보정·AI 업스케일·자막·출력</button><button class="btn main" id="openMotionStudio" type="button" disabled>Hyperframes · 모션·타임라인 영상</button></div>
+
+<section class="video-start"><div><p>VIDEO STUDIO</p><h2>영상 작업실</h2><span>장면 생성부터 보정, 자막과 최종 영상까지.</span></div><div class="video-start-actions"><button class="btn main" id="openVideoStudio" type="button" disabled>영상 편집실 열기 ↗</button><button class="btn main" id="openMotionStudio" type="button" disabled>모션 · 타임라인 편집</button></div></section>
+<div id="videoOverview" class="video-overview"></div><section id="serverControls"></section><div class="banners" id="banners"></div>
 <section id="videoWorkbench" class="vw" hidden aria-label="영상 편집실"></section>
 <main class="layout">
 <section class="maker card" aria-label="새 영상">
@@ -976,8 +977,35 @@ function cardHtml(it) {
     ${media}<div class="c-body">${body}<div class="actions">${acts.join('')}</div>
     <div class="cmd" ${o.cmd ? '' : 'hidden'}>${cmdBlock(it)}<div class="help">서버 주소가 다르면 <code>h3video config set endpoint 주소</code> 로 한 번 저장해 두세요.</div></div>${settings}</div>`;
 }
-const editorTasks=new Map();let liveSelection='',liveRequest=false;
+const editorTasks=new Map();let liveSelection='',liveRequest=false,nativeWorkspace,nativeOverviewId='';
+function updateNativeOverview(){
+ if(!nativeWorkspace)return;
+ const item=feedItems.find(it=>(it.kind==='story'?'story':'jobs')+':'+it.id===liveSelection)||feedItems.find(it=>['pending','running','pausing'].includes(it.status))||feedItems.find(it=>it.id===nativeOverviewId)||feedItems[0];
+ if(!item){nativeWorkspace.update({});return;}nativeOverviewId=item.id;
+ const busy=['pending','running','pausing'].includes(item.status),rows=item.kind==='story'?item.clips:item.scenes||[],active=rows.findIndex(row=>['running','in_progress'].includes(row.status));
+ nativeWorkspace.update({id:item.id,title:titleOf(item),busy,resumable:['paused','failed'].includes(item.status),message:stateText(item).filter(Boolean).join(' · ')+(active>=0?' · 현재 장면 '+(active+1)+'/'+rows.length:''),elapsedMs:item.elapsed*1000,items:rows.map((row,index)=>({id:String(row.id??index),label:row.label||'장면 '+(index+1),preview:row.image_url?full(row.image_url):null,completed:row.status==='completed',error:row.status==='failed'||Boolean(row.error),active:busy&&['running','in_progress'].includes(row.status)}))});
+}
+async function nativeWorkspaceAction(action,id){
+ if(action==='new'){document.querySelector('main.layout').scrollIntoView({behavior:'smooth',block:'start'});$('#f').querySelector('textarea')?.focus({preventScroll:true});return;}
+ if(action==='start'){document.querySelector('main.layout').scrollIntoView({behavior:'smooth',block:'start'});return;}
+ if(action==='library'){$('#feed').scrollIntoView({behavior:'smooth',block:'start'});return;}
+ let item=feedItems.find(it=>it.id===nativeOverviewId);if(!item)return;const kind=item.kind==='story'?'story':'jobs';
+ const rows=item.kind==='story'?item.clips:item.scenes||[],index=rows.findIndex((row,n)=>String(row.id??n)===id);
+ if(action==='view'||action==='current'){cards.get(item.id)?.el.scrollIntoView({behavior:'smooth',block:'start'});return;}
+ if(action==='recover'){openVideoRecovery(kind,item.id);return;}
+ if(action==='edit'){
+  if(['pending','running','pausing'].includes(item.status)){
+   await api(`/api/${kind}/${encodeURIComponent(item.id)}/stop`,{method:'POST'});
+   for(let n=0;n<100;n++){await poll();item=feedItems.find(it=>it.id===nativeOverviewId);if(item&&!['pending','running','pausing'].includes(item.status))break;await new Promise(r=>setTimeout(r,200));}
+   if(!item||['pending','running','pausing'].includes(item.status))throw Error('중지하고 저장하는 중입니다. 잠시 후 장면 수정을 눌러 주세요.');
+  }
+  openSceneEditor(item,Math.max(0,index));return;
+ }
+ await api(`/api/${kind}/${encodeURIComponent(item.id)}/${action==='resume'?'continue':'stop'}`,{method:'POST'});await poll();
+}
+
 function renderLiveControls(){
+ updateNativeOverview();
  const normal=(typeof feedItems==='undefined'?[]:feedItems).filter(it=>['pending','running','pausing','paused','failed'].includes(it.status)).map(it=>({id:it.id,kind:it.kind==='story'?'story':'jobs',title:it.title||it.prompt||'영상 생성',busy:['pending','running','pausing'].includes(it.status),status:it.status,message:stateText(it).filter(Boolean).join(' · ')+(it.elapsed?' · 경과 '+fmt(it.elapsed):'')}));
  const choices=[...editorTasks.values(),...normal];if(!choices.some(it=>it.kind+':'+it.id===liveSelection)){const first=choices.find(it=>it.busy)||choices[0];liveSelection=first?first.kind+':'+first.id:'';}
  const current=choices.find(it=>it.kind+':'+it.id===liveSelection),controls=$('#liveJobControls');controls.hidden=!current;controls.style.display=current?'flex':'none';document.body.style.paddingBottom=current?'150px':'';if(!current){controls.replaceChildren();return;}
@@ -1117,13 +1145,17 @@ $('#recovery-close').onclick=()=>$('#recovery-dialog').close();
 const recoveryChoices=it=>it.kind==='story'?it.clips:it.scenes;
 function fillRecovery(){const it=recoveryTarget, index=Number($('#recovery-scene').value),scene=recoveryChoices(it)[index];$('#recovery-prompt').value=scene.prompt||it.prompt||'';$('#recovery-text').value=scene.text||'';$('#recovery-seconds').value=scene.seconds||scene.duration||6;}
 $('#recovery-scene').onchange=fillRecovery;
+function openSceneEditor(item,index=0){
+ recoveryTarget=item;$('#recovery-error').textContent='';$('#recovery-scene').replaceChildren(...recoveryChoices(item).map((scene,i)=>{const option=document.createElement('option');option.value=i;option.textContent=`${i+1}. ${scene.label||'장면 '+(i+1)}`;return option;}));$('#recovery-scene').value=String(index);
+ $('#recovery-text-label').hidden=item.kind!=='story';$('#recovery-seconds-label').hidden=item.kind!=='story';fillRecovery();$('#recovery-dialog').showModal();
+}
+
 $('#feed').addEventListener('click',async event=>{
  const button=event.target.closest('[data-recovery]');if(!button)return;
  const card=button.closest('[data-id]'),item=cards.get(card.dataset.id).item,action=button.dataset.recovery;
  const kind=item.kind==='story'?'story':'jobs';
  if(action==='edit'){
-   recoveryTarget=item;$('#recovery-error').textContent='';$('#recovery-scene').replaceChildren(...recoveryChoices(item).map((scene,i)=>{const option=document.createElement('option');option.value=i;option.textContent=`${i+1}. ${scene.label||'장면 '+(i+1)}`;return option;}));
-   $('#recovery-text-label').hidden=kind!=='story';$('#recovery-seconds-label').hidden=kind!=='story';fillRecovery();$('#recovery-dialog').showModal();return;
+   openSceneEditor(item);return;
  }
  button.disabled=true;
  try{await api(`/api/${kind}/${encodeURIComponent(item.id)}/${action}`,{method:'POST'});toast(action==='stop'?'중지하고 저장하는 중입니다. 완료한 구간은 보존합니다':action==='restart'?'기존 결과를 보존하고 새 작업을 시작했습니다':action==='pause'?'현재 장면을 마친 뒤 저장하고 멈춥니다':action==='restore'?'수정 전 저장본을 복원했습니다':'완성한 장면을 유지하고 이어 만듭니다');poll();}
@@ -1162,6 +1194,8 @@ Promise.all([import('./studio/server-control.js'),import('./studio/project-recov
  return createVideoRecovery({getBase:()=>BASE||location.origin,kind:group,id,save:async()=>{const pending=[];window.dispatchEvent(new CustomEvent('h3:save-project',{detail:{id,waitUntil:promise=>pending.push(promise)}}));await Promise.all(pending);}});
 },onConnected:async()=>{await loadSpec();await checkHealth();await poll();window.dispatchEvent(new Event('h3:refresh-project'));}})).catch(error=>toast(error.message));
 import('./studio/motion.js').then(({mountMotionStudio})=>mountMotionStudio({api,full,toast})).catch(error=>toast('모션 편집기를 불러오지 못했습니다: '+error.message));
+import('./studio/workspace.js').then(({mountWorkspace})=>{nativeWorkspace=mountWorkspace(document.getElementById('videoOverview'),{kind:'video',onAction:nativeWorkspaceAction});updateNativeOverview();}).catch(error=>toast('작업 현황을 불러오지 못했습니다: '+error.message));
+window.addEventListener('h3:workspace-recovery',event=>openVideoRecovery('studio/projects',event.detail.id));
 import('./studio/editor.js').then(({mountVideoStudio})=>mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null})).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));
 if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');
 </script></body></html>
