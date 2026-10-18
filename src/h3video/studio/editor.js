@@ -11,10 +11,11 @@ export function mountVideoStudio({api,full,toast,getConti}){
  const root=document.querySelector('#videoWorkbench');
  let project=null,library=[],clipId=null,tab='timeline',dirty=false,saving=false,polling=false,capabilities=null;
  let baseline='',saveTimer,dragged,compareIds=[],requesting=false,requestAction='';
- const resumeKey='h3video.activeEditor:'+full('');
+ const storageBase=new URL(full('/'),location.href).href.replace(/\/$/,''),resumeKey='h3video.activeEditor:'+storageBase;
  let pendingDraft=null,draftStorageError=false,saveError='';
- const draftKey=id=>'h3video.editorDraft:'+full('')+':'+id;
- const readDraft=id=>{try{const draft=JSON.parse(localStorage.getItem(draftKey(id))||'null');return draft?.id===id&&Array.isArray(draft.settings?.clips)&&draft.settings.clips.length?draft:null;}catch{return null;}};
+ const draftKey=id=>'h3video.editorDraft:'+storageBase+':'+id,legacyDraftKey=id=>'h3video.editorDraft:'+full('')+':'+id;
+ const readDraft=id=>{try{const draft=JSON.parse(localStorage.getItem(draftKey(id))||localStorage.getItem(legacyDraftKey(id))||'null');return draft?.id===id&&Array.isArray(draft.settings?.clips)&&draft.settings.clips.length?draft:null;}catch{return null;}};
+ const removeDraft=id=>{try{localStorage.removeItem(draftKey(id));localStorage.removeItem(legacyDraftKey(id));}catch{}};
  function cacheDraft(){if(!project)return;try{localStorage.setItem(draftKey(project.id),JSON.stringify({id:project.id,at:Date.now(),settings:draftSettings(project)}));draftStorageError=false;}catch{draftStorageError=true;}}
  const reference=mountReferenceStudio({api,full,toast,openProject:id=>open(id)});
  const q=s=>root.querySelector(s),post=(path,body={})=>api(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
@@ -29,11 +30,11 @@ export function mountVideoStudio({api,full,toast,getConti}){
   saving=true;const current=project,revision=JSON.stringify(current);try{
    const response=await post(route('settings'),{title:project.title,clips:project.clips,audio:project.audio,delivery:project.delivery,
     ...(project.captionEdited?{captions:project.captions}:{})});
-   if(project===current&&JSON.stringify(current)===revision){project=response;dirty=false;saveError='';pendingDraft=null;baseline=JSON.stringify(response);try{localStorage.removeItem(draftKey(current.id));}catch{}updateStatus();}
+   if(project===current&&JSON.stringify(current)===revision){project=response;dirty=false;saveError='';pendingDraft=null;baseline=JSON.stringify(response);removeDraft(current.id);updateStatus();}
   }catch(error){saveError='서버 저장 실패 · '+(draftStorageError?'브라우저 저장 공간도 부족합니다. 수정본을 파일로 받으세요.':'이 브라우저에 수정본을 보관했습니다. 연결되면 다시 저장합니다.');updateStatus();throw error;}finally{saving=false;}
  }
- async function open(id){try{localStorage.setItem(resumeKey,id);}catch{}if(requesting)throw Error('작업 등록이 끝난 뒤 프로젝트를 바꿔 주세요.');await save();project=await api('/api/studio/projects/'+id);pendingDraft=readDraft(id);clipId=project.clips[0]?.id;dirty=false;saveError='';baseline=JSON.stringify(project);root.hidden=false;render();root.scrollIntoView({behavior:'smooth',block:'start'});}
- async function create(body={}){if(requesting)throw Error('작업 등록이 끝난 뒤 새 프로젝트를 열어 주세요.');await save();project=await post('/api/studio/projects',body);clipId=project.clips[0].id;dirty=false;pendingDraft=null;saveError='';try{localStorage.setItem(resumeKey,project.id);}catch{}await refreshLibrary();root.hidden=false;render();root.scrollIntoView({behavior:'smooth'});return project;}
+ async function open(id){if(requesting)throw Error('작업 등록이 끝난 뒤 프로젝트를 바꿔 주세요.');requesting=true;requestAction='open';updateStatus();try{await save();const loaded=await api('/api/studio/projects/'+id);project=loaded;try{localStorage.setItem(resumeKey,id);}catch{}pendingDraft=readDraft(id);clipId=project.clips[0]?.id;dirty=false;saveError='';baseline=JSON.stringify(project);root.hidden=false;}finally{requesting=false;requestAction='';render();}root.scrollIntoView({behavior:'smooth',block:'start'});}
+ async function create(body={}){if(requesting)throw Error('작업 등록이 끝난 뒤 새 프로젝트를 열어 주세요.');requesting=true;requestAction='create';updateStatus();try{await save();project=await post('/api/studio/projects',body);clipId=project.clips[0].id;dirty=false;pendingDraft=null;saveError='';try{localStorage.setItem(resumeKey,project.id);}catch{}await refreshLibrary();root.hidden=false;}finally{requesting=false;requestAction='';render();}root.scrollIntoView({behavior:'smooth'});return project;}
  async function upload(file,kind,extra={}){await save();const data=new FormData();data.append('file',file);data.append('kind',kind);for(const [k,v]of Object.entries(extra))data.append(k,v);project=await api(route('upload'),{method:'POST',body:data});dirty=false;render();}
  function media(c,{label='',className=''}={}){const selected=variant(c);return `<div class="vw-player ${className}">${selected?`<video src="${esc(full(selected.url))}" controls playsinline preload="metadata" data-scene-player></video>`:c?.imageUrl?`<img src="${esc(full(c.imageUrl))}" alt="${esc(c.label)}">`:'<div class="vw-placeholder">그림이나 영상을 올려 주세요.<br>그림만으로 콘티 미리보기를 만들 수 있습니다.</div>'}${label?`<span class="vw-player-label">${esc(label)}</span>`:''}</div>`;}
  function selectOptions(values,current){return values.map(([value,label])=>`<option value="${esc(value)}" ${current===value?'selected':''}>${esc(label)}</option>`).join('');}
@@ -73,7 +74,7 @@ export function mountVideoStudio({api,full,toast,getConti}){
   if(action==='new'){await create();return;}if(action==='open'){await open(b.dataset.id);return;}if(action==='close'){await save();root.hidden=true;return;}if(action==='import-conti'){await importConti();return;}if(!project)return;
   if(action==='motion'){await save();document.dispatchEvent(new CustomEvent('h3-motion-source',{detail:{kind:'edit',id:project.id}}));return;}
   if(action==='restore-draft'){if(project.busy)throw Error('작업을 중지한 뒤 수정본을 불러오세요.');if(!pendingDraft)return;project=restoreDraft(project,pendingDraft.settings);clipId=project.clips[0]?.id;pendingDraft=null;changed();render();toast('수정본을 불러왔습니다. 서버 저장을 다시 시도합니다.');return;}
-  if(action==='discard-draft'){try{localStorage.removeItem(draftKey(project.id));}catch{}pendingDraft=null;render();return;}
+  if(action==='discard-draft'){removeDraft(project.id);pendingDraft=null;render();return;}
   if(action==='download-draft'){const data={schema:'h3video-editor-draft/v1',id:project.id,at:new Date().toISOString(),settings:pendingDraft?.settings||draftSettings(project)};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=project.id+'-edits.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
   if(action==='save'){await save();toast('편집 내용을 저장했습니다.');return;}
   if(action==='tab'){await save();tab=b.dataset.tab;render();return;}
@@ -106,7 +107,7 @@ export function mountVideoStudio({api,full,toast,getConti}){
  window.addEventListener('online',()=>{if(dirty)void save().catch(error=>toast(error.message));});
  window.addEventListener('h3:refresh-project',poll);
  window.addEventListener('h3:save-project',event=>{if(project?.id===event.detail.id)event.detail.waitUntil(save());});
- try{const saved=localStorage.getItem(resumeKey);if(/^edit-[a-f0-9]{32}$/.test(saved||''))void api('/api/studio/projects/'+saved).then(async data=>{if(readDraft(saved)||data.busy||['paused','error'].includes(data.task?.status)||data.clips.some(c=>c.pendingCandidates?.some(v=>['paused','failed'].includes(v.status)))){capabilities=await api('/api/studio/capabilities');await refreshLibrary();await open(saved);}}).catch(()=>{});}catch{}
+ try{const saved=localStorage.getItem(resumeKey)||localStorage.getItem('h3video.activeEditor:'+full(''));if(/^edit-[a-f0-9]{32}$/.test(saved||''))void api('/api/studio/projects/'+saved).then(async data=>{if(project||requesting)return;if(readDraft(saved)||data.busy||['paused','error'].includes(data.task?.status)||data.clips.some(c=>c.pendingCandidates?.some(v=>['paused','failed'].includes(v.status)))){capabilities=await api('/api/studio/capabilities');await refreshLibrary();if(!project&&!requesting)await open(saved);}}).catch(()=>{});}catch{}
  setInterval(poll,1200);window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
  document.querySelector('#openVideoStudio').addEventListener('click',async()=>{try{root.hidden=false;capabilities=await api('/api/studio/capabilities');await refreshLibrary();if(!project&&library.length)await open(library[0].id);else render();root.scrollIntoView({behavior:'smooth'});}catch(error){toast(error.message);}});
  document.addEventListener('click',async event=>{const button=event.target.closest('[data-video-studio-source]');if(!button)return;try{await create({source:{kind:button.dataset.kind,id:button.dataset.videoStudioSource}});}catch(error){toast(error.message);}});

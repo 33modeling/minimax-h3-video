@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node scripts/build-ui.mjs",
     "test:studio": "node tests/e2e/video_studio.mjs",
+    "test:navigation": "node tests/e2e/project_navigation.mjs",
     "install:studio": "python3 scripts/install-video-tools.py",
     "test:reference": "node tests/e2e/reference_studio.mjs",
     "install:hyperframes": "node scripts/install-hyperframes.mjs",
