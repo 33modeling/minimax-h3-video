@@ -136,7 +136,9 @@ class H3Client:
             with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
                 payload = r.read()
         except urllib.error.HTTPError as e:
-            raise H3Error(f"{method} {path} -> HTTP {e.code}: {e.read()[:500].decode(errors='replace')}") from e
+            error = H3Error(f"{method} {path} -> HTTP {e.code}: {e.read()[:500].decode(errors='replace')}")
+            error.http_status = e.code
+            raise error from e
         except urllib.error.URLError as e:
             raise H3Error(f"{method} {path} 연결 실패 ({self.endpoint}): {e.reason}") from e
         except (OSError, http.client.HTTPException) as e:

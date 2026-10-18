@@ -244,6 +244,10 @@ def _concat_av(parts: list[Path], out: Path) -> Path:
     return out
 
 
+def remote_video_missing(error):
+    return (getattr(error, "http_status", None) or getattr(error.__cause__, "code", None)) in (404, 410)
+
+
 class JobStopped(Exception):
     pass
 
@@ -402,8 +406,9 @@ class Worker(threading.Thread):
                 if sc.index < len(job.scenes)-1:
                     prev_frame = extract_last_frame(out, job_dir / f"scene{sc.index+1:02d}.last.png")
                 continue
-            if sc.status == "failed":
-                sc.video_id = None
+            if sc.status in ("failed", "cancelled"):
+                sc.video_id, sc.error, sc.stage = None, None, None
+                sc.progress = 0
             req = build_request(job, sc, prev_frame, lambda path: stage_input(path, self.inbox_dir))
             sc.task = req.task
             client = self.ref_client if sc.task == "ref2va" else self.client
@@ -442,7 +447,7 @@ class Worker(threading.Thread):
                     self.store.save(job)
                     return
                 sc.error = str(error)
-                if sc.status in ('failed', 'cancelled') or re.search(r'out.of.memory|GPU[_ -]*OOM|메모리.*부족|생성 실패', str(error), re.I):
+                if remote_video_missing(error) or sc.status in ('failed', 'cancelled') or re.search(r'out.of.memory|GPU[_ -]*OOM|메모리.*부족|생성 실패', str(error), re.I):
                     sc.status = 'failed'
                 self.store.save(job)
                 raise
@@ -454,7 +459,14 @@ class Worker(threading.Thread):
             out = job_dir / f"scene{sc.index + 1:02d}.mp4"
             if st.get("prompt_used"):   # 서버가 실제로 쓴 프롬프트 (Diffusers 엔진이 다듬은 것)
                 (job_dir / f"scene{sc.index + 1:02d}.prompt.txt").write_text(st["prompt_used"], encoding="utf-8")
-            client.download(video_id, out)
+            try:
+                client.download(video_id, out)
+            except H3Error as error:
+                sc.error = str(error)
+                if remote_video_missing(error):
+                    sc.status = "failed"
+                self.store.save(job)
+                raise
             (job_dir / f"scene{sc.index + 1:02d}.request.json").write_text(json.dumps(req.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
             sc.status, sc.progress, sc.output, sc.error = "completed", 1.0, str(out), None
             parts.append(out)

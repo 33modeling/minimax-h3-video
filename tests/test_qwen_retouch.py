@@ -15,6 +15,28 @@ from h3video.web import parse_multipart
 
 
 class QwenRetouchTest(unittest.TestCase):
+    def test_shared_retouch_works_without_python_site_packages_or_pillow(self):
+        import subprocess
+        image=self.directory/'no-pil.png'
+        subprocess.run(['ffmpeg','-loglevel','error','-y','-i',str(self.video),'-frames:v','1',str(image)],check=True)
+        calls=[]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_POST(self):
+                fields=parse_multipart(self.headers['Content-Type'],self.rfile.read(int(self.headers['Content-Length'])))
+                calls.append(fields)
+                data=json.dumps({'data':[{'b64_json':base64.b64encode(fields['image'][0][1]).decode()}]}).encode()
+                self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
+        try:
+            python=Path(__file__).resolve().parents[1]/'.venv-video-studio/bin/python'
+            probe=subprocess.run([str(python),'-S','-c','import PIL'],capture_output=True,text=True)
+            self.assertNotEqual(probe.returncode,0)
+            output=self.directory/'without-pil.png'
+            result=subprocess.run([str(python),'-S',str(Path(__file__).resolve().parents[1]/'scripts/qwen-retouch.py')],input=json.dumps(dict(input=str(image),output=str(output),prompt='preserve the image')),capture_output=True,text=True,env={**os.environ,'QWEN_IMAGE_BASE_URL':f'http://127.0.0.1:{server.server_address[1]}'},timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr);self.assertTrue(output.is_file());self.assertEqual(len(calls),1)
+        finally:server.shutdown();server.server_close()
+
     def test_oom_settings_are_reused_by_remaining_video_frames(self):
         calls=[]
         class Handler(BaseHTTPRequestHandler):
@@ -98,7 +120,7 @@ class QwenRetouchTest(unittest.TestCase):
         self.assertEqual((variant['width'],variant['height']),(192,128));self.assertTrue(variant['audio'])
         self.assertEqual(original,self.studio.file(p['id'],c['variants'][0]['file']).read_bytes())
 
-    def test_edit_server_offline_keeps_previous_selection_and_variants(self):
+    def test_edit_server_failure_then_resume_preserves_original_selection_and_variants(self):
         p=self.create();c=p['clips'][0]
         with patch.dict(os.environ,{'QWEN_IMAGE_BASE_URL':'http://127.0.0.1:1'}):
             self.studio.start(p['id'],'upscale',{'clip':c['id'],'scale':2,'engine':'qwen-realesrgan','retouchPrompt':'Reduce noise.'})
@@ -110,3 +132,19 @@ class QwenRetouchTest(unittest.TestCase):
                 time.sleep(.05)
         self.assertEqual(result['task']['status'],'error');self.assertIn('Qwen Image',result['task']['error'])
         self.assertEqual(result['clips'][0]['selected'],c['selected']);self.assertEqual(len(result['clips'][0]['variants']),1)
+        original=self.studio.file(p['id'],c['variants'][0]['file']);before=original.read_bytes();mtime=original.stat().st_mtime_ns
+        calls=[]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_POST(self):
+                fields=parse_multipart(self.headers['Content-Type'],self.rfile.read(int(self.headers['Content-Length'])))
+                calls.append(fields)
+                data=json.dumps({'data':[{'b64_json':base64.b64encode(fields['image'][0][1]).decode()}]}).encode()
+                self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
+        try:
+            with patch.dict(os.environ,{'QWEN_IMAGE_BASE_URL':f'http://127.0.0.1:{server.server_address[1]}'}):
+                self.studio.start(p['id'],'resume');complete=self.wait(p['id'])
+            self.assertEqual(complete['task']['status'],'done');self.assertIsNone(complete['task']['error']);self.assertEqual(len(calls),4)
+            self.assertEqual(len(complete['clips'][0]['variants']),2);self.assertEqual(original.read_bytes(),before);self.assertEqual(original.stat().st_mtime_ns,mtime)
+        finally:server.shutdown();server.server_close()

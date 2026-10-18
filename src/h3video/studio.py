@@ -744,10 +744,16 @@ class VideoStudio:
                 source_image = retouched / image.name
                 if not source_image.exists():
                     self.progress(p, .05 + .85 * index / len(images), f'Qwen Image 보정 {index+1}/{len(images)} · 원본 구도 유지')
-                    python = ROOT / '.venv-video-studio/bin/python'
-                    if not python.exists():
-                        raise H3Error('이미지 편집 도구를 설치하세요: npm run install:studio')
-                    self.command(p, [python, ROOT / 'scripts/qwen-retouch.py'],
+                    shared = Path(os.environ.get('STORYBOOK_MAKER_ROOT', ROOT.parent / 'storybook-maker'))
+                    client = shared / 'scripts/retouch-frame.mjs'
+                    if client.is_file() and shutil.which('node'):
+                        command = [shutil.which('node'), client]
+                    else:
+                        python = ROOT / '.venv-video-studio/bin/python'
+                        if not python.exists():
+                            raise H3Error('이미지 편집 도구를 설치하세요: npm run install:studio')
+                        command = [python, ROOT / 'scripts/qwen-retouch.py']
+                    self.command(p, command,
                                  dict(input=str(image), output=str(source_image), seed=0,
                                       provider='qwen-image-quantized' if options.get('engine')=='qwen-quantized-realesrgan' else 'qwen-image-turbo' if options.get('engine')=='qwen-turbo-realesrgan' else 'qwen-image',
                                       prompt='Preserve exact composition, identities, geometry and typography across this video frame. ' + options['retouchPrompt']))

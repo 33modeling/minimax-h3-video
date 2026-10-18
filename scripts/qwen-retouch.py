@@ -8,7 +8,6 @@ import urllib.request
 import uuid
 import shutil
 import tempfile
-from PIL import Image
 
 
 def edit(v):
@@ -20,6 +19,7 @@ def edit(v):
             payload.write(json.dumps(v).encode());payload.seek(0)
             os.dup2(payload.fileno(),0)
             os.execv(shutil.which('node'),['node',str(shared)])
+    from PIL import Image
     turbo=v.get('provider')=='qwen-image-turbo'
     quantized=v.get('provider')=='qwen-image-quantized'
     prefix='QWEN_IMAGE_QUANTIZED' if quantized else 'QWEN_IMAGE_TURBO' if turbo else 'QWEN_IMAGE'
