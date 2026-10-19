@@ -76,7 +76,7 @@ def save_state(d: Path, state: dict) -> None:
 def initial_state(story: Story, params: dict) -> dict:
     return {"title": story.title, "ratio": story.ratio, "source": story.source, "params": params, "created": time.time(),
             "clips": [dict(c, job_id=None, output=None, error=None) for c in story.to_json()["clips"]],
-            "unused_images": story.unused_images, "output": None}
+            "unused_images": story.unused_images, "output": None, **({"cast": story.cast} if story.cast else {})}
 
 
 def jobs_for(state: dict, only: set[str] | None = None) -> list[Job]:

@@ -292,8 +292,16 @@ def story_fields(fields: dict) -> dict:
     ratio = g("ratio") or None
     if ratio and ratio not in spec.ASPECT_RATIOS:
         raise H3Error(f"ratio 는 {spec.ASPECT_RATIOS} 중 하나")
+    cast = None   # 화면의 주요 인물 설정. 보내지 않으면 JSON 안의 인물 설정을 쓴다
+    if "cast" in fields:
+        try:
+            cast = json.loads(g("cast") or "[]")
+        except ValueError:
+            raise H3Error("주요 인물 설정(cast)이 JSON 배열이 아니다") from None
+        if not isinstance(cast, list):
+            raise H3Error("주요 인물 설정(cast)은 JSON 배열이어야 한다")
     return {"json": raw, "json_name": fields["json"][0][0], "narration": g("narration", "1") not in ("0", "false", "off", ""),
-            "ratio": ratio, "seed": parse_seed(g("seed")), "size": parse_size(g("size"))}
+            "ratio": ratio, "seed": parse_seed(g("seed")), "size": parse_size(g("size")), "cast": cast}
 
 
 def attachment(name: str) -> str:
@@ -549,7 +557,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 f = story_fields(fields)
                 if self.path == "/api/story/plan":   # 미리 보기: 그림은 이름만 받는다
                     names = [x[1].decode("utf-8", "replace") for x in fields.get("image_names", [])]
-                    st = ST.load_story(f["json"], names, narration=f["narration"], ratio=f["ratio"], seed=f["seed"], local_paths=False)
+                    st = ST.load_story(f["json"], names, narration=f["narration"], ratio=f["ratio"], seed=f["seed"], local_paths=False, cast=f["cast"])
                     d = st.to_json()
                     for c in d["clips"]:
                         c["image"] = Path(c["image"]).name if c["image"] else None
@@ -564,7 +572,7 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                         dest = folder / Path(fname).name
                         dest.write_bytes(data)
                         paths.append(str(dest))
-                st = ST.load_story(f["json"], paths, narration=f["narration"], ratio=f["ratio"], seed=f["seed"], local_paths=False)
+                st = ST.load_story(f["json"], paths, narration=f["narration"], ratio=f["ratio"], seed=f["seed"], local_paths=False, cast=f["cast"])
                 # ratio: 화면에서 고른 화면비(없으면 JSON 대로) — '같은 설정으로 다시'가 그대로 채운다
                 state = SR.initial_state(st, {"size": f["size"], "narration": f["narration"], "seed": f["seed"], "ratio": f["ratio"]})
                 # 올린 JSON 도 같이 둔다: 화면의 '명령어로 보기'·'같은 설정으로 다시'가 같은 파일을 쓴다

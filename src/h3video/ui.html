@@ -208,6 +208,21 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 @media (pointer:coarse) and (max-width:560px){.servers{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.servers::-webkit-scrollbar{display:none}.servers .pill{flex:none;white-space:nowrap}}
 
 .video-resume-dialog{box-sizing:border-box;width:min(480px,calc(100% - 24px));padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--ink);font:15px/1.7 system-ui}.video-resume-dialog::backdrop{background:#152c2477}.video-resume-dialog select{display:block;width:100%;min-height:46px;margin:10px 0 20px}.live-job-controls{align-items:center;justify-content:center;box-shadow:0 -4px 20px #15221b18}.live-job-controls label{max-width:340px;min-width:0}.live-job-controls select{display:block;width:100%;min-height:44px;max-width:340px;border:1px solid var(--line);border-radius:8px;padding:7px;color:var(--ink);background:var(--card)}.live-job-controls .stop-now{background:#a63f32;color:white;border-color:#90382d;min-height:46px}.live-job-controls button{min-height:46px}.live-job-controls[hidden]{display:none!important}@media(max-width:520px){.live-job-controls{gap:6px!important}.live-job-controls label{width:100%;max-width:none}.live-job-controls select{max-width:none}.live-job-controls span{flex:1;font-size:12px}.live-job-controls button{min-width:120px}}
+/* 주요 인물 설정 */
+.cast-box{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.cast-count{font-size:11.5px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
+.cast-count.on{background:var(--acc-soft);color:var(--acc);border-color:transparent}
+.cast-list{display:grid;gap:8px;margin-top:8px}.cast-list:empty{display:none}
+.cast-card{border:1px solid var(--line);border-radius:10px;padding:4px 10px 6px;background:var(--soft)}
+.cast-card>summary{padding:4px 0;color:var(--ink);font-size:13px}
+.cast-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;margin-top:6px}
+.cast-grid label{display:block;font-size:12.5px;color:var(--mut)}.cast-grid label>span{display:block;margin-bottom:3px}
+.cast-grid label:has(textarea){grid-column:1/-1}
+.cast-grid textarea{min-height:52px}.cast-grid textarea[lang=en]{font-family:ui-monospace,monospace;font-size:12px}
+.cast-tools,.cast-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.cast-tools{justify-content:flex-end}
+.cast-row select{flex:1 1 180px;width:auto}
+#cast-use{color:var(--acc)}#cast-status:empty{display:none}
+.srow .sp{grid-column:1/-1;font-size:12px;color:var(--mut);overflow-wrap:anywhere}.srow .sp summary{font-size:12px}
 </style><link rel="stylesheet" href="./studio/workspace.css"><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
@@ -274,6 +289,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
       <label class="lab" for="prompt">무엇을 만들까요?</label>
       <textarea id="prompt" name="prompt" placeholder=""></textarea>
       <div class="help" id="prompt-help">한국어로 대강 써도 돼요. 서버가 영상용 글로 다듬어서 만들어요. <span class="kbd">Ctrl+Enter</span> 로 바로 만들기.</div>
+      <div class="help" id="cast-use" hidden></div>
     </div>
     <div class="field" data-modes="text fl ref">
       <div class="grid3">
@@ -312,6 +328,15 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
       <label class="chk"><input type="checkbox" id="s-narr" checked> 쪽 글을 내레이션으로 읽기</label>
       <div id="plan"></div>
     </div>
+    <details class="cast-box" id="cast-box" data-modes="text fl ref story">
+      <summary>주요 인물 설정 <span class="cast-count" id="cast-count">없음</span></summary>
+      <div class="help">이름·나이·외모·의상·성격·말투·목소리를 정해 두면, 이름이 나오는 영상의 프롬프트에 그 인물의 설정이 함께 들어가요. 영상 콘티·동화책 JSON에 인물 설정이 들어 있으면 그대로 불러와요.</div>
+      <div class="cast-list" id="cast-list"></div>
+      <datalist id="cast-roles"><option value="주인공"><option value="상대역"><option value="조연"><option value="내레이터"><option value="진행자"></datalist>
+      <div class="cast-row"><select id="cast-preset" aria-label="예시 인물로 더하기"><option value="">예시 인물로 더하기…</option></select><button type="button" class="btn" id="cast-new">빈 인물</button></div>
+      <div class="cast-row"><button type="button" class="btn" id="cast-save-default" title="처음 열 때와 기본값 불러오기에 이 인물들을 써요">기본값으로 저장</button><button type="button" class="btn" id="cast-load-default">기본값 불러오기</button></div>
+      <div class="help" id="cast-status" role="status"></div>
+    </details>
     <div class="go-bar">
       <button class="primary" id="go" type="submit"><svg class="i"><use href="#i-play"/></svg><span>영상 만들기</span></button>
       <span class="msg" id="msg" role="status" aria-live="polite"></span>
@@ -392,7 +417,7 @@ function setMode(m) {
   $('#prompt-help').innerHTML = m === 'ref'
     ? '사진·영상·소리는 넣은 순서대로 1번·2번이에요. 글에 <b>1번 사진</b>, <b>1번 영상</b>처럼 번호로 가리키세요.'
     : '한국어로 대강 써도 돼요. 서버가 영상용 글로 다듬어서 만들어요. <span class="kbd">Ctrl+Enter</span>로 바로 만들기.';
-  setMsg(''); updateGo(); schedulePlan(); renderBanners();
+  setMsg(''); updateGo(); schedulePlan(); renderBanners(); castUse();
 }
 for (const b of $$('.mode')) b.addEventListener('click', () => setMode(b.dataset.mode));
 
@@ -642,6 +667,7 @@ function storyForm(forPlan) {
   fd.set('ratio', $('#s-ratio').value); fd.set('size', $('#s-size').value);
   const seed = $('#s-seed').value.trim(); fd.set('seed', seed === '' ? (forPlan ? '0' : 'random') : seed);
   for (const it of files.pages) forPlan ? fd.append('image_names', it.file.name) : fd.append('images', it.file, it.file.name);
+  fd.set('cast', JSON.stringify(filledCast()));
   return fd;
 }
 async function storyPlan() {
@@ -653,6 +679,8 @@ async function storyPlan() {
   box.innerHTML = '<div class="help">장면을 나누는 중…</div>';
   storyBusy = true; updateGo();
   try {
+    await adoptCast();
+    if (seq !== storySeq) return;
     const d = await api('/api/story/plan', {method: 'POST', body: storyForm(true)});
     if (seq !== storySeq) return;
     storyData = d; renderStoryPlan(d);
@@ -677,17 +705,130 @@ function renderStoryPlan(d) {
     return `<div class="srow ${c.image ? '' : 'noimgrow'}"><span class="n">${i + 1}</span>
       ${src ? `<img src="${src}" alt="${esc(c.image)}">` : `<span class="noimg">그림<br>없음</span>`}
       <div class="t"><div class="lb">${esc(c.label)} <span class="help" style="font-weight:400">${esc(c.id)}${c.image ? ' · ' + esc(c.image) : ''}</span></div>
-        <div class="tx">${esc(c.text || (c.image ? '(글 없음)' : '그림 없이 글로만 만들어요'))}</div></div>
+        <div class="tx">${esc(c.text || (c.image ? '(글 없음)' : '그림 없이 글로만 만들어요'))}</div>
+        <details class="sp"><summary>영상 프롬프트</summary>${esc(c.prompt)}</details></div>
       <div class="sec">${c.seconds}초<small>${esc(c.auto)}</small></div></div>`;
   }).join('');
   const warns = [];
   if (missing.length) warns.push(['', `그림 없는 장면 ${missing.length}개: ${missing.map(c => c.label).join(', ')} — 글만으로 만들어요. 그림을 넣으려면 이름을 page-03처럼 맞춰 주세요.`]);
   if (d.unused_images.length) warns.push(['', `쓰지 않은 그림: ${d.unused_images.join(', ')}`]);
-  $('#plan').innerHTML = `<div class="plan"><div class="plan-head"><b>${esc(d.title)}</b> · 장면 ${d.clips.length}개 · 화면비 ${esc(d.ratio)}</div>${rows}
+  $('#plan').innerHTML = `<div class="plan"><div class="plan-head"><b>${esc(d.title)}</b> · 장면 ${d.clips.length}개 · 화면비 ${esc(d.ratio)}${d.cast?.length ? ` · 인물 설정 ${d.cast.length}명 반영` : ''}</div>${rows}
     <div class="plan-foot"><span>합계</span><span>${d.total_seconds}초${d.total_seconds >= 60 ? ` (${fmt(d.total_seconds)})` : ''}</span></div></div>
     ${warns.length ? `<div class="warns">${warns.map(([c, t]) => `<div class="warn ${c}">${esc(t)}</div>`).join('')}</div>` : ''}`;
 }
 for (const id of ['#s-ratio', '#s-narr', '#s-size']) $(id).addEventListener('change', storyPlan);
+
+// ---------- 주요 인물 설정 ----------
+// 칸·예시는 영상 콘티(video-storyboard-studio castFields)와 같고, 기본값도 같은 칸(frame-storyboard:cast-default)에 둔다.
+// 글로 만들기·그림으로 시작·참고 자료로: 글에 이름이 나오는 인물의 설정을 보낼 글 끝에 붙인다.
+// JSON 한번에: 화면의 인물을 cast 로 보내고 서버(story.py cast_lines)가 이름이 나오는 장면마다 붙인다.
+const CAST_FIELDS = [['name','이름','예) 민준'],['role','역할','주인공 · 상대역 · 내레이터'],['age','나이·성별','예) 30대 남성'],['look','외모·헤어','예) 짧은 검은 머리, 마른 체형'],['outfit','의상·소품','예) 베이지 앞치마, 로고 없는 아이보리 머그'],['personality','성격·태도','예) 말수가 적고 꼼꼼하다'],['speech','말투·대사 습관','예) 짧고 담백하게 말한다'],['voice','목소리','예) 낮고 따뜻한 목소리, 느린 속도'],['lookEn','영상용 영어 고정 문구 (선택, 적으면 그대로 씀)','e.g. a man in his 30s with short black hair, a beige apron and an ivory mug']];
+const CAST_PRESETS = [
+ {label:'브랜드 모델',name:'지우',role:'주인공',age:'30대 여성 직장인',look:'어깨 길이 갈색 머리, 옅은 화장',outfit:'아이보리 니트, 베이지 트렌치코트, 가죽 토트백',personality:'차분하고 다정하다',speech:'짧고 자연스럽게 말한다',voice:'밝고 부드러운 중간 톤',lookEn:'a woman in her 30s with shoulder-length brown hair, an ivory knit sweater, a beige trench coat and a leather tote bag'},
+ {label:'가게 주인',name:'민준',role:'주인공',age:'40대 남성',look:'짧은 검은 머리, 단정한 수염',outfit:'베이지 앞치마, 걷어 올린 남색 셔츠 소매',personality:'말수가 적고 꼼꼼하다',speech:'"오늘도 천천히."처럼 짧게 말한다',voice:'낮고 따뜻한 목소리, 느린 속도',lookEn:'a man in his 40s with short black hair and a neat beard, a beige apron over a navy shirt with rolled-up sleeves'},
+ {label:'내레이터',name:'내레이터',role:'내레이터(화면에 나오지 않음)',age:'50대 남성',look:'',outfit:'',personality:'담담하고 믿음직하다',speech:'존댓말, 문장을 짧게 끊는다',voice:'낮은 바리톤, 여유 있는 속도',lookEn:''},
+ {label:'여행자',name:'하린',role:'주인공',age:'20대 여성',look:'긴 생머리를 하나로 묶음, 햇볕에 살짝 탄 피부',outfit:'카키 바람막이, 회색 백팩, 낡은 필름 카메라',personality:'호기심이 많고 즉흥적이다',speech:'감탄사가 많고 반말로 혼잣말한다',voice:'맑고 경쾌한 목소리',lookEn:'a woman in her 20s with long hair in a ponytail, lightly tanned skin, a khaki windbreaker, a grey backpack and an old film camera'},
+ {label:'진행자',name:'태오',role:'진행자',age:'30대 남성',look:'짧은 갈색 머리, 둥근 안경',outfit:'흰 티셔츠 위 남색 셔츠, 핀 마이크',personality:'유쾌하고 설명을 잘한다',speech:'시청자에게 말을 거는 존댓말',voice:'또렷하고 활기찬 목소리',lookEn:'a man in his 30s with short brown hair and round glasses, a navy shirt over a white T-shirt with a clip-on microphone'},
+ {label:'반려견',name:'보리',role:'조연',age:'세 살 수컷 시바견',look:'황갈색 털, 말린 꼬리',outfit:'빨간 목줄',personality:'느긋하고 사람을 잘 따른다',speech:'',voice:'',lookEn:'a three-year-old tan Shiba Inu with a curled tail and a red collar'},
+];
+const CAST_KEY = 'h3video.cast', CAST_DEFAULT = 'frame-storyboard:cast-default', CAST_SHORT = new Set(['name', 'role', 'age']);
+const castId = () => 'cast-' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+// 동화책 콘티·동화책 만들기 인물(kind·want)도 빈칸 없이 옮긴다 (story.py normalize_cast 와 같다)
+function castRows(list) {
+  return (Array.isArray(list) ? list : []).filter(c => c && typeof c === 'object').map(c => {
+    const row = {id: String(c.id || castId()), ...Object.fromEntries(CAST_FIELDS.map(([k]) => [k, String(c[k] ?? '').slice(0, 2000)]))};
+    if (!row.age.trim() && c.kind) row.age = String(c.kind);
+    if (c.want && !row.personality.includes(String(c.want).trim())) row.personality = [row.personality.trim(), '바라는 것: ' + String(c.want).trim()].filter(Boolean).join(' · ');
+    return row;
+  });
+}
+const castClean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+const filledCast = (list = cast) => list.map(c => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, k === 'id' ? v : castClean(v)]))).filter(c => CAST_FIELDS.some(([k]) => c[k]));
+const castSig = (list = cast) => JSON.stringify(filledCast(list).map(({id, ...c}) => c));
+const castFromJson = d => d && typeof d === 'object' ? filledCast(castRows([d.opts, d.brief, d].find(h => h && Array.isArray(h.cast))?.cast)) : [];
+const castLook = c => c.lookEn || [c.age, c.look, c.outfit].filter(Boolean).join(', ');
+const castNamed = (text, list = filledCast()) => list.filter(c => c.name && String(text).includes(c.name));
+// 이름이 나오는 인물의 외모·성격·말투·목소리 (이미 들어 있는 문구는 다시 붙이지 않는다)
+function castLines(prompt, about = prompt) {
+  const parts = [], dot = t => t.replace(/[.\s]+$/, '');
+  for (const c of castNamed(about)) {
+    const look = castLook(c);
+    if (look && !prompt.includes(look)) parts.push(`Character (${c.name}): ${dot(look)}.`);
+    for (const [label, k] of [['Personality', 'personality'], ['Speech style', 'speech'], ['Voice', 'voice']]) if (c[k] && !prompt.includes(c[k])) parts.push(`${label} of ${c.name}: ${dot(c[k])}.`);
+  }
+  return parts.length ? '\n' + parts.join(' ') : '';
+}
+let cast = (() => { try { return castRows(JSON.parse(LS.get(CAST_KEY, null) ?? LS.get(CAST_DEFAULT, '[]'))); } catch (e) { return []; } })();
+let castTimer = 0, castAdopted = null;
+function castSay(t) { $('#cast-status').textContent = t; }
+function setCast(next, {redraw = true, silent = false} = {}) {
+  const before = castSig();
+  cast = castRows(next);
+  LS.set(CAST_KEY, JSON.stringify(cast));
+  redraw ? renderCast() : castMeta();
+  if (!silent && castSig() !== before && mode === 'story' && files.json.length) { clearTimeout(castTimer); storyData = null; updateGo(); castTimer = setTimeout(storyPlan, 500); }
+}
+function castMeta() {
+  const n = filledCast().length;
+  $('#cast-count').textContent = n ? `${n}명` : '없음'; $('#cast-count').classList.toggle('on', n > 0);
+  $$('#cast-list .cast-card').forEach((card, i) => { const c = cast[i]; if (c) card.querySelector('summary b').textContent = [c.name.trim() || '이름 없음', c.role.trim()].filter(Boolean).join(' · '); });
+  castUse();
+}
+// 글로 만드는 칸 아래: 이 글에 이름이 나오는 인물
+function castUse() {
+  const el = $('#cast-use'), list = filledCast().filter(c => c.name);
+  if (!list.length || mode === 'story') { el.hidden = true; return; }
+  const named = castNamed($('#prompt').value, list);
+  el.hidden = false;
+  el.textContent = named.length ? `이 글에 나오는 ${named.map(c => c.name).join(' · ')}의 인물 설정이 함께 들어가요.` : `글에 인물 이름(${list.map(c => c.name).join(', ')})을 쓰면 그 인물의 설정이 함께 들어가요.`;
+}
+function renderCast() {
+  $('#cast-list').innerHTML = cast.map((c, i) => `<details class="cast-card" open><summary><b></b></summary><div class="cast-grid">${CAST_FIELDS.map(([k, label, hint]) =>
+    `<label class="cast-${k}"><span>${esc(label)}</span>${CAST_SHORT.has(k) ? `<input type="text" data-k="${k}" aria-label="인물 ${i + 1} ${esc(label)}" placeholder="${esc(hint)}"${k === 'role' ? ' list="cast-roles"' : ''} autocomplete="off">`
+      : `<textarea data-k="${k}" rows="2" aria-label="인물 ${i + 1} ${esc(label)}" placeholder="${esc(hint)}"${k === 'lookEn' ? ' lang="en" spellcheck="false"' : ''}></textarea>`}</label>`).join('')}</div>
+    <div class="cast-tools"><button type="button" class="btn" data-cast-op="up" aria-label="인물 ${i + 1} 위로"${i === 0 ? ' disabled' : ''}>위로</button><button type="button" class="btn" data-cast-op="down" aria-label="인물 ${i + 1} 아래로"${i === cast.length - 1 ? ' disabled' : ''}>아래로</button><button type="button" class="btn" data-cast-op="remove">빼기</button></div></details>`).join('');
+  $$('#cast-list .cast-card').forEach((card, i) => card.querySelectorAll('[data-k]').forEach(n => { n.value = cast[i][n.dataset.k]; }));
+  castMeta();
+}
+$('#cast-list').addEventListener('input', e => {
+  const k = e.target.dataset.k, i = $$('#cast-list .cast-card').indexOf(e.target.closest('.cast-card'));
+  if (!k || i < 0) return;
+  setCast(cast.map((c, j) => j === i ? {...c, [k]: e.target.value} : c), {redraw: false});
+});
+$('#cast-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-cast-op]'); if (!b) return;
+  const i = $$('#cast-list .cast-card').indexOf(b.closest('.cast-card')), next = [...cast];
+  if (b.dataset.castOp === 'remove') { const [gone] = next.splice(i, 1); setCast(next); castSay(`‘${gone.name.trim() || '이름 없는 인물'}’을 뺐어요.`); return; }
+  const j = b.dataset.castOp === 'up' ? i - 1 : i + 1; [next[i], next[j]] = [next[j], next[i]]; setCast(next);
+});
+$('#cast-preset').insertAdjacentHTML('beforeend', CAST_PRESETS.map((p, i) => `<option value="${i}">${esc(p.label)} · ${esc(p.name)}</option>`).join(''));
+$('#cast-preset').addEventListener('change', e => {
+  const p = CAST_PRESETS[Number(e.target.value)]; e.target.value = ''; if (!p) return;
+  const {label, ...rest} = p; setCast([...cast, {...rest, id: castId()}]); castSay(`예시 인물 ‘${p.name}’을 더했어요. 내 영상에 맞게 고쳐 주세요.`);
+});
+$('#cast-new').addEventListener('click', () => { setCast([...cast, {id: castId()}]); $('#cast-list .cast-card:last-child input')?.focus(); });
+$('#cast-save-default').addEventListener('click', () => {
+  const list = filledCast(); LS.set(CAST_DEFAULT, list.length ? JSON.stringify(list) : null);
+  castSay(list.length ? `인물 ${list.length}명을 기본값으로 저장했어요.` : '기본 인물을 비웠어요.');
+});
+$('#cast-load-default').addEventListener('click', () => {
+  let saved = []; try { saved = castRows(JSON.parse(LS.get(CAST_DEFAULT, '[]'))); } catch (e) { /* 깨진 값은 없는 것으로 */ }
+  if (!saved.length) { castSay('저장한 기본 인물이 없어요. 인물을 정한 뒤 기본값으로 저장해 주세요.'); return; }
+  setCast(saved.map(c => ({...c, id: castId()}))); castSay(`기본 인물 ${saved.length}명을 불러왔어요.`);
+});
+$('#prompt').addEventListener('input', castUse);
+// 새 JSON 에 인물 설정이 있으면 그 인물로 바꾼다 (같은 파일로 장면을 다시 나눌 때는 고친 인물을 그대로 둔다)
+async function adoptCast() {
+  const f = files.json[0]?.file;
+  if (!f || f === castAdopted) return;
+  castAdopted = f;
+  let found = [];
+  try { found = castFromJson(JSON.parse((await f.text()).replace(/^\uFEFF/, ''))); } catch (e) { return; }
+  if (!found.length || castSig(found) === castSig()) return;
+  setCast(found, {silent: true}); $('#cast-box').open = true;
+  castSay(`불러온 JSON에 있던 주요 인물 ${found.length}명(${found.map(c => c.name || '이름 없음').join(', ')})으로 바꿨어요. 장면 프롬프트에 들어가요.`);
+}
+renderCast();
 
 // ---------- 만들기 ----------
 function setMsg(t, bad) { const m = $('#msg'); m.textContent = t; m.classList.toggle('bad', !!bad); }
@@ -734,7 +875,8 @@ $('#f').addEventListener('submit', async e => {
       toast(`장면 ${r.total}개 만들기를 시작했어요`, '보기', () => focusCard(r.id));
     } else {
       const fd = new FormData();
-      fd.set('prompt', $('#prompt').value.trim()); fd.set('seconds', $('#seconds').value); fd.set('aspect_ratio', $('#aspect').value);
+      const text = $('#prompt').value.trim();
+      fd.set('prompt', text + castLines(text)); fd.set('seconds', $('#seconds').value); fd.set('aspect_ratio', $('#aspect').value);
       fd.set('seed', $('#seed').value.trim() || 'random'); fd.set('size', $('#size').value);
       if ($('#title').value.trim()) fd.set('title', $('#title').value.trim());
       if ($('#steps').value.trim()) fd.set('steps', $('#steps').value.trim());

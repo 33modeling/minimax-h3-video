@@ -770,7 +770,14 @@ def cmd_json(a):
     else:
         if not a.file:
             raise H3Error("JSON 파일이 필요하다: h3video json 이야기.json [그림들·폴더]  (이어 하기는 --resume last)")
-        story = ST.load_story_file(a.file, a.images, narration=not a.no_narration, ratio=a.ratio, seed=a.seed)
+        cast = None
+        if a.cast:
+            try:
+                src = json.loads(Path(a.cast).expanduser().read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError) as e:
+                raise H3Error(f"--cast JSON 을 읽을 수 없다: {e}") from None
+            cast = src if isinstance(src, list) else ST.cast_from(src)
+        story = ST.load_story_file(a.file, a.images, narration=not a.no_narration, ratio=a.ratio, seed=a.seed, cast=cast)
         print(ST.describe(story), file=sys.stderr)
         if a.list:
             for c in story.clips:
@@ -1080,6 +1087,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--only", help="일부 장면만 (예: page-02,page-05 — --list 로 id 확인)")
     g.add_argument("--resume", help="그 JSON 작업 폴더에서 실패한·안 된 장면만 다시 하고 이어 붙이기 (폴더, 이름, last)")
     g.add_argument("--no-narration", action="store_true", help="쪽 글을 내레이션으로 읽게 하지 않기 (길이는 그대로 글 읽는 시간)")
+    g.add_argument("--cast", metavar="FILE", help="주요 인물 설정 JSON (인물 배열, 또는 콘티 JSON 의 opts.cast·brief.cast). "
+                   "이름이 나오는 장면 프롬프트에 외모·성격·말투·목소리를 붙인다 (기본: JSON 안의 인물 설정)")
     g = p.add_argument_group("화면·결과")
     g.add_argument("-r", "--ratio", choices=spec.ASPECT_RATIOS, metavar="RATIO", help="화면비 (기본: JSON 판형, 없으면 그림 비율 auto)")
     g.add_argument("--size", type=int, default=spec.SHORT_EDGE_DEFAULT, choices=[512, 576, 640, 704, 768], metavar="PX", help="짧은 변 (기본 768)")

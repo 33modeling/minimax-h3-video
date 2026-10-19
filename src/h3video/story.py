@@ -50,6 +50,7 @@ class Story:
     clips: list[Clip]
     source: str               # conti | book | list
     unused_images: list[str] = field(default_factory=list)
+    cast: list[dict] = field(default_factory=list)   # 주요 인물 설정 (장면 프롬프트에 들어간 것)
 
     def to_json(self) -> dict:
         d = asdict(self)
@@ -115,6 +116,58 @@ def video_prompt(scene: str, *, image: bool, style: str = "", characters: str = 
     return " ".join(parts) + (narration_line(text) if narration else "")
 
 
+# ---------- 주요 인물 설정 ----------
+# 칸은 영상 콘티(video-storyboard-studio castFields)와 같다. 동화책 콘티·동화책 만들기의 인물(kind·want)도 받는다.
+CAST_KEYS = ("name", "role", "age", "look", "outfit", "personality", "speech", "voice", "lookEn")
+
+
+def normalize_cast(items) -> list[dict]:
+    """인물 목록 → 칸을 모두 채운 dict 목록. 무엇이든 적힌 인물만 남긴다."""
+    out = []
+    for c in items if isinstance(items, list) else []:
+        if not isinstance(c, dict):
+            continue
+        row = {k: re.sub(r"\s+", " ", str(c.get(k) or "")).strip()[:2000] for k in CAST_KEYS}
+        if not row["age"] and c.get("kind"):
+            row["age"] = str(c["kind"]).strip()
+        if c.get("want") and str(c["want"]).strip() not in row["personality"]:
+            row["personality"] = " · ".join(x for x in (row["personality"], f"바라는 것: {str(c['want']).strip()}") if x)
+        if any(row.values()):
+            out.append(row)
+    return out
+
+
+def cast_from(data) -> list[dict]:
+    """JSON 안의 인물: 동화책 콘티 {opts:{cast}}, 영상 콘티 {brief:{cast}}, 동화책 만들기 book.json {cast}."""
+    if not isinstance(data, dict):
+        return []
+    for holder in (data.get("opts"), data.get("brief"), data):
+        if isinstance(holder, dict) and isinstance(holder.get("cast"), list):
+            return normalize_cast(holder["cast"])
+    return []
+
+
+def cast_look(c: dict) -> str:
+    """영상용 영어 고정 문구를 적었으면 그대로, 아니면 나이·외모·의상."""
+    return c["lookEn"] or ", ".join(x for x in (c["age"], c["look"], c["outfit"]) if x)
+
+
+def cast_lines(prompt: str, about: str, cast: list[dict]) -> str:
+    """이름이 나오는 장면의 프롬프트에 그 인물의 외모·성격·말투·목소리를 붙인다. 이미 들어 있는 문구는 다시 붙이지 않는다."""
+    parts = []
+    for c in cast:
+        name = c["name"]
+        if not name or name not in about:
+            continue
+        look = cast_look(c)
+        if look and look not in prompt:
+            parts.append(f"Character ({name}): {_clean(look)}.")
+        for label, key in (("Personality", "personality"), ("Speech style", "speech"), ("Voice", "voice")):
+            if c[key] and c[key] not in prompt:
+                parts.append(f"{label} of {name}: {_clean(c[key])}.")
+    return (" " + " ".join(parts)) if parts else ""
+
+
 # ---------- JSON 모양 알아보기 ----------
 def _is_conti(o) -> bool:
     b = o.get("book", o) if isinstance(o, dict) else None
@@ -132,10 +185,13 @@ def _ratio(r, has_images: bool) -> str:
     return "auto" if has_images else "16:9"
 
 
-def _conti(o, narration: bool) -> tuple[str, str, list[dict]]:
+def _conti(o, narration: bool, cast: list[dict] | None = None) -> tuple[str, str, list[dict]]:
     b = o.get("book", o)
     style = _clean((b.get("style") or {}).get("prompt"))
     chars = {str(c.get("name")): _clean(c.get("prompt")) for c in b.get("characters") or [] if isinstance(c, dict)}
+    for c in cast or []:   # 정한 영어 문구가 있으면 그 인물의 글 묘사(그림 없는 장면)도 그 문구로
+        if c["name"] and (c["lookEn"] or not chars.get(c["name"])) and cast_look(c):
+            chars[c["name"]] = _clean(cast_look(c))
     shot = {"wide": "Wide shot: ", "medium": "Medium shot: ", "close-up": "Close-up: ", "bird-eye": "Bird's-eye view: ",
             "low-angle": "Low-angle shot: ", "over-shoulder": "Over-the-shoulder shot: "}
     raw = []
@@ -190,7 +246,7 @@ def _list(o) -> tuple[str, str, list[dict]]:
         raw.append({"id": f"clip-{i:02d}", "label": str(x.get("label") or x.get("name") or x.get("title") or f"{i}번"),
                     "prompt": prompt, "text": str(x.get("text") or x.get("caption") or ""),
                     "image": x.get("image") or x.get("first") or None, "seconds": x.get("seconds", x.get("duration")),
-                    "seed": x.get("seed"), "page": i})
+                    "seed": x.get("seed"), "page": i, "about": str(x.get("about") or x.get("visual") or "")})
     title = str(o.get("title") or "영상 묶음") if isinstance(o, dict) else "영상 묶음"
     ratio = o.get("ratio") if isinstance(o, dict) else None
     return title, ratio, raw
@@ -263,8 +319,9 @@ def _natural(s: str):
 
 
 def load_story(data, images: list[str] | None = None, base: Path | None = None, narration: bool = True,
-               ratio: str | None = None, seed: int = 0, local_paths: bool = True) -> Story:
-    """data: JSON 글·객체. images: 그림 파일들. base: JSON 파일이 있는 폴더(상대 경로 기준)."""
+               ratio: str | None = None, seed: int = 0, local_paths: bool = True, cast: list | None = None) -> Story:
+    """data: JSON 글·객체. images: 그림 파일들. base: JSON 파일이 있는 폴더(상대 경로 기준).
+    cast: 화면에서 정한 주요 인물. None 이면 JSON 안의 인물 설정(콘티 opts.cast·영상 콘티 brief.cast·book.json cast)."""
     if isinstance(data, (str, bytes)):
         try:
             data = json.loads(data.decode("utf-8-sig") if isinstance(data, bytes) else data.lstrip("﻿"))
@@ -272,10 +329,11 @@ def load_story(data, images: list[str] | None = None, base: Path | None = None, 
             # 파이썬 영어 메시지만 주지 않고 어디가 틀렸는지 쉬운 말로 (원래 메시지는 괄호에)
             raise H3Error(f"JSON 을 읽을 수 없다: {e.lineno}줄 {e.colno}번째 글자 근처가 JSON 형식이 아니다 "
                           f"(따옴표·쉼표·괄호를 확인. 원래 메시지: {e.msg})") from None
+    people = normalize_cast(cast) if cast is not None else cast_from(data)
     if isinstance(data,dict) and isinstance(data.get("board"),dict) and isinstance(data["board"].get("scenes"),list):
-        data={"title":data["board"].get("title"),"ratio":data.get("brief",{}).get("ratio"),"clips":[{"prompt":s.get("videoPrompt") or s.get("imagePrompt") or s.get("visual"),"title":s.get("title"),"seconds":s.get("duration"),"text":s.get("caption","")} for s in data["board"]["scenes"]]}
+        data={"title":data["board"].get("title"),"ratio":data.get("brief",{}).get("ratio"),"clips":[{"prompt":s.get("videoPrompt") or s.get("imagePrompt") or s.get("visual"),"title":s.get("title"),"seconds":s.get("duration"),"text":s.get("caption",""),"about":s.get("visual","")} for s in data["board"]["scenes"]]}
     if _is_conti(data):
-        source, (title, jratio, raw) = "conti", _conti(data, narration)
+        source, (title, jratio, raw) = "conti", _conti(data, narration, people)
     elif _is_maker_book(data):
         source, (title, jratio, raw) = "book", _maker_book(data, base if local_paths else None)
     elif isinstance(data, (list, dict)):
@@ -296,14 +354,16 @@ def load_story(data, images: list[str] | None = None, base: Path | None = None, 
     for i, r in enumerate(raw):
         secs, how = auto_seconds(r.get("text", ""), r.get("seconds"))
         prompt = r.get("prompt") or video_prompt(r["scene"], image=bool(r.get("image")), style=r.get("style", ""),
-                                                 characters=r.get("characters", ""), text=r.get("text", ""), narration=narration)
-        if r.get("prompt") and narration and r.get("text"):
+                                                 characters=r.get("characters", ""), text=r.get("text", ""), narration=False)
+        # 인물 설정은 내레이션(<d>…</d>) 앞에 붙인다
+        prompt += cast_lines(prompt, " ".join(str(r.get(k) or "") for k in ("prompt", "scene", "text", "characters", "label", "about")), people)
+        if narration and r.get("text"):
             prompt += narration_line(r["text"])
         s = r.get("seed")
         clips.append(Clip(id=r["id"], label=r["label"], prompt=prompt, seconds=secs, image=r.get("image"), text=r.get("text", ""),
                           page=r.get("page"), seed=int(s) if isinstance(s, (int, float)) or (isinstance(s, str) and s.isdigit()) else seed + i,
                           auto=how))
-    return Story(title=title, ratio=_ratio(ratio or jratio, any(c.image for c in clips)), clips=clips, source=source, unused_images=unused)
+    return Story(title=title, ratio=_ratio(ratio or jratio, any(c.image for c in clips)), clips=clips, source=source, unused_images=unused, cast=people)
 
 
 MEDIA_EXTS = (".mp4", ".mov", ".webm", ".mkv", ".m4v", ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".oga", ".opus", ".flac")
