@@ -208,6 +208,14 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 @media (pointer:coarse) and (max-width:560px){.servers{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.servers::-webkit-scrollbar{display:none}.servers .pill{flex:none;white-space:nowrap}}
 
 .video-resume-dialog{box-sizing:border-box;width:min(480px,calc(100% - 24px));padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--ink);font:15px/1.7 system-ui}.video-resume-dialog::backdrop{background:#152c2477}.video-resume-dialog select{display:block;width:100%;min-height:46px;margin:10px 0 20px}.live-job-controls{align-items:center;justify-content:center;box-shadow:0 -4px 20px #15221b18}.live-job-controls label{max-width:340px;min-width:0}.live-job-controls select{display:block;width:100%;min-height:44px;max-width:340px;border:1px solid var(--line);border-radius:8px;padding:7px;color:var(--ink);background:var(--card)}.live-job-controls .stop-now{background:#a63f32;color:white;border-color:#90382d;min-height:46px}.live-job-controls button{min-height:46px}.live-job-controls[hidden]{display:none!important}@media(max-width:520px){.live-job-controls{gap:6px!important}.live-job-controls label{width:100%;max-width:none}.live-job-controls select{max-width:none}.live-job-controls span{flex:1;font-size:12px}.live-job-controls button{min-width:120px}}
+/* 여러 편 한꺼번에 */
+.multi-box{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.multi-drop{margin-top:10px}
+.multi-list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}.multi-list:empty{display:none}
+.multi-list li{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--soft)}
+.multi-list li>div{flex:1;min-width:0}.multi-list b{display:block;font-size:13px;overflow-wrap:anywhere}.multi-list small{display:block;font-size:12px;color:var(--mut);overflow-wrap:anywhere}
+.multi-list li.bad small{color:var(--bad)}.multi-list li.done small{color:var(--ok)}
+.multi-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
 /* 주요 인물 설정 */
 .cast-box{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
 .cast-count{font-size:11.5px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
@@ -327,6 +335,14 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
       </div>
       <label class="chk"><input type="checkbox" id="s-narr" checked> 쪽 글을 내레이션으로 읽기</label>
       <div id="plan"></div>
+      <details class="multi-box" id="multi-box">
+        <summary>여러 편 한꺼번에 <span class="opt">JSON·zip 여러 개를 차례로 · 밤새 돌려 두기</span></summary>
+        <div class="help">한 파일이 한 편이 됩니다. 동화책 만들기의 '파일 받기' zip은 안의 그림을 첫 장면으로 쓰고, JSON만 넣은 편은 위 '쪽 그림'을 이름으로 맞춰 씁니다. 화면비·크기·시드·내레이션과 주요 인물 설정(비워 두면 JSON마다 들어 있는 인물 설정)은 모든 편에 같이 씁니다. 창을 닫아도 이 PC의 서버가 차례로 만들고, 영상 서버가 끊기면 기다렸다가 다시 만들어요.</div>
+        <div class="drop multi-drop" id="multi-drop" tabindex="0" role="button" aria-label="JSON·zip 여러 개 넣기"></div>
+        <ol class="multi-list" id="multi-list"></ol>
+        <div class="multi-bar"><button type="button" class="btn main" id="multi-go" disabled>여러 편 만들기</button><span class="msg" id="multi-msg" role="status" aria-live="polite"></span></div>
+        <ol class="multi-list multi-sent" id="multi-sent" aria-label="넣은 편"></ol>
+      </details>
     </div>
     <details class="cast-box" id="cast-box" data-modes="text fl ref story">
       <summary>주요 인물 설정 <span class="cast-count" id="cast-count">없음</span></summary>
@@ -767,6 +783,7 @@ function setCast(next, {redraw = true, silent = false} = {}) {
   LS.set(CAST_KEY, JSON.stringify(cast));
   redraw ? renderCast() : castMeta();
   if (!silent && castSig() !== before && mode === 'story' && files.json.length) { clearTimeout(castTimer); storyData = null; updateGo(); castTimer = setTimeout(storyPlan, 500); }
+  if (!silent && castSig() !== before && multiItems.length) { clearTimeout(multiRecheck.timer); multiRecheck.timer = setTimeout(multiRecheck, 600); }
 }
 function castMeta() {
   const n = filledCast().length;
@@ -829,6 +846,109 @@ async function adoptCast() {
   castSay(`불러온 JSON에 있던 주요 인물 ${found.length}명(${found.map(c => c.name || '이름 없음').join(', ')})으로 바꿨어요. 장면 프롬프트에 들어가요.`);
 }
 renderCast();
+
+// ---------- 여러 편 한꺼번에 ----------
+// JSON·zip 여러 개를 편마다 /api/story 로 넣는다. 서버 대기열이 차례로 만들고, multi 로 표시한 이야기는
+// 서버가 끝까지 챙긴다(다시 켠 뒤 대기열 복구·영상 서버가 끊기면 기다렸다가 다시·화면 없이 이어 붙이기).
+const MULTI_KEY = 'h3video.multi';
+let multiItems = [], multiTimer = 0;
+let multiSent = (() => { try { return JSON.parse(LS.get(MULTI_KEY, '[]')); } catch (e) { return []; } })();
+const multiCast = () => { const c = filledCast(); return c.length ? c : null; };   // 비우면 JSON마다 들어 있는 인물 설정
+function multiForm(item, forPlan) {
+  const fd = new FormData();
+  fd.append('json', item.json, item.json.name);
+  fd.set('narration', $('#s-narr').checked ? '1' : '0');
+  fd.set('ratio', $('#s-ratio').value); fd.set('size', $('#s-size').value);
+  const seed = $('#s-seed').value.trim(); fd.set('seed', seed === '' ? (forPlan ? '0' : 'random') : seed);
+  for (const f of item.images || files.pages.map(it => it.file)) forPlan ? fd.append('image_names', f.name) : fd.append('images', f, f.name);
+  const cast = multiCast(); if (cast) fd.set('cast', JSON.stringify(cast));
+  return fd;
+}
+async function multiCheck(item) {
+  try {
+    const d = await api('/api/story/plan', {method: 'POST', body: multiForm(item, true)});
+    item.plan = {title: d.title, clips: d.clips.length, seconds: d.total_seconds, missing: d.missing_images.length};
+    delete item.error;
+  } catch (e) { item.error = e.message; delete item.plan; }
+}
+async function multiAdd(list) {
+  for (const f of list) {
+    const kind = kindOf(f);
+    if (kind === 'zip') {
+      try {
+        const r = await unzip(f), js = r.files.filter(x => kindOf(x) === 'json');
+        const json = js.find(x => x.name.toLowerCase() === 'book.json') || js[0];
+        multiItems.push(json ? {name: f.name, json, images: r.files.filter(x => kindOf(x) === 'image')} : {name: f.name, error: 'zip 안에 JSON이 없어요'});
+      } catch (e) { multiItems.push({name: f.name, error: e.message}); }
+    } else if (kind === 'json') multiItems.push({name: f.name, json: f, images: null});
+    else toast(`${f.name}: JSON·zip 파일만 넣을 수 있어요`);
+  }
+  renderMulti();
+  for (const item of multiItems) if (item.json && !item.plan && !item.error) { await multiCheck(item); renderMulti(); }
+}
+async function multiRecheck() { for (const item of multiItems) if (item.json) { await multiCheck(item); renderMulti(); } }
+function renderMulti() {
+  $('#multi-list').innerHTML = multiItems.map((it, i) => `<li class="${it.error ? 'bad' : ''}"><div><b>${esc(it.plan?.title || it.name)}</b><small>${esc(it.error || (it.plan
+    ? `${it.name} · 장면 ${it.plan.clips}개 · ${fmt(it.plan.seconds)}${it.images ? ` · zip 그림 ${it.images.length}장` : ''}${it.plan.missing ? ` · 그림 없는 장면 ${it.plan.missing}개(글로만)` : ''}`
+    : `${it.name} · 확인 중…`))}</small></div><button type="button" class="btn" data-multi-rm="${i}" aria-label="${esc(it.name)} 빼기">빼기</button></li>`).join('');
+  const ready = multiItems.filter(it => it.plan), bad = multiItems.filter(it => it.error).length;
+  const go = $('#multi-go');
+  go.disabled = !ready.length || bad > 0 || ready.length < multiItems.length;
+  go.textContent = !go.disabled ? `${ready.length}편 만들기 · ${fmt(ready.reduce((n, it) => n + it.plan.seconds, 0))}` : '여러 편 만들기';
+  if (bad) $('#multi-msg').textContent = `읽을 수 없는 파일 ${bad}개를 빼거나 고쳐 주세요.`;
+}
+async function multiRefresh() {
+  clearTimeout(multiTimer);
+  const latest = multiSent.length ? multiSent[0].tag : null, rows = multiSent.filter(x => x.tag === latest);
+  if (!rows.length) { $('#multi-sent').innerHTML = ''; return; }
+  const states = await Promise.all(rows.map(x => api(`/api/story/${encodeURIComponent(x.id)}`).catch(e => ({error: e.message}))));
+  let left = 0;
+  $('#multi-sent').innerHTML = rows.map((x, i) => {
+    const st = states[i], done = st.output;
+    if (!done && !st.error) left++;
+    const text = st.error ? st.error : done ? '완성' : `장면 ${st.done}/${st.total}${st.failed ? ` · 실패 ${st.failed}개(서버가 기다렸다가 다시 만들어요)` : ''}`;
+    return `<li class="${done ? 'done' : st.error ? 'bad' : ''}"><div><b>${esc(x.name)}</b><small>${esc(text)}</small></div><button type="button" class="btn" data-multi-card="${esc(x.id)}">카드 보기</button></li>`;
+  }).join('');
+  if (left && $('#multi-box').open) multiTimer = setTimeout(multiRefresh, 15000);
+}
+(() => {
+  const el = $('#multi-drop');
+  el.innerHTML = `<div class="big">${icon('up')}JSON·zip 여러 개 넣기</div><div class="small">눌러서 고르거나 한꺼번에 끌어다 놓기 · 한 파일이 한 편</div><input type="file" accept=".json,.zip,application/json,application/zip" multiple>`;
+  const inp = $('input[type=file]', el);
+  inp.addEventListener('change', () => { multiAdd([...inp.files]); inp.value = ''; });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inp.click(); } });
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('over'); multiAdd([...(e.dataTransfer.files || [])]); });
+  $('#multi-list').addEventListener('click', e => { const b = e.target.closest('[data-multi-rm]'); if (!b) return; multiItems.splice(+b.dataset.multiRm, 1); renderMulti(); });
+  $('#multi-sent').addEventListener('click', e => { const b = e.target.closest('[data-multi-card]'); if (b) focusCard(b.dataset.multiCard); });
+  $('#multi-box').addEventListener('toggle', () => { if ($('#multi-box').open) multiRefresh(); });
+  for (const id of ['#s-ratio', '#s-narr', '#s-size']) $(id).addEventListener('change', () => { if (multiItems.length) multiRecheck(); });
+  $('#multi-go').addEventListener('click', async () => {
+    const ready = multiItems.filter(it => it.plan);
+    if (!ready.length || ready.length < multiItems.length) return;
+    const go = $('#multi-go'), msg = t => { $('#multi-msg').textContent = t; };
+    go.disabled = true;
+    await checkHealth();
+    if (!online) { msg(SERVED ? '웹 서버에 연결하지 못했어요' : `웹 서버(${BASE})에 연결하지 못했어요`); renderMulti(); return; }
+    const tag = 'multi-' + Date.now().toString(36);
+    let n = 0;
+    for (const item of ready) {
+      msg(`${n + 1}/${ready.length}편 넣는 중…`);
+      try {
+        const fd = multiForm(item, false); fd.set('multi', tag);
+        const r = await api('/api/story', {method: 'POST', body: fd});
+        multiSent.unshift({id: r.id, name: item.plan.title || item.name, tag}); n++;
+        item.sent = true;
+      } catch (e) { item.error = '넣지 못했어요: ' + e.message; }
+    }
+    multiItems = multiItems.filter(it => !it.sent);
+    LS.set(MULTI_KEY, JSON.stringify(multiSent.slice(0, 80)));
+    msg(`${n}편을 대기열에 넣었어요. 창을 닫아도 서버가 차례로 만들어요.${health && health.fl2va === false ? ' 영상 서버가 지금 꺼져 있어 켜지면 기다렸다가 만들어요.' : ''}`);
+    renderMulti(); poll(); multiRefresh();
+  });
+  renderMulti();
+})();
 
 // ---------- 만들기 ----------
 function setMsg(t, bad) { const m = $('#msg'); m.textContent = t; m.classList.toggle('bad', !!bad); }

@@ -106,6 +106,14 @@ class App:
         self.references = ReferenceLibrary(self)
         from .motion import MotionStudio
         self.motion = MotionStudio(self)
+        # 여러 편 한꺼번에(밤새 돌려 두기): 서버를 다시 켜면 남은 장면을 다시 대기열에 넣고, 그 뒤로도 주기적으로 살핀다.
+        self.multi_interval = 30.0
+        self.multi_delays = (60, 120, 300, 600)
+        try:
+            self.keep_multi()
+        except Exception:   # noqa: BLE001  살피기가 실패해도 웹 서버는 뜬다
+            pass
+        threading.Thread(target=self._keep_multi_loop, daemon=True, name="h3-multi").start()
 
     def allowed_input(self, path: str) -> bool:
         if path.startswith(("http://", "https://")):
@@ -248,6 +256,59 @@ class App:
         self.worker.enqueue(job)
         return job
 
+    # 영상 서버가 꺼졌거나 끊겨 실패한 장면: 기다렸다가 다시 만든다(횟수 제한 없음). 그 밖의 실패는 두 번까지만.
+    RETRYABLE = re.compile(r"연결 실패|연결이 끊겼|대기 시간 초과|HTTP 50[0234]")
+
+    def _keep_multi_loop(self):
+        while True:
+            time.sleep(self.multi_interval)
+            try:
+                self.keep_multi()
+            except Exception:   # noqa: BLE001
+                pass
+
+    def keep_multi(self, now: float | None = None) -> None:
+        """여러 편 묶음(state["multi"])을 브라우저 없이 끝까지 돌린다: 장면이 다 됐으면 이어 붙이고, 대기열에서 빠진 장면
+        (서버를 다시 켬)은 다시 넣고, 실패한 장면은 1·2·5·10분 기다렸다가 다시 만든다. 사용자가 멈춘 이야기는 그대로 둔다."""
+        now = time.time() if now is None else now
+        with self.worker.cv:
+            waiting = set(self.worker.queue) | ({self.worker.current} if self.worker.current else set())
+        for d in self.story_dirs():
+            with SR.story_lock(d):
+                try:
+                    st = SR.load_state(d)
+                    if not st.get("multi") or st.get("output") or st.get("paused"):
+                        continue
+                    st = SR.refresh(d, st, self.store)
+                except Exception:   # noqa: BLE001  이어 붙이기 실패는 카드에 보인다
+                    continue
+                if st.get("output"):
+                    continue
+                jobs = [j for j in (self.store.get(c["job_id"]) for c in st["clips"] if c.get("job_id") and not c.get("output")) if j]
+                for job in jobs:
+                    if job.status in ("pending", "queued", "running") and not job.pause_requested and job.id not in waiting:
+                        job.status = "pending"
+                        self.worker.enqueue(job)
+                failed = [j for j in jobs if j.status == "failed"]
+                if not failed or any(j.status in ("pending", "queued", "running") for j in jobs):
+                    continue
+                retry = dict(st.get("multi_retry") or {"count": 0})
+                if retry["count"] >= 2 and not all(self.RETRYABLE.search(j.error or "") for j in failed):
+                    continue
+                if not retry.get("at"):
+                    retry["at"] = now + self.multi_delays[min(retry["count"], len(self.multi_delays) - 1)]
+                    st["multi_retry"] = retry
+                    SR.save_state(d, st)
+                    continue
+                if now < retry["at"]:
+                    continue
+                st["multi_retry"] = {"count": retry["count"] + 1}
+                SR.save_state(d, st)
+                try:
+                    self._resume_story(d.name)
+                except (H3Error, KeyError):
+                    pass
+
     def resume_story(self, name: str) -> dict:
         with SR.story_lock(self.store.root / name):
             return self._resume_story(name)
@@ -300,8 +361,9 @@ def story_fields(fields: dict) -> dict:
             raise H3Error("주요 인물 설정(cast)이 JSON 배열이 아니다") from None
         if not isinstance(cast, list):
             raise H3Error("주요 인물 설정(cast)은 JSON 배열이어야 한다")
+    multi = re.sub(r"[^\w-]", "", g("multi") or "")[:64] or None   # 여러 편 한꺼번에로 넣은 묶음 이름
     return {"json": raw, "json_name": fields["json"][0][0], "narration": g("narration", "1") not in ("0", "false", "off", ""),
-            "ratio": ratio, "seed": parse_seed(g("seed")), "size": parse_size(g("size")), "cast": cast}
+            "ratio": ratio, "seed": parse_seed(g("seed")), "size": parse_size(g("size")), "cast": cast, "multi": multi}
 
 
 def attachment(name: str) -> str:
@@ -581,6 +643,8 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                 jpath = folder / (jname if jname.lower().endswith(".json") else jname + ".json")
                 jpath.write_bytes(f["json"])
                 state["input"] = {"json": str(jpath), "images": str(folder)}
+                if f["multi"]:
+                    state["multi"] = f["multi"]
                 jobs = SR.jobs_for(state)
                 d = SR.new_story_dir(app.store.root)
                 SR.save_state(d, state)
