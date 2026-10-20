@@ -424,7 +424,10 @@ def parse_multipart(content_type: str, body: bytes) -> dict[str, list[tuple[str 
 
 
 def parse_origins(value: str | None) -> list[str]:
-    return [o.strip().rstrip("/") for o in (value or "").split(",") if o.strip()]
+    origins = [o.strip().rstrip("/") for o in (value or "").split(",") if o.strip()]
+    if "https://33modeling.pages.dev" in origins and "https://7modeling.pages.dev" not in origins:
+        origins.append("https://7modeling.pages.dev")
+    return origins
 
 
 def make_handler(app: App, cors_origins: list[str] | None = None):
