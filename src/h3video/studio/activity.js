@@ -26,13 +26,13 @@ export function mountActivity({getWebBase,getProvider=()=> 'qwen-image',video=fa
  body .editor-topbar{top:var(--maker-activity-height,0px)}
  @media(max-width:540px){.maker-activity{padding:9px 12px}.ma-heading strong{font-size:14px}.ma-heading span{flex-basis:100%;order:3}.ma-heading button{font-size:12px}.ma-job{width:100%}.ma-queues{max-height:120px}}
  `;document.head.append(style);
- const q=s=>root.querySelector(s);let timer,healthTimer,pending=false,epoch=0,healthEpoch=0,lastBase='',lastProvider='',lastActivity='',health=null,checkedAt=0,disposed=false;
+ const q=s=>root.querySelector(s);let timer,healthTimer,pending=false,epoch=0,healthEpoch=0,lastBase='',lastProvider='',lastActivity='',health=null,checkedAt=0;
  const base=()=>String(getWebBase?.()||location.origin).replace(/\/+$/,'');
  const provider=()=>getProvider()||'qwen-image';
  const json=async(url)=>{const r=await fetch(url,{signal:AbortSignal.timeout(6500),cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);return r.json();};
  const resize=new ResizeObserver(()=>document.documentElement.style.setProperty('--maker-activity-height',root.offsetHeight+'px'));resize.observe(root);
  function connection(){q('[data-activity-connection]').textContent=!checkedAt?'모델 연결 확인 중':health===null?'모델 연결 확인 필요':video?`영상 엔진 · 기본 ${health.fl2va?'연결됨':'연결 안 됨'} · 참고 영상 ${health.ref2va?'연결됨':'연결 안 됨'}`:health.ok?'이미지 모델 연결됨':'이미지 모델 연결 안 됨';}
- async function checkHealth(){const token=++healthEpoch,address=base(),model=provider();try{const h=await json(address+'/api/health'+(video?'':'?provider='+encodeURIComponent(model)));if(token!==healthEpoch||address!==base()||model!==provider())return;health=h;checkedAt=Date.now();}catch{if(token===healthEpoch){health=null;checkedAt=Date.now();}}connection();clearTimeout(healthTimer);if(!disposed)healthTimer=setTimeout(checkHealth,15000);}
+ async function checkHealth(){const token=++healthEpoch,address=base(),model=provider();try{const h=await json(address+'/api/health'+(video?'':'?provider='+encodeURIComponent(model)));if(token!==healthEpoch||address!==base()||model!==provider())return;health=h;checkedAt=Date.now();}catch{if(token===healthEpoch){health=null;checkedAt=Date.now();}}connection();clearTimeout(healthTimer);healthTimer=setTimeout(checkHealth,15000);}
  function render(running,pendingJobs,count){
   const preparing=Math.max(0,count-running.length-pendingJobs.length),busy=running.length>0||preparing>0,waiting=pendingJobs.length;
   root.dataset.state=busy?'running':waiting?'queued':health&&(video?health.fl2va||health.ref2va:health.ok)?'idle':'offline';
@@ -41,7 +41,7 @@ export function mountActivity({getWebBase,getProvider=()=> 'qwen-image',video=fa
   q('[data-activity-queues]').innerHTML=[...running.map(row=>`<div class="ma-job" data-active-job><b>● 진행 중${row.stage?' · '+esc(row.stage):''}</b>${esc(row.title||'이미지 생성')}${sceneLabel(row.item||'')?' · '+esc(sceneLabel(row.item)):''}${row.message?' · '+esc(row.message):''}</div>`),...pendingJobs.map((row,i)=>`<div class="ma-job" data-queued-job><b>대기 ${row.position||i+1}번째</b>${esc(row.title||'생성 작업')}${sceneLabel(row.item||'')?' · '+esc(sceneLabel(row.item)):''}</div>`),...(preparing?['<div class="ma-job"><b>준비·처리 중</b>작업 정보를 불러오고 있습니다.</div>']:[])].join('');connection();const signature=JSON.stringify([running.map(row=>[row.id,row.status,row.item]),pendingJobs.map(row=>[row.id,row.position]),count]);if(signature!==lastActivity){lastActivity=signature;document.dispatchEvent(new CustomEvent('maker:activity'));}
  }
  async function refresh(){
-  if(disposed||pending||document.hidden)return;pending=true;const token=epoch,address=base();
+  if(pending||document.hidden)return;pending=true;const token=epoch,address=base();
   try{
    const results=await Promise.allSettled([json(address+(video?'/api/activity':'/api/studio/queue')),json(address+'/api/runtime')]);
    if(token!==epoch||address!==base())return;
@@ -49,11 +49,12 @@ export function mountActivity({getWebBase,getProvider=()=> 'qwen-image',video=fa
    const value=queue.status==='fulfilled'?queue.value:{running:[],pending:[]},count=runtime.status==='fulfilled'?Number(runtime.value.activeCount)||0:0;
    render(value.running||[],value.pending||[],Math.max(count,(value.running?.length||0)+(value.pending?.length||0)));
   }catch{if(token!==epoch)return;root.dataset.state='offline';q('[data-activity-title]').textContent=(video?'영상':'이미지')+' 웹 서버 · 연결 끊김';q('[data-activity-connection]').textContent='서버 주소와 연결을 확인하세요.';q('[data-activity-current]').textContent='현재 진행 상황을 확인할 수 없습니다.';q('[data-activity-queues]').replaceChildren();}
-  finally{pending=false;clearTimeout(timer);if(!disposed)timer=setTimeout(refresh,pollMs);}
+  finally{pending=false;clearTimeout(timer);timer=setTimeout(refresh,pollMs);}
  }
  function changed(){if(base()!==lastBase||provider()!==lastProvider){lastBase=base();lastProvider=provider();epoch++;health=null;checkedAt=0;root.dataset.state='checking';q('[data-activity-title]').textContent='서버 상태 확인 중';q('[data-activity-current]').textContent='현재 작업을 확인하고 있습니다.';q('[data-activity-queues]').replaceChildren();void checkHealth();}void refresh();}
  q('[data-activity-refresh]').onclick=()=>{void checkHealth();void refresh();};
  document.addEventListener('change',changed);document.addEventListener('maker:connection-change',changed);document.addEventListener('visibilitychange',changed);
- window.addEventListener('pagehide',()=>{disposed=true;epoch++;healthEpoch++;clearTimeout(timer);clearTimeout(healthTimer);resize.disconnect();},{once:true});changed();
+ // A cached document resumes its existing observers and timers on browser Back.
+ window.addEventListener('pageshow',changed);changed();
  return {refresh};
 }
