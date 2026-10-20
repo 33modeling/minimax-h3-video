@@ -10,7 +10,7 @@ child.stdout.on('data',data=>{buffer+=data;for(const line of buffer.split('\n'))
 const browser=await chromium.launch({headless:true});
 try{
  for(let n=0;n<600&&!config;n++){if(child.exitCode!==null)break;await new Promise(r=>setTimeout(r,100));}assert.ok(config,stderr);
- const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(config.url);
+ const context=await browser.newContext();await context.addInitScript(url=>localStorage.setItem('h3video.server',url),config.url);if(process.env.VIDEO_ACTIVITY_HOST){await context.grantPermissions(['local-network-access']);if(process.env.VIDEO_ACTIVITY_HOST.includes('127.0.0.1:4173')){const code=await fs.readFile('/home/kms/dev/33modeling-local-arcade/server.mjs','utf8'),pw=code.match(/AUTH_PASSWORD = process.env.ARCADE_PASSWORD \|\| '([^']+)'/)[1];assert.ok((await context.request.post('http://127.0.0.1:4173/',{form:{pw}})).ok());}}const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.VIDEO_ACTIVITY_HOST||config.url);
  await page.locator('[data-active-job]').filter({hasText:'Current video'}).waitFor();await page.locator('[data-queued-job]').filter({hasText:'Next video'}).waitFor();
  await page.locator('[data-feed-group=complete] [data-id="'+config.complete+'"]').waitFor();await page.locator('[data-feed-group=unfinished] [data-id="'+config.paused+'"]').waitFor();
  await page.locator('[data-feed-group=working] [data-id="'+config.active+'"]').waitFor();
