@@ -279,6 +279,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
   </div>
   <p class="mode-desc" id="mode-desc"></p>
   <form id="f" novalidate>
+<div class="multi-bar" aria-label="첨부파일 관리"><button type="button" class="btn" id="clear-all-files" disabled>첨부파일 전체 제거</button><button type="button" class="btn" id="clear-json-file" disabled>JSON 내리기</button></div>
     <div class="field" data-modes="fl">
       <div class="pair">
         <div><div class="lab">첫 장면 그림</div><div class="drop" data-zone="first" tabindex="0" role="button"></div></div>
@@ -289,7 +290,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
     <div class="field" data-modes="ref">
       <div class="lab">참고 자료 <span class="opt">사진 9 · 영상 3 · 소리 3 · 합계 12개까지</span></div>
       <div class="drop" data-zone="ref" tabindex="0" role="button"></div>
-      <div class="tiles" id="tiles-ref"></div>
+      <button type="button" class="btn" data-clear-zone="ref" disabled>참고 자료 전체 제거</button><div class="tiles" id="tiles-ref"></div>
       <div class="counts" id="counts-ref"></div>
       <div class="warns" id="warns-ref"></div>
     </div>
@@ -326,7 +327,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
       <div class="field">
         <div class="lab">쪽 그림 <span class="opt">이름이 page-03(또는 03)이면 3쪽, cover면 표지</span></div>
         <div class="drop" data-zone="pages" tabindex="0" role="button"></div>
-        <div class="tiles" id="tiles-pages"></div>
+        <button type="button" class="btn" data-clear-zone="pages" disabled>쪽 그림 전체 제거</button><div class="tiles" id="tiles-pages"></div>
       </div>
       <div class="field grid3">
         <div><label class="lab" for="s-ratio">화면비</label><select id="s-ratio"><option value="">JSON 대로</option></select></div>
@@ -339,8 +340,8 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
         <summary>여러 편 한꺼번에 <span class="opt">JSON·zip 여러 개를 차례로 · 밤새 돌려 두기</span></summary>
         <div class="help">한 파일이 한 편이 됩니다. 동화책 만들기의 '파일 받기' zip은 안의 그림을 첫 장면으로 쓰고, JSON만 넣은 편은 위 '쪽 그림'을 이름으로 맞춰 씁니다. 화면비·크기·시드·내레이션과 주요 인물 설정(비워 두면 JSON마다 들어 있는 인물 설정)은 모든 편에 같이 씁니다. 창을 닫아도 이 PC의 서버가 차례로 만들고, 영상 서버가 끊기면 기다렸다가 다시 만들어요.</div>
         <div class="drop multi-drop" id="multi-drop" tabindex="0" role="button" aria-label="JSON·zip 여러 개 넣기"></div>
-        <ol class="multi-list" id="multi-list"></ol>
-        <div class="multi-bar"><button type="button" class="btn main" id="multi-go" disabled>여러 편 만들기</button><span class="msg" id="multi-msg" role="status" aria-live="polite"></span></div>
+        <div class="multi-bar"><button type="button" class="btn" id="multi-clear-files" disabled>첨부파일 전체 제거</button></div><ol class="multi-list" id="multi-list"></ol>
+        <div class="multi-bar"><button type="button" class="btn main" id="multi-go" disabled>여러 편 만들기</button><button type="button" class="btn stop-now" id="multi-stop" hidden>전체 즉시 중지</button><span class="msg" id="multi-msg" role="status" aria-live="polite"></span></div>
         <ol class="multi-list multi-sent" id="multi-sent" aria-label="넣은 편"></ol>
       </details>
     </div>
@@ -448,6 +449,7 @@ const ZONES = {
 const LIMITS = {image: 9, video: 3, audio: 3, total: 12};
 const KO = {image: '사진', video: '영상', audio: '소리', json: 'JSON'};
 const files = {first: [], last: [], ref: [], json: [], pages: []};
+let inputVersion = 0, hasMultiAttachments = false, multiSubmitting = false;
 function kindOf(f) {
   const t = f.type || '', n = (f.name || '').toLowerCase();
   if (n.endsWith('.zip') || /^application\/(x-)?zip/.test(t)) return 'zip';
@@ -501,11 +503,13 @@ async function unzip(file) {
   return {files, skipped};
 }
 async function addZips(list) {
+  const version = inputVersion;
   let rest = list.filter(f => kindOf(f) !== 'zip');
   const notes = [];
   for (const zf of list.filter(f => kindOf(f) === 'zip')) {
     try {
       const r = await unzip(zf);
+      if(version !== inputVersion)return;
       rest.push(...r.files);
       notes.push(`${zf.name}에서 ${r.files.length}개를 꺼냈어요${r.skipped ? ` (쓰지 않는 ${r.skipped}개는 뺌)` : ''}`);
     } catch (e) { toast(e.message); return; }
@@ -560,6 +564,10 @@ function addTo(z, list) {
 function drop(item) { if (item && item.url) URL.revokeObjectURL(item.url); }
 function removeFile(z, i) { drop(files[z][i]); files[z].splice(i, 1); renderZone(z); changed(z); }
 function clearZone(z) { files[z].forEach(drop); files[z] = []; renderZone(z); }
+function updateRemoveButtons(){ $('#clear-all-files').disabled=multiSubmitting||!hasMultiAttachments&&!Object.values(files).some(list=>list.length); $('#clear-json-file').disabled=!files.json.length; for(const button of $$('[data-clear-zone]'))button.disabled=!files[button.dataset.clearZone].length; }
+$('#clear-all-files').onclick=()=>{if(multiSubmitting)return;inputVersion++;multiVersion++;multiItems=[];$('#multi-drop input').value='';renderMulti();for(const z of Object.keys(ZONES))clearZone(z);storyPlan();schedulePlan();updateGo();};
+$('#clear-json-file').onclick=()=>{inputVersion++;clearZone('json');changed('json');};
+for(const button of $$('[data-clear-zone]'))button.onclick=()=>{inputVersion++;clearZone(button.dataset.clearZone);changed(button.dataset.clearZone);};
 function changed(z) { updateGo(); if (z === 'json' || z === 'pages') storyPlan(); else schedulePlan(); }
 function durText(it) { return it.dur ? ` · ${it.dur.toFixed(1)}초` : ''; }
 function numbered(z) {   // 참고 자료: 종류마다 넣은 순서대로 1번·2번
@@ -568,6 +576,7 @@ function numbered(z) {   // 참고 자료: 종류마다 넣은 순서대로 1번
 }
 function renderZone(z) {
   const el = $(`.drop[data-zone="${z}"]`), conf = ZONES[z], list = files[z];
+  updateRemoveButtons();
   if (!conf.multi && list.length) {
     const it = list[0];
     el.classList.add('has');
@@ -687,11 +696,10 @@ function storyForm(forPlan) {
   return fd;
 }
 async function storyPlan() {
-  const box = $('#plan');
-  storyData = null; updateGo();
+  const box = $('#plan'), seq = ++storySeq;
+  storyBusy = false; storyData = null; updateGo();
   if (storyUnused.size) { storyUnused = new Set(); renderZone('pages'); }
   if (!files.json.length) { box.innerHTML = ''; return; }
-  const seq = ++storySeq;
   box.innerHTML = '<div class="help">장면을 나누는 중…</div>';
   storyBusy = true; updateGo();
   try {
@@ -851,7 +859,7 @@ renderCast();
 // JSON·zip 여러 개를 편마다 /api/story 로 넣는다. 서버 대기열이 차례로 만들고, multi 로 표시한 이야기는
 // 서버가 끝까지 챙긴다(다시 켠 뒤 대기열 복구·영상 서버가 끊기면 기다렸다가 다시·화면 없이 이어 붙이기).
 const MULTI_KEY = 'h3video.multi';
-let multiItems = [], multiTimer = 0;
+let multiItems = [], multiTimer = 0, multiVersion = 0, multiStopRequested = false, currentMultiTag = null;
 let multiSent = (() => { try { return JSON.parse(LS.get(MULTI_KEY, '[]')); } catch (e) { return []; } })();
 const multiCast = () => { const c = filledCast(); return c.length ? c : null; };   // 비우면 JSON마다 들어 있는 인물 설정
 function multiForm(item, forPlan) {
@@ -872,11 +880,13 @@ async function multiCheck(item) {
   } catch (e) { item.error = e.message; delete item.plan; }
 }
 async function multiAdd(list) {
+  if(multiSubmitting)return;
+  const version=multiVersion;
   for (const f of list) {
     const kind = kindOf(f);
     if (kind === 'zip') {
       try {
-        const r = await unzip(f), js = r.files.filter(x => kindOf(x) === 'json');
+        const r = await unzip(f); if(version!==multiVersion)return; const js = r.files.filter(x => kindOf(x) === 'json');
         const json = js.find(x => x.name.toLowerCase() === 'book.json') || js[0];
         multiItems.push(json ? {name: f.name, json, images: r.files.filter(x => kindOf(x) === 'image')} : {name: f.name, error: 'zip 안에 JSON이 없어요'});
       } catch (e) { multiItems.push({name: f.name, error: e.message}); }
@@ -888,25 +898,29 @@ async function multiAdd(list) {
 }
 async function multiRecheck() { for (const item of multiItems) if (item.json) { await multiCheck(item); renderMulti(); } }
 function renderMulti() {
+  hasMultiAttachments=multiItems.length>0;updateRemoveButtons();
   $('#multi-list').innerHTML = multiItems.map((it, i) => `<li class="${it.error ? 'bad' : ''}"><div><b>${esc(it.plan?.title || it.name)}</b><small>${esc(it.error || (it.plan
     ? `${it.name} · 장면 ${it.plan.clips}개 · ${fmt(it.plan.seconds)}${it.images ? ` · zip 그림 ${it.images.length}장` : ''}${it.plan.missing ? ` · 그림 없는 장면 ${it.plan.missing}개(글로만)` : ''}`
-    : `${it.name} · 확인 중…`))}</small></div><button type="button" class="btn" data-multi-rm="${i}" aria-label="${esc(it.name)} 빼기">빼기</button></li>`).join('');
+    : `${it.name} · 확인 중…`))}</small></div><button type="button" class="btn" data-multi-rm="${i}" ${multiSubmitting ? 'disabled' : ''} aria-label="${esc(it.name)} 빼기">빼기</button></li>`).join('');
   const ready = multiItems.filter(it => it.plan), bad = multiItems.filter(it => it.error).length;
   const go = $('#multi-go');
-  go.disabled = !ready.length || bad > 0 || ready.length < multiItems.length;
+  go.disabled = multiSubmitting || !ready.length || bad > 0 || ready.length < multiItems.length;
+  $('#multi-clear-files').disabled = multiSubmitting || !multiItems.length;
   go.textContent = !go.disabled ? `${ready.length}편 만들기 · ${fmt(ready.reduce((n, it) => n + it.plan.seconds, 0))}` : '여러 편 만들기';
   if (bad) $('#multi-msg').textContent = `읽을 수 없는 파일 ${bad}개를 빼거나 고쳐 주세요.`;
 }
 async function multiRefresh() {
   clearTimeout(multiTimer);
   const latest = multiSent.length ? multiSent[0].tag : null, rows = multiSent.filter(x => x.tag === latest);
-  if (!rows.length) { $('#multi-sent').innerHTML = ''; return; }
+  if (!rows.length) { $('#multi-sent').innerHTML = ''; $('#multi-stop').hidden = !multiSubmitting; return; }
   const states = await Promise.all(rows.map(x => api(`/api/story/${encodeURIComponent(x.id)}`).catch(e => ({error: e.message}))));
   let left = 0;
+  $('#multi-stop').hidden = !multiSubmitting && !states.some(st => ['pending','running','pausing'].includes(st.status));
+  $('#multi-stop').disabled = false;
   $('#multi-sent').innerHTML = rows.map((x, i) => {
     const st = states[i], done = st.output;
     if (!done && !st.error) left++;
-    const text = st.error ? st.error : done ? '완성' : `장면 ${st.done}/${st.total}${st.failed ? ` · 실패 ${st.failed}개(서버가 기다렸다가 다시 만들어요)` : ''}`;
+    const text = st.status === 'paused' ? '중지됨 · 저장본에서 이어 만들 수 있습니다.' : st.error ? st.error : done ? '완성' : `장면 ${st.done}/${st.total}${st.failed ? ` · 실패 ${st.failed}개(서버가 기다렸다가 다시 만들어요)` : ''}`;
     return `<li class="${done ? 'done' : st.error ? 'bad' : ''}"><div><b>${esc(x.name)}</b><small>${esc(text)}</small></div><button type="button" class="btn" data-multi-card="${esc(x.id)}">카드 보기</button></li>`;
   }).join('');
   if (left && $('#multi-box').open) multiTimer = setTimeout(multiRefresh, 15000);
@@ -920,31 +934,37 @@ async function multiRefresh() {
   el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('over'); });
   el.addEventListener('dragleave', () => el.classList.remove('over'));
   el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('over'); multiAdd([...(e.dataTransfer.files || [])]); });
-  $('#multi-list').addEventListener('click', e => { const b = e.target.closest('[data-multi-rm]'); if (!b) return; multiItems.splice(+b.dataset.multiRm, 1); renderMulti(); });
+  $('#multi-clear-files').onclick=()=>{if(multiSubmitting)return;multiVersion++;multiItems=[];inp.value='';$('#multi-msg').textContent='첨부파일을 모두 제거했습니다.';renderMulti();};
+  $('#multi-stop').onclick=async()=>{multiStopRequested=true;$('#multi-stop').disabled=true;const tag=multiSubmitting?currentMultiTag:multiSent[0]?.tag,rows=multiSent.filter(row=>row.tag===tag);const results=await Promise.allSettled(rows.map(row=>api('/api/story/'+encodeURIComponent(row.id)+'/stop',{method:'POST'})));const failed=results.filter(row=>row.status==='rejected');$('#multi-msg').textContent=failed.length?'일부 중지 요청을 보내지 못했습니다. 전체 즉시 중지를 다시 눌러 주세요.':'전체 중지를 요청했습니다. 다음 편은 시작하지 않습니다.';$('#multi-stop').disabled=false;poll();multiRefresh();};
+  $('#multi-list').addEventListener('click', e => { const b = e.target.closest('[data-multi-rm]'); if (!b || multiSubmitting) return; multiItems.splice(+b.dataset.multiRm, 1); renderMulti(); });
   $('#multi-sent').addEventListener('click', e => { const b = e.target.closest('[data-multi-card]'); if (b) focusCard(b.dataset.multiCard); });
   $('#multi-box').addEventListener('toggle', () => { if ($('#multi-box').open) multiRefresh(); });
   for (const id of ['#s-ratio', '#s-narr', '#s-size']) $(id).addEventListener('change', () => { if (multiItems.length) multiRecheck(); });
   $('#multi-go').addEventListener('click', async () => {
     const ready = multiItems.filter(it => it.plan);
-    if (!ready.length || ready.length < multiItems.length) return;
+    if (multiSubmitting || !ready.length || ready.length < multiItems.length) return;
+    multiSubmitting=true;multiStopRequested=false;currentMultiTag='multi-'+Date.now().toString(36);$('#multi-stop').hidden=false;$('#multi-stop').disabled=false;
     const go = $('#multi-go'), msg = t => { $('#multi-msg').textContent = t; };
-    go.disabled = true;
+    go.disabled = true;renderMulti();
     await checkHealth();
-    if (!online) { msg(SERVED ? '웹 서버에 연결하지 못했어요' : `웹 서버(${BASE})에 연결하지 못했어요`); renderMulti(); return; }
-    const tag = 'multi-' + Date.now().toString(36);
+    if (!online) { multiSubmitting=false;$('#multi-stop').hidden=true;msg(SERVED ? '웹 서버에 연결하지 못했어요' : `웹 서버(${BASE})에 연결하지 못했어요`); renderMulti(); return; }
+    const tag = currentMultiTag;
     let n = 0;
     for (const item of ready) {
+      if(multiStopRequested)break;
       msg(`${n + 1}/${ready.length}편 넣는 중…`);
       try {
         const fd = multiForm(item, false); fd.set('multi', tag);
         const r = await api('/api/story', {method: 'POST', body: fd});
         multiSent.unshift({id: r.id, name: item.plan.title || item.name, tag}); n++;
         item.sent = true;
+        if(multiStopRequested)await api('/api/story/'+encodeURIComponent(r.id)+'/stop',{method:'POST'});
       } catch (e) { item.error = '넣지 못했어요: ' + e.message; }
     }
+    multiSubmitting=false;
     multiItems = multiItems.filter(it => !it.sent);
     LS.set(MULTI_KEY, JSON.stringify(multiSent.slice(0, 80)));
-    msg(`${n}편을 대기열에 넣었어요. 창을 닫아도 서버가 차례로 만들어요.${health && health.fl2va === false ? ' 영상 서버가 지금 꺼져 있어 켜지면 기다렸다가 만들어요.' : ''}`);
+    msg(multiStopRequested ? '전체 중지를 요청했습니다. 완료한 결과와 아직 보내지 않은 첨부파일은 보존했습니다.' : `${n}편을 대기열에 넣었어요. 창을 닫아도 서버가 차례로 만들어요.${health && health.fl2va === false ? ' 영상 서버가 지금 꺼져 있어 켜지면 기다렸다가 만들어요.' : ''}`);
     renderMulti(); poll(); multiRefresh();
   });
   renderMulti();
