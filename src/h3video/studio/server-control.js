@@ -209,8 +209,8 @@ function installWorkspaceLayout(){
  .maker-server-control>p{font-size:12px;line-height:1.6}
  .maker-server-control>details>label{margin:12px 0}
  .maker-server-control pre{max-width:100%;tab-size:2}
- body:has(#jobControls,#imageJobDock,#liveJobControls){padding-bottom:var(--maker-dock-space,0px)!important}
- #jobControls,#imageJobDock,#liveJobControls{max-height:45dvh;overflow-y:auto;overscroll-behavior:contain}
+ body:has(#jobControls,#imageJobDock,#liveJobControls,#multiControls,#multi-stop){padding-bottom:var(--maker-dock-space,0px)!important}
+ #jobControls,#imageJobDock,#liveJobControls,#multiControls,#multi-stop{max-height:45dvh;overflow-y:auto;overscroll-behavior:contain}
  @media(max-width:560px){
  .maker-server-control{margin:12px 16px;padding:14px}
  .maker-server-control .maker-recovery-heading strong{flex-basis:auto}
@@ -222,9 +222,9 @@ function installWorkspaceLayout(){
  .maker-server-control [data-server-log-panel]>div>strong{flex-basis:100%}
  }
  `;document.head.append(style);
- const docks=[...document.querySelectorAll('#jobControls,#imageJobDock,#liveJobControls')];
+ const docks=[...document.querySelectorAll('#jobControls,#imageJobDock,#liveJobControls,#multiControls,#multi-stop')];
  let scheduled=false;
- const update=()=>{scheduled=false;const height=Math.max(0,...docks.map(el=>el.getBoundingClientRect().height));document.body.style.setProperty('--maker-dock-space',height?`${Math.ceil(height)+16}px`:'0px');};
+ const update=()=>{scheduled=false;const height=Math.max(0,...docks.map(el=>{const rect=el.getBoundingClientRect();return rect.height?innerHeight-rect.top:0;}));document.body.style.setProperty('--maker-dock-space',height?`${Math.ceil(height)+16}px`:'0px');};
  const schedule=()=>{if(!scheduled){scheduled=true;requestAnimationFrame(update);}};
  const size=new ResizeObserver(schedule),visibility=new MutationObserver(schedule);
  for(const dock of docks){size.observe(dock);visibility.observe(dock,{attributes:true,attributeFilter:['hidden','style'],childList:true,subtree:true});}
