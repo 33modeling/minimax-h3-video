@@ -213,12 +213,12 @@
             <textarea id="idea" rows="3" placeholder="예: 비 오는 날 창가에서 커피 내리는 30초 브이로그, 잔잔한 분위기"></textarea>
           </label>
           <div class="settings">
-            <label class="wide"><span class="lab">Anthropic API 키 <small>(이 브라우저에만 저장)</small> <button type="button" class="tip" data-tip="키는 이 브라우저(localStorage)에만 저장되고 Anthropic API로만 보내요. 공용 PC라면 다 쓴 뒤 '키 지우기'를 누르세요.">ⓘ</button></span>
+            <label class="wide"><span class="lab">개인 API 키 <small id="claudeConnection">사이트 연결 확인 중</small> <button type="button" class="tip" data-tip="키는 이 브라우저(localStorage)에만 저장되고 Anthropic API로만 보내요. 공용 PC라면 다 쓴 뒤 '키 지우기'를 누르세요.">ⓘ</button></span>
               <span class="key-row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."><button type="button" class="ghost small" id="keyClear">키 지우기</button></span>
             </label>
           </div>
           <div class="check-row"><button type="button" class="ghost" id="planBtn">Claude에게 기획 요청</button><span id="planOut" class="check-out" aria-live="polite"></span></div>
-          <p class="hint">claude-opus-5-5가 작업 JSON을 써서 1번 칸을 채워요. 2번 칸에 영상이 있으면 프레임 몇 장을 함께 보내요. 키와 프레임은 Anthropic API로만 가요.</p>
+          <p class="hint">claude-opus-5-5가 작업 JSON을 써서 1번 칸을 채워요. 2번 칸에 영상이 있으면 프레임 몇 장을 함께 보내요. 연결된 Claude로 기획하며 참고 프레임도 함께 전달합니다.</p>
         </div>
       </details>
     </div>

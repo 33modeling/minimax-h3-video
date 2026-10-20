@@ -1223,6 +1223,14 @@ el.exportBtn.addEventListener('click', () => {
 });
 
 // ---------- Claude 기획 ----------
+let siteConnection={configured:false};
+const siteConnectionReady=import(/* @vite-ignore */ new URL('../creative-ai/client.mjs',location.href).href)
+ .then(client=>client.getConnection()).then(connection=>{
+  siteConnection=connection;
+  if(connection.configured){el.apiKey.disabled=true;el.apiKey.placeholder='Claude 연결됨 · 키 입력 불필요';el.keyClear.hidden=true;document.querySelector('#claudeConnection').textContent='Claude 연결됨';}
+  if(connection.mount)connection.mount(el.claudePanel.querySelector('.fold-body'));
+  return connection;
+ }).catch(()=>siteConnection);
 el.apiKey.value = LS.get('shorts.anthropicKey', '');
 el.apiKey.addEventListener('change', () => LS.set('shorts.anthropicKey', el.apiKey.value.trim()));
 el.keyClear.addEventListener('click', () => {
@@ -1232,6 +1240,7 @@ el.keyClear.addEventListener('click', () => {
 });
 let planAbort = null;
 el.planBtn.addEventListener('click', async () => {
+  await siteConnectionReady;
   if (planAbort) {
     planAbort.abort();
     return;
@@ -1259,6 +1268,7 @@ el.planBtn.addEventListener('click', async () => {
       model:document.querySelector('#llmModel').value,
       apiKey:useQwen?document.querySelector('#qwenLlmKey').value.trim():apiKey,
       baseUrl:useQwen?document.querySelector('#qwenLlmUrl').value.trim():anthropicBase,
+      connection:useQwen?undefined:siteConnection,
       signal: planAbort.signal,
       log: (t) => (el.planOut.textContent = t),
     });

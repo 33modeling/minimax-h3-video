@@ -125,7 +125,7 @@ export function httpErrorText(status, body = '') {
 async function defaultPost(url, body, apiKey, signal) {
   let r;
   try {
-    r = await fetch(url, { method: 'POST', headers: headers(apiKey), body: JSON.stringify(body), signal });
+    r = await fetch(url, { method: 'POST', credentials:'same-origin', headers: url.includes('/creative-ai/api/')?{'Content-Type':'application/json','anthropic-beta':FALLBACK_BETA}:headers(apiKey), body: JSON.stringify(body), signal });
   } catch (e) {
     if (e.name === 'AbortError') throw e;
     throw new PlanError(`Anthropic API 에 연결하지 못했습니다: ${e.message}`);
@@ -135,17 +135,18 @@ async function defaultPost(url, body, apiKey, signal) {
 }
 
 // 기획 → 검증 → (실패 시 1회 재요청). 반환 { spec, attempts }
-export async function plan({ idea, sources = [], apiKey, model = DEFAULT_MODEL, baseUrl, signal, post = defaultPost, log = () => {} }) {
-  if (model !== QWEN_MODEL && !apiKey) throw new PlanError('Anthropic API 키를 넣어 주세요');
+export async function plan({ idea, sources = [], apiKey, model = DEFAULT_MODEL, baseUrl, connection, signal, post = defaultPost, log = () => {} }) {
+  if (model !== QWEN_MODEL && !apiKey && !connection?.configured) throw new PlanError('Anthropic API 키를 넣어 주세요');
   if (!String(idea || '').trim()) throw new PlanError('아이디어를 적어 주세요');
-  const url = (baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '') + '/v1/messages';
+  const url = connection?.configured?connection.messagesURL:(baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '') + '/v1/messages';
+  const transport=connection?.configured?async(url,body,key,signal)=>{const response=await connection.send(body,{signal,beta:FALLBACK_BETA});if(!response.ok)throw new PlanError(httpErrorText(response.status,await response.text()));return response.json();}:post;
   let body = buildRequest(idea, sources, model);
   let attempts = 0;
   let last = [];
   for (let attempt = 0; attempt < 2; attempt++) {
     attempts += 1;
     const response = model === QWEN_MODEL ? await qwenMessage({body,baseUrl,apiKey,model,signal}) : null;
-    const resp = response ? {stop_reason:response.stop_reason,content:[{type:'text',text:response.text}]} : await post(url, body, apiKey, signal);
+    const resp = response ? {stop_reason:response.stop_reason,content:[{type:'text',text:response.text}]} : await transport(url, body, apiKey, signal);
     const { obj, errors } = parseReply(resp);
     if (obj && !errors.length) return { spec: obj, attempts };
     last = errors;
