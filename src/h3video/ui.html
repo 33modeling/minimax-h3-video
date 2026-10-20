@@ -13,6 +13,8 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}
 [hidden]{display:none!important}
+#multi-stop:not([hidden]){position:fixed;right:max(12px,env(safe-area-inset-right));bottom:calc(var(--live-controls-height,0px) + 12px);z-index:125;min-height:46px;max-width:calc(100vw - 24px);box-shadow:0 4px 18px rgba(0,0,0,.2)}
+body:has(#multi-stop:not([hidden])){padding-bottom:calc(var(--live-controls-height,0px) + 76px)!important}
 svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 code{font-size:.92em;background:var(--soft);padding:1px 5px;border-radius:5px;overflow-wrap:anywhere}
@@ -341,7 +343,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
         <div class="help">한 파일이 한 편이 됩니다. 동화책 만들기의 '파일 받기' zip은 안의 그림을 첫 장면으로 쓰고, JSON만 넣은 편은 위 '쪽 그림'을 이름으로 맞춰 씁니다. 화면비·크기·시드·내레이션과 주요 인물 설정(비워 두면 JSON마다 들어 있는 인물 설정)은 모든 편에 같이 씁니다. 창을 닫아도 이 PC의 서버가 차례로 만들고, 영상 서버가 끊기면 기다렸다가 다시 만들어요.</div>
         <div class="drop multi-drop" id="multi-drop" tabindex="0" role="button" aria-label="JSON·zip 여러 개 넣기"></div>
         <div class="multi-bar"><button type="button" class="btn" id="multi-clear-files" disabled>첨부파일 전체 제거</button></div><ol class="multi-list" id="multi-list"></ol>
-        <div class="multi-bar"><button type="button" class="btn main" id="multi-go" disabled>여러 편 만들기</button><button type="button" class="btn stop-now" id="multi-stop" hidden>전체 즉시 중지</button><span class="msg" id="multi-msg" role="status" aria-live="polite"></span></div>
+        <div class="multi-bar"><button type="button" class="btn main" id="multi-go" disabled>여러 편 만들기</button><span class="msg" id="multi-msg" role="status" aria-live="polite"></span></div>
         <ol class="multi-list multi-sent" id="multi-sent" aria-label="넣은 편"></ol>
       </details>
     </div>
@@ -367,6 +369,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 </section>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button type="button" id="toast-b" hidden></button></div>
+<button type="button" class="btn stop-now" id="multi-stop" hidden>여러 편 제작 즉시 중지</button>
 <aside id="liveJobControls" class="live-job-controls" hidden aria-label="진행 작업 중지" style="position:fixed;bottom:0;left:0;right:0;z-index:120;padding:12px max(12px,env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px"></aside><dialog id="recovery-dialog" class="vr-dialog vs-scene-dialog" aria-labelledby="recovery-title"><form id="recovery-form"><header class="vr-head"><h2 id="recovery-title">장면 수정</h2><button type="button" id="recovery-close" aria-label="장면 수정 닫기">닫기</button></header><p id="recovery-scope" class="vs-scope"></p><label class="vr-label" for="recovery-scene">수정할 장면<select id="recovery-scene"></select></label><label class="vr-label" for="recovery-prompt">영상 생성 프롬프트<textarea id="recovery-prompt" rows="7" required></textarea></label><label class="vr-label" for="recovery-instructions">추가 수정 지시 <span class="vw-note">선택 · 저장할 때 위 프롬프트 끝에 반영됩니다.</span><textarea id="recovery-instructions" rows="3" placeholder="예: 인물과 배경은 유지하고, 카메라가 천천히 가까워지게 수정해 줘."></textarea></label><label class="vr-label" id="recovery-text-label">스토리라인·내레이션<textarea id="recovery-text" rows="3"></textarea></label><label class="vr-label" id="recovery-seconds-label">장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" class="vw-error" role="alert"></p><div class="vw-actions vs-scene-actions"><button type="submit" value="save">프롬프트 저장</button><button type="submit" value="generate" id="recovery-generate" class="vw-primary">저장 후 이 장면부터 다시 만들기</button></div><p id="recovery-feedback" class="vw-note" aria-live="polite"></p></form></dialog>
 <script>
 'use strict';
@@ -859,7 +862,7 @@ renderCast();
 // JSON·zip 여러 개를 편마다 /api/story 로 넣는다. 서버 대기열이 차례로 만들고, multi 로 표시한 이야기는
 // 서버가 끝까지 챙긴다(다시 켠 뒤 대기열 복구·영상 서버가 끊기면 기다렸다가 다시·화면 없이 이어 붙이기).
 const MULTI_KEY = 'h3video.multi';
-let multiItems = [], multiTimer = 0, multiVersion = 0, multiStopRequested = false, currentMultiTag = null;
+let multiItems = [], multiTimer = 0, multiVersion = 0, multiStopRequested = false, currentMultiTag = null, multiRefreshVersion = 0, multiStopping = false;
 let multiSent = (() => { try { return JSON.parse(LS.get(MULTI_KEY, '[]')); } catch (e) { return []; } })();
 const multiCast = () => { const c = filledCast(); return c.length ? c : null; };   // 비우면 JSON마다 들어 있는 인물 설정
 function multiForm(item, forPlan) {
@@ -909,22 +912,30 @@ function renderMulti() {
   go.textContent = !go.disabled ? `${ready.length}편 만들기 · ${fmt(ready.reduce((n, it) => n + it.plan.seconds, 0))}` : '여러 편 만들기';
   if (bad) $('#multi-msg').textContent = `읽을 수 없는 파일 ${bad}개를 빼거나 고쳐 주세요.`;
 }
+function multiState(st) {
+  if (st.output) return 'completed';
+  const busy = (st.clips || []).some(clip => ['pending','running'].includes(clip.status));
+  if (st.paused) return busy ? 'pausing' : 'paused';
+  return busy || st.multi ? 'running' : st.failed ? 'failed' : 'paused';
+}
 async function multiRefresh() {
   clearTimeout(multiTimer);
+  const version = ++multiRefreshVersion;
   const latest = multiSent.length ? multiSent[0].tag : null, rows = multiSent.filter(x => x.tag === latest);
   if (!rows.length) { $('#multi-sent').innerHTML = ''; $('#multi-stop').hidden = !multiSubmitting; return; }
-  const states = await Promise.all(rows.map(x => api(`/api/story/${encodeURIComponent(x.id)}`).catch(e => ({error: e.message}))));
-  let left = 0;
-  $('#multi-stop').hidden = !multiSubmitting && !states.some(st => ['pending','running','pausing'].includes(st.status));
-  $('#multi-stop').disabled = false;
+  const states = await Promise.all(rows.map(x => api(`/api/story/${encodeURIComponent(x.id)}`).catch(e => ({connectionError: e.message}))));
+  if (version !== multiRefreshVersion) return;
+  const active = states.some(st => st.connectionError || ['running','pausing'].includes(multiState(st)));
+  $('#multi-stop').hidden = !multiSubmitting && !active;
+  $('#multi-stop').disabled = multiStopping;
   $('#multi-sent').innerHTML = rows.map((x, i) => {
-    const st = states[i], done = st.output;
-    if (!done && !st.error) left++;
-    const text = st.status === 'paused' ? '중지됨 · 저장본에서 이어 만들 수 있습니다.' : st.error ? st.error : done ? '완성' : `장면 ${st.done}/${st.total}${st.failed ? ` · 실패 ${st.failed}개(서버가 기다렸다가 다시 만들어요)` : ''}`;
-    return `<li class="${done ? 'done' : st.error ? 'bad' : ''}"><div><b>${esc(x.name)}</b><small>${esc(text)}</small></div><button type="button" class="btn" data-multi-card="${esc(x.id)}">카드 보기</button></li>`;
+    const st = states[i], status = multiState(st), done = status === 'completed';
+    const text = st.connectionError ? '진행 상태에 연결하지 못했습니다. 다시 확인 중입니다.' : status === 'paused' ? '중지됨 · 저장본에서 이어 만들 수 있습니다.' : status === 'pausing' ? '중지하고 저장하는 중…' : st.error ? st.error : done ? '완성' : `장면 ${st.done}/${st.total}${st.failed ? ` · 실패 ${st.failed}개(서버가 기다렸다가 다시 만들어요)` : ''}`;
+    return `<li class="${done ? 'done' : st.error || st.connectionError ? 'bad' : ''}"><div><b>${esc(x.name)}</b><small>${esc(text)}</small></div><button type="button" class="btn" data-multi-card="${esc(x.id)}">카드 보기</button></li>`;
   }).join('');
-  if (left && $('#multi-box').open) multiTimer = setTimeout(multiRefresh, 15000);
+  if (active || multiSubmitting) multiTimer = setTimeout(multiRefresh, 2500);
 }
+
 (() => {
   const el = $('#multi-drop');
   el.innerHTML = `<div class="big">${icon('up')}JSON·zip 여러 개 넣기</div><div class="small">눌러서 고르거나 한꺼번에 끌어다 놓기 · 한 파일이 한 편</div><input type="file" accept=".json,.zip,application/json,application/zip" multiple>`;
@@ -935,7 +946,17 @@ async function multiRefresh() {
   el.addEventListener('dragleave', () => el.classList.remove('over'));
   el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('over'); multiAdd([...(e.dataTransfer.files || [])]); });
   $('#multi-clear-files').onclick=()=>{if(multiSubmitting)return;multiVersion++;multiItems=[];inp.value='';$('#multi-msg').textContent='첨부파일을 모두 제거했습니다.';renderMulti();};
-  $('#multi-stop').onclick=async()=>{multiStopRequested=true;$('#multi-stop').disabled=true;const tag=multiSubmitting?currentMultiTag:multiSent[0]?.tag,rows=multiSent.filter(row=>row.tag===tag);const results=await Promise.allSettled(rows.map(row=>api('/api/story/'+encodeURIComponent(row.id)+'/stop',{method:'POST'})));const failed=results.filter(row=>row.status==='rejected');$('#multi-msg').textContent=failed.length?'일부 중지 요청을 보내지 못했습니다. 전체 즉시 중지를 다시 눌러 주세요.':'전체 중지를 요청했습니다. 다음 편은 시작하지 않습니다.';$('#multi-stop').disabled=false;poll();multiRefresh();};
+  const controls = $('#liveJobControls');
+  new ResizeObserver(() => document.documentElement.style.setProperty('--live-controls-height', controls.offsetHeight + 'px')).observe(controls);
+  $('#multi-stop').onclick=async()=>{
+    if (multiStopping) return;
+    multiStopRequested=true;multiStopping=true;$('#multi-stop').disabled=true;
+    const tag=multiSubmitting?currentMultiTag:multiSent[0]?.tag,rows=multiSent.filter(row=>row.tag===tag);
+    const results=await Promise.allSettled(rows.map(row=>api('/api/story/'+encodeURIComponent(row.id)+'/stop',{method:'POST'})));
+    const failed=results.filter(row=>row.status==='rejected');
+    const text=failed.length?'일부 중지 요청을 보내지 못했습니다. 여러 편 제작 즉시 중지를 다시 눌러 주세요.':'전체 중지를 요청했습니다. 다음 편은 시작하지 않습니다.';
+    $('#multi-msg').textContent=text;toast(text);multiStopping=false;$('#multi-stop').disabled=false;poll();multiRefresh();
+  };
   $('#multi-list').addEventListener('click', e => { const b = e.target.closest('[data-multi-rm]'); if (!b || multiSubmitting) return; multiItems.splice(+b.dataset.multiRm, 1); renderMulti(); });
   $('#multi-sent').addEventListener('click', e => { const b = e.target.closest('[data-multi-card]'); if (b) focusCard(b.dataset.multiCard); });
   $('#multi-box').addEventListener('toggle', () => { if ($('#multi-box').open) multiRefresh(); });
@@ -957,6 +978,7 @@ async function multiRefresh() {
         const fd = multiForm(item, false); fd.set('multi', tag);
         const r = await api('/api/story', {method: 'POST', body: fd});
         multiSent.unshift({id: r.id, name: item.plan.title || item.name, tag}); n++;
+        LS.set(MULTI_KEY, JSON.stringify(multiSent.slice(0, 80)));
         item.sent = true;
         if(multiStopRequested)await api('/api/story/'+encodeURIComponent(r.id)+'/stop',{method:'POST'});
       } catch (e) { item.error = '넣지 못했어요: ' + e.message; }
@@ -1488,5 +1510,6 @@ import('./studio/motion.js').then(({mountMotionStudio})=>mountMotionStudio({api,
 import('./studio/workspace.js').then(({mountWorkspace})=>{nativeWorkspace=mountWorkspace(document.getElementById('videoOverview'),{kind:'video',onAction:nativeWorkspaceAction});updateNativeOverview();}).catch(error=>toast('작업 현황을 불러오지 못했습니다: '+error.message));
 window.addEventListener('h3:workspace-recovery',event=>openVideoRecovery('studio/projects',event.detail.id));
 import('./studio/editor.js').then(({mountVideoStudio})=>mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null})).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));
+multiRefresh();
 if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');
 </script></body></html>

@@ -34,10 +34,28 @@ try{
  await page.setInputFiles('#multi-drop input',[json,{...json,name:'second.json'}]);await page.waitForFunction(()=>!document.querySelector('#multi-go').disabled);
  let createHeld,createdDelivery;const created=new Promise(resolve=>createHeld=resolve),createDone=new Promise(resolve=>createdDelivery=resolve);let posts=0;
  await page.route(config.url+'/api/story',async route=>{posts++;const response=await route.fetch();createHeld();await new Promise(resolve=>release=resolve);await route.fulfill({response});createdDelivery();});
- await page.click('#multi-go');await created;await page.click('#multi-stop');release();await createDone;await page.unroute(config.url+'/api/story');
+ await page.click('#multi-go');await created;
+ await page.locator('#multi-box > summary').click();await page.click('[data-mode="fl"]');
+ for(const width of [320,375,820,1440]){
+  await page.setViewportSize({width,height:812});await page.locator('#multi-stop').waitFor({state:'visible'});
+  assert(await page.locator('#multi-stop').evaluate(button=>{const r=button.getBoundingClientRect(),bar=document.querySelector('#liveJobControls');return r.width>=44&&r.height>=44&&r.top>=0&&r.bottom<=innerHeight&&(!bar.offsetHeight||r.bottom<=bar.getBoundingClientRect().top)&&button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),'multi stop must remain reachable outside collapsed details and the story tab');
+ }
+ await page.click('#multi-stop');release();await createDone;await page.unroute(config.url+'/api/story');
  await page.waitForFunction(()=>document.querySelector('#multi-msg').textContent.includes('전체 중지')&&document.querySelectorAll('#multi-list li').length===1);
  assert.equal(posts,1,'stop during a pending upload must prevent the next video from being submitted');
- await page.click('#multi-clear-files');await page.reload();assert.equal(await page.locator('.drop.has,#tiles-pages .tile,#tiles-ref .tile,#multi-list li').count(),0);
+ await page.click('[data-mode="story"]');await page.locator('#multi-box > summary').click();await page.click('#multi-clear-files');
+ const sent=await page.evaluate(()=>JSON.parse(localStorage.getItem('h3video.multi'))[0]);
+ const stored=await (await context.request.get(config.url+'/api/story/'+sent.id)).json();assert.equal(stored.paused,true,'pending upload stop must reach the returned story id');
+ // The story API has no top-level status. Exercise reload recovery with its real schema.
+ let restoredPaused=false;
+ await page.route(config.url+'/api/story/'+sent.id,async route=>route.fulfill({json:{...stored,output:null,paused:restoredPaused,multi:sent.tag,done:0,total:1,failed:0,clips:[{...stored.clips[0],output:null,error:null,status:restoredPaused?'paused':'running'}]}}));
+ await page.click('[data-mode="fl"]');await page.reload();await page.locator('#multi-stop').waitFor({state:'visible'});
+ assert.equal(await page.locator('#multi-box').evaluate(el=>el.open),false);
+ for(const width of [320,375,820,1440]){await page.setViewportSize({width,height:812});assert(await page.locator('#multi-stop').isVisible());}
+ const stopped=page.waitForResponse(response=>response.url()===config.url+'/api/story/'+sent.id+'/stop'&&response.request().method()==='POST');
+ await page.click('#multi-stop');assert((await stopped).ok());restoredPaused=true;
+ await page.locator('#multi-stop').waitFor({state:'hidden',timeout:10000});
+ await page.unroute(config.url+'/api/story/'+sent.id);await page.reload();assert.equal(await page.locator('.drop.has,#tiles-pages .tile,#tiles-ref .tile,#multi-list li').count(),0);
  for(const width of [320,375,820,1440]){await page.setViewportSize({width,height:812});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}
- assert.deepEqual(errors,[]);await context.close();console.log('PASS video uploads: JSON only removal preserves images · delayed plan cannot restore cleared JSON · media/group/all clear · multi JSON clear · stop pending multi upload prevents next video · reload empty · 320/375/820/1440');
+ assert.deepEqual(errors,[]);await context.close();console.log('PASS video uploads: JSON only removal preserves images · delayed plan cannot restore cleared JSON · media/group/all clear · multi JSON clear · stop pending multi upload prevents next video · fixed stop across tabs/sizes · raw story state reload recovery · reload empty · 320/375/820/1440');
 }finally{release?.();await browser.close();server.kill('SIGTERM');await new Promise(resolve=>server.exitCode!==null?resolve():server.once('exit',resolve));await fs.rm(temp,{recursive:true,force:true});}
