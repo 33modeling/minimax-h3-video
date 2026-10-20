@@ -364,7 +364,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
   <details class="info" id="info"><summary>모델 정보</summary><dl class="spec" id="spec"><dt>불러오는 중</dt><dd></dd></dl></details>
 </section>
 <section aria-label="만든 영상">
-  <div class="feed-head"><h2>만든 영상</h2><span class="mut" id="feed-count"></span></div>
+  <div class="feed-head"><h2>작업 및 결과</h2><span class="mut" id="feed-count"></span></div>
   <div class="feed" id="feed"></div>
 </section>
 </main>
@@ -1317,6 +1317,8 @@ function renderLiveControls(){
  if(controls.innerHTML!==html)controls.innerHTML=html;
 }
 window.addEventListener('h3:editor-state',event=>{const state=event.detail;if(state.busy||state.resumable)editorTasks.set('studio/projects:'+state.id,{...state,kind:'studio/projects'});else editorTasks.delete('studio/projects:'+state.id);renderLiveControls();});
+const feedGroups=[['working','진행 중 · 대기'],['complete','완료된 결과'],['unfinished','미완성 · 중지 · 실패']];
+const feedState=item=>['pending','queued','running','pausing'].includes(item.status)?'working':item.status==='completed'&&item.video_url?'complete':'unfinished';
 function renderFeed(data) {
   feedItems=data.items;renderLiveControls();
   feedItems = data.items; feedAt = Date.now(); serverNow = data.now || Date.now() / 1000;
@@ -1338,13 +1340,21 @@ function renderFeed(data) {
   }
   $('.empty', box) && $('.empty', box).remove();
   for (const [id, c] of cards) if (!keep.has(id)) { c.el.remove(); cards.delete(id); }
-  data.items.forEach((it, i) => {
+  const groups=new Map();
+  for(const [key,label] of feedGroups){
+    let section=box.querySelector('[data-feed-group="'+key+'"]');
+    if(!section){section=document.createElement('section');section.dataset.feedGroup=key;section.innerHTML='<h3 class="maker-library-heading"><strong></strong><span></span></h3><div class="feed"></div>';box.append(section);}
+    const count=data.items.filter(it=>feedState(it)===key).length;
+    section.querySelector('strong').textContent=label;section.querySelector('h3 span').textContent=count+'개';section.hidden=!count;
+    groups.set(key,section.querySelector('.feed'));
+  }
+  data.items.forEach((it) => {
     let c = cards.get(it.id); const sig = sigOf(it);
     if (!c) { const el = document.createElement('article'); el.className = 'job card'; el.dataset.id = it.id; c = {el, sig: null}; cards.set(it.id, c); }
     c.item = it;
     if (c.sig !== sig) { c.el.innerHTML = cardHtml(it); c.el.classList.toggle('has-media', !!it.video_url); c.sig = sig; }
     else { const e = $('.el[data-live]', c.el); if (e) e.dataset.live = it.elapsed || 0; }
-    if (box.children[i] !== c.el) box.insertBefore(c.el, box.children[i] || null);
+    const target=groups.get(feedState(it));if(c.el.parentElement!==target)target.append(c.el);
   });
 }
 setInterval(() => {   // 경과 시간은 1초마다 화면에서만 올린다 (카드를 다시 그리지 않게)

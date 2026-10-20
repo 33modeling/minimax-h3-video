@@ -237,6 +237,44 @@ class App:
         items.sort(key=lambda x: x.get("created") or 0, reverse=True)
         return {"items": items if limit is None else items[:limit], "queue": list(self.worker.queue), "current": self.worker.current, "now": time.time()}
 
+    def activity(self) -> dict:
+        """Small live snapshot; saved outputs and old errors never count as active."""
+        running, pending = [], []
+        queued = list(self.worker.queue)
+        for job in self.store.list():
+            if job['status'] not in ('pending', 'queued', 'running', 'pausing'):
+                continue
+            scenes = job.get('scenes') or []
+            current = next((s for s in scenes if s['status'] != 'completed'), None)
+            row = dict(id=job['id'], kind='generation', title=job.get('title') or job['prompt'][:100],
+                       item=str(scenes.index(current) + 1) + '/' + str(len(scenes)) if current else '',
+                       stage=(current or {}).get('stage') or '영상 생성', status=job['status'])
+            if job['id'] in queued or job['status'] in ('pending', 'queued'):
+                row['position'] = queued.index(job['id']) + 1 if job['id'] in queued else len(pending) + 1
+                pending.append(row)
+            else:
+                running.append(row)
+        with self.studio.lock:
+            for project in list(self.studio.active.values()):
+                task = project.get('task') or {}
+                row = dict(id=project['id'], kind='editing', title=project['title'], stage='영상 편집',
+                           message=task.get('message', ''), status=task.get('status'))
+                (pending if task.get('status') == 'queued' else running).append(row)
+        with self.motion.lock:
+            for name in list(self.motion.active):
+                try:
+                    project = self.motion.get(name)
+                except (KeyError, H3Error, OSError, ValueError):
+                    continue
+                task = project.get('task') or {}
+                row = dict(id=name, kind='motion', title=project['title'], stage='영상 출력', message=task.get('message', ''))
+                (pending if task.get('status') == 'queued' else running).append(row)
+        with self.references.lock:
+            for name, job in list(self.references.active.items()):
+                row = dict(id=name, kind='analysis', title=job.get('title') or '참고 영상', stage='참고 영상 분석', message=job.get('message', ''))
+                (pending if job.get('status') == 'queued' else running).append(row)
+        return dict(running=running, pending=pending, activeCount=len(running), waitingCount=len(pending), measuredAt=time.time() * 1000)
+
     def health(self) -> dict:
         ok = {"fl2va": self.client.healthy(), "ref2va": self.ref_client.healthy()}
         return {**ok, "queue": len(self.worker.queue), "current": self.worker.current,
@@ -563,6 +601,8 @@ def make_handler(app: App, cors_origins: list[str] | None = None):
                                    "ref_endpoint": app.ref_endpoint, "output_dir": str(app.store.root),
                                    "model": spec.MODEL_ID, "audio": spec.AUDIO, "languages": spec.LANGUAGES, "hardware": spec.PARAMS,
                                    "scene_min": spec.SCENE_MIN, "sizes": list(SIZES), "steps_default": spec.STEPS_DEFAULT})
+            if p == '/api/activity':
+                return self._json(app.activity())
             if p == "/api/runtime":
                 return self._json({"service": "h3video-web", "pid": os.getpid(), "activeCount": sum(job["status"] in ("pending", "queued", "running") for job in app.store.list()) + len(app.studio.active) + len(app.motion.active) + len(app.references.active)})
             if p == "/api/health":

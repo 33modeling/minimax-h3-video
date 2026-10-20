@@ -10,7 +10,8 @@
     "test:reference": "node tests/e2e/reference_studio.mjs",
     "install:hyperframes": "node scripts/install-hyperframes.mjs",
     "test:hyperframes": "PYTHONPATH=src python3 -m unittest discover -s tests -p test_motion.py -v",
-    "test:motion-ui": "node tests/e2e/motion_studio.mjs"
+    "test:motion-ui": "node tests/e2e/motion_studio.mjs",
+    "test:activity": "PYTHONPATH=src python3 -m unittest discover -s tests -p test_activity.py -v && node tests/e2e/activity.mjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"
