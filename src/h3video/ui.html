@@ -233,6 +233,11 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 .cast-row select{flex:1 1 180px;width:auto}
 #cast-use{color:var(--acc)}#cast-status:empty{display:none}
 .srow .sp{grid-column:1/-1;font-size:12px;color:var(--mut);overflow-wrap:anywhere}.srow .sp summary{font-size:12px}
+
+/* Clearer production workspace and a full-width planning surface. */
+#promptLibrary{max-width:1400px;margin:0 auto;padding:0 20px}
+.maker{border-radius:18px}.modes{gap:6px;padding:6px}.mode{min-height:70px;border-radius:10px}.mode-desc{line-height:1.7;margin:14px 2px}.field{margin-top:20px}.lab{margin-bottom:9px}.drop{padding:22px 14px;border-radius:13px}.go-bar{border-radius:0 0 18px 18px}.video-start h2{letter-spacing:-.8px}.video-start{border-radius:18px}.feed{gap:16px}
+@media(max-width:600px){#promptLibrary{padding:0 12px}.mode{min-height:64px;font-size:12px}}
 </style><link rel="stylesheet" href="./studio/workspace.css"><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
@@ -1519,8 +1524,8 @@ Promise.all([import('./studio/server-control.js'),import('./studio/project-recov
 import('./studio/motion.js').then(({mountMotionStudio})=>mountMotionStudio({api,full,toast})).catch(error=>toast('모션 편집기를 불러오지 못했습니다: '+error.message));
 import('./studio/workspace.js').then(({mountWorkspace})=>{nativeWorkspace=mountWorkspace(document.getElementById('videoOverview'),{kind:'video',onAction:nativeWorkspaceAction});updateNativeOverview();}).catch(error=>toast('작업 현황을 불러오지 못했습니다: '+error.message));
 window.addEventListener('h3:workspace-recovery',event=>openVideoRecovery('studio/projects',event.detail.id));
-const promptHost=document.createElement('div');promptHost.id='promptLibrary';(document.querySelector('.maker')||document.querySelector('main'))?.prepend(promptHost);
-import('./studio/prompt-library.js').then(({mountPromptLibrary,draftProject,mountDirections})=>{const controls=document.createElement('div');document.getElementById('recovery-prompt').closest('label').after(controls);mountDirections(controls,document.getElementById('recovery-prompt'));return mountPromptLibrary(promptHost,{applyLabel:'영상 콘티로 불러오기',onApply:async draft=>{setMode('story');addFiles('json',[new File([JSON.stringify(draftProject(draft))],'prompt-storyboard.json',{type:'application/json'})]);toast('장면 초안을 불러왔습니다. 장면을 확인한 뒤 영상 만들기를 누르세요.');}});}).catch(error=>toast('템플릿을 불러오지 못했습니다: '+error.message));
+const promptHost=document.createElement('div');promptHost.id='promptLibrary';document.querySelector('main.layout')?.before(promptHost);
+import('./studio/prompt-library.js').then(({mountPromptLibrary,draftProject,mountDirections})=>{const controls=document.createElement('div');document.getElementById('recovery-prompt').closest('label').after(controls);mountDirections(controls,document.getElementById('recovery-prompt'));return mountPromptLibrary(promptHost,{theme:'auto',applyLabel:'영상 콘티로 불러오기',onApply:async draft=>{setMode('story');addFiles('json',[new File([JSON.stringify(draftProject(draft))],'prompt-storyboard.json',{type:'application/json'})]);toast('장면 초안을 불러왔습니다. 장면을 확인한 뒤 영상 만들기를 누르세요.');}});}).catch(error=>toast('템플릿을 불러오지 못했습니다: '+error.message));
 import('./studio/editor.js').then(({mountVideoStudio})=>mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null})).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));
 multiRefresh();
 if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');
