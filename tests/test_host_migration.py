@@ -12,7 +12,7 @@ class HostMigrationTest(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close()))
         url = f'http://127.0.0.1:{server.server_port}/api/feed'
-        for origin in ['https://33modeling.pages.dev', 'https://7modeling.pages.dev']:
+        for origin in ['https://33modeling.pages.dev', 'https://7modeling-92i.pages.dev']:
             request = urllib.request.Request(url, method='OPTIONS', headers={'Origin': origin, 'Access-Control-Request-Private-Network': 'true'})
             with urllib.request.urlopen(request) as response:
                 self.assertEqual(response.status, 204)
