@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {directPrompt} from '../../src/h3video/studio/prompt-library.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,8 +20,8 @@ try{
  const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(host);await page.locator('#openVideoStudio').click();const work=page.locator('#videoWorkbench'),dialog=page.locator('.vs-scene-dialog:not(#recovery-dialog)');
  const get=()=>fetch(config.url+'/api/studio/projects/'+config.project).then(response=>response.json());const before=await get();
  await work.locator('[data-action="edit-shot"][data-id="second"]').click();await dialog.waitFor();assert.match(await dialog.textContent(),/2번 장면.*둘째 장면/);assert.equal(await dialog.locator('[data-scene-prompt]').inputValue(),'a second scene');
- const prompt='A red fox walks beside the river.',instructions='인물과 배경은 유지하고 카메라만 천천히 가까워지게.';
- await dialog.locator('[data-scene-prompt]').fill(prompt);await dialog.locator('[data-scene-instructions]').fill(instructions);
+ const originalPrompt='A red fox walks beside the river.',prompt=directPrompt(originalPrompt,{camera:'static',light:'golden'}),instructions='인물과 배경은 유지하고 카메라만 천천히 가까워지게.';
+ await dialog.locator('[data-scene-prompt]').fill(originalPrompt);await dialog.getByLabel('카메라 움직임',{exact:true}).selectOption('static');await dialog.getByLabel('조명',{exact:true}).selectOption('golden');await dialog.getByRole('button',{name:'영상 프롬프트에 연출 적용',exact:true}).click();assert.equal(await dialog.locator('[data-scene-prompt]').inputValue(),prompt);await dialog.locator('[data-scene-instructions]').fill(instructions);
  for(const width of [1440,820,390,320]){await page.setViewportSize({width,height:1100});const box=await dialog.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=width+1,'dialog overflow '+width);assert.ok(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'content overflow '+width);assert.ok(await dialog.locator('[data-scene-prompt]').isVisible());await page.screenshot({path:path.join(report,'scene-prompt-'+width+'.png')});}
  await page.route('**/api/studio/projects/*/settings',route=>route.fulfill({status:503,json:{error:'테스트 저장 연결 실패'}}),{times:1});
  await dialog.locator('[value="save"]').click();await dialog.locator('[data-scene-error]').filter({hasText:'테스트 저장 연결 실패'}).waitFor();assert.equal(await dialog.locator('[data-scene-prompt]').inputValue(),prompt);assert.equal(await dialog.locator('[data-scene-instructions]').inputValue(),instructions);assert.equal(await dialog.locator('[value="save"]').isEnabled(),true);

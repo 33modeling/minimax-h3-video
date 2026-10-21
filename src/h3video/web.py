@@ -427,6 +427,8 @@ def parse_origins(value: str | None) -> list[str]:
     origins = [o.strip().rstrip("/") for o in (value or "").split(",") if o.strip()]
     if "https://33modeling.pages.dev" in origins and "https://7modeling-92i.pages.dev" not in origins:
         origins.append("https://7modeling-92i.pages.dev")
+    if "https://33modeling.pages.dev" in origins and "https://77modeling.pages.dev" not in origins:
+        origins.append("https://77modeling.pages.dev")
     return origins
 
 

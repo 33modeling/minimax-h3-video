@@ -331,7 +331,7 @@ def load_story(data, images: list[str] | None = None, base: Path | None = None, 
                           f"(따옴표·쉼표·괄호를 확인. 원래 메시지: {e.msg})") from None
     people = normalize_cast(cast) if cast is not None else cast_from(data)
     if isinstance(data,dict) and isinstance(data.get("board"),dict) and isinstance(data["board"].get("scenes"),list):
-        data={"title":data["board"].get("title"),"ratio":data.get("brief",{}).get("ratio"),"clips":[{"prompt":s.get("videoPrompt") or s.get("imagePrompt") or s.get("visual"),"title":s.get("title"),"seconds":s.get("duration"),"text":s.get("caption",""),"about":s.get("visual","")} for s in data["board"]["scenes"]]}
+        data={"title":data["board"].get("title"),"ratio":data.get("brief",{}).get("ratio"),"clips":[{"prompt":"\n".join(filter(None,[s.get("videoPrompt") or s.get("imagePrompt") or s.get("visual"),("Avoid: "+s["negativePrompt"]) if s.get("negativePrompt") else ""])),"title":s.get("title"),"seconds":s.get("duration"),"text":s.get("caption",""),"about":s.get("visual","")} for s in data["board"]["scenes"]]}
     if _is_conti(data):
         source, (title, jratio, raw) = "conti", _conti(data, narration, people)
     elif _is_maker_book(data):

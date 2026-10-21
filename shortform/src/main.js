@@ -1,4 +1,5 @@
 import './style.css';
+import {mountPromptLibrary,draftProject} from '../../src/h3video/studio/prompt-library.js';
 import {listProjects,saveDraft,saveScene,saveOutput,loadProject,restorePrevious} from './app/recovery.js';
 import { checkSpec, normalizeSpec, composeInputs, baseName, aiScenes, schema } from './core/spec.js';
 import { planTimeline, describePlan, TEMPLATE_KO } from './core/plan.js';
@@ -1286,6 +1287,28 @@ el.planBtn.addEventListener('click', async () => {
   }
 });
 
+// Templates remain editable, and applying one starts a new saved project.
+async function applyStoryboard(project,label='영상 콘티'){
+  if(state.busy)throw new Error('진행 중인 제작을 마친 뒤 콘티를 불러와 주세요.');
+  const {spec}=storyToSpec(project,[],{ratio:project.brief?.ratio});
+  spec.resolution=({'9:16':'720x1280','16:9':'1280x720','1:1':'720x720'})[spec.ratio]||'720x1280';
+  const {errors}=checkSpec(spec);if(errors.length)throw new Error(errors.join('\n'));
+  await saveCurrent();recoveryId=crypto.randomUUID();LS.set('shorts.recovery.current',recoveryId);
+  slotFiles.media=[];slotFiles.image=[];slotFiles.refs=[];state.files=[];state.generated=new Map();state.paused=false;
+  useJson(JSON.stringify(spec,null,2),label);clearPlan();await analyze();await saveCurrent();
+  el.planOut.textContent=label+'을 불러왔어요. 기존 작업은 보관함에 보관했습니다. 장면을 확인하고 만들기를 누르세요.';
+  el.filesPanel.scrollIntoView({block:'start'});
+}
+mountPromptLibrary(el.promptLibrary,{dark:true,applyLabel:'숏폼 작업으로 불러오기',onApply:draft=>applyStoryboard(draftProject(draft),'템플릿 장면 초안')});
+let recoveryBoot=Promise.resolve();
+if(location.hash==='#from=frame'&&window.opener){
+  addEventListener('message',async event=>{
+    if(event.source!==window.opener||event.origin!==location.origin||event.data?.type!=='creative-conti-handoff')return;
+    try{await recoveryBoot;await applyStoryboard(event.data.project);event.source.postMessage({type:'shorts-received'},event.origin);}
+    catch(error){el.planOut.textContent=error.message;event.source.postMessage({type:'shorts-transfer-error',error:error.message},event.origin);}
+  });
+}
+
 // ---------- 도움말·둘러보기 ----------
 const tour = new Tour();
 el.helpBtn.addEventListener('click', () => el.helpDialog.showModal());
@@ -1407,4 +1430,6 @@ const enginePick = (async () => {
   if (state.job) setReady(!state.busy && engine.kind !== 'none');
   return engine;
 })();
-(async()=>{try{const saved=await loadProject(recoveryId);recoveryReady=true;if(saved)await restoreSaved(saved);else await analyze();await refreshLibrary();}catch{recoveryReady=true;await analyze();}})();
+recoveryBoot=(async()=>{try{const saved=await loadProject(recoveryId);recoveryReady=true;if(saved)await restoreSaved(saved);else await analyze();await refreshLibrary();}catch{recoveryReady=true;await analyze();}})();
+
+recoveryBoot.finally(()=>{if(location.hash==='#from=frame'&&window.opener)window.opener.postMessage({type:'shorts-ready'},location.origin);});

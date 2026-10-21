@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import mock_server  # noqa: E402
 from test_story import CONTI, png  # noqa: E402
 from h3video import cli  # noqa: E402
-from h3video.web import App, make_handler  # noqa: E402
+from h3video.web import App, make_handler, parse_origins  # noqa: E402
 
 BND = "Bnd42"
 
@@ -185,3 +185,11 @@ class WebUiApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManagedOriginsTest(unittest.TestCase):
+    def test_approved_tools_origin_is_available_without_allowing_unrelated_origins(self):
+        origins=parse_origins("https://33modeling.pages.dev")
+        self.assertIn("https://77modeling.pages.dev",origins)
+        self.assertNotIn("https://77modeling.pages.dev",parse_origins("https://unrelated.example"))
+        self.assertEqual(parse_origins(""),[])

@@ -170,7 +170,7 @@ export function loadStory(data, images = [], { narration = true, ratio = null, s
   if (typeof data === 'string') {
     try { data = JSON.parse(data.replace(/^﻿/, '')); } catch (e) { throw new StoryError(`JSON 을 읽을 수 없습니다: ${e.message}`); }
   }
-  if(isObj(data)&&Array.isArray(data.board?.scenes))data={title:data.board.title,ratio:data.brief?.ratio,clips:data.board.scenes.map(s=>({prompt:s.videoPrompt||s.imagePrompt||s.visual,title:s.title,seconds:s.duration,text:s.caption||''}))};
+  if(isObj(data)&&Array.isArray(data.board?.scenes))data={title:data.board.title,ratio:data.brief?.ratio,clips:data.board.scenes.map(s=>({prompt:[s.videoPrompt||s.imagePrompt||s.visual,s.negativePrompt?'Avoid: '+s.negativePrompt:''].filter(Boolean).join('\n'),title:s.title,seconds:s.duration,text:s.caption||''}))};
   let source, title, jratio, raw;
   if (isConti(data)) [source, [title, jratio, raw]] = ['conti', contiRaw(data)];
   else if (isMakerBook(data)) [source, [title, jratio, raw]] = ['book', makerRaw(data)];
