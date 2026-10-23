@@ -1294,8 +1294,17 @@ function updateNativeOverview(){
  const busy=['pending','running','pausing'].includes(item.status),rows=item.kind==='story'?item.clips:item.scenes||[],active=rows.findIndex(row=>['running','in_progress'].includes(row.status));
  nativeWorkspace.update({id:item.id,title:titleOf(item),busy,resumable:['paused','failed'].includes(item.status),message:stateText(item).filter(Boolean).join(' · ')+(active>=0?' · 현재 장면 '+(active+1)+'/'+rows.length:''),elapsedMs:item.elapsed*1000,items:rows.map((row,index)=>({id:String(row.id??index),label:row.label||'장면 '+(index+1),preview:row.image_url?full(row.image_url):null,completed:row.status==='completed',error:row.status==='failed'||Boolean(row.error),active:busy&&['running','in_progress'].includes(row.status)}))});
 }
+// "새 작업" starts from an empty form: settings and files loaded from earlier work ("같은 설정으로 다시")
+// must not carry over. Earlier jobs keep running on the server and stay in the feed.
+function resetMaker(){
+ if(multiSubmitting)throw Error('여러 편을 보내는 중입니다. 끝난 뒤 새 작업을 시작하세요.');
+ inputVersion++;multiVersion++;multiItems=[];$('#multi-drop input').value='';renderMulti();for(const z of Object.keys(ZONES))clearZone(z);
+ for(const id of ['#prompt','#title','#seed','#steps','#negative','#seconds','#aspect','#size','#raw','#s-size','#s-narr','#s-seed','#s-ratio']){const el=$(id);if(!el)continue;
+  if(el.type==='checkbox')el.checked=el.defaultChecked;else if(el.tagName==='SELECT'){const option=[...el.options].find(o=>o.defaultSelected)||el.options[0];if(option)el.value=option.value;}else el.value=el.defaultValue;}
+ LS.set('h3video.draft','');$('#more').open=false;storyPlan();schedulePlan();updateGo();castUse();
+}
 async function nativeWorkspaceAction(action,id){
- if(action==='new'){document.querySelector('main.layout').scrollIntoView({behavior:'smooth',block:'start'});$('#f').querySelector('textarea')?.focus({preventScroll:true});return;}
+ if(action==='new'){resetMaker();document.querySelector('main.layout').scrollIntoView({behavior:'smooth',block:'start'});$('#f').querySelector('textarea')?.focus({preventScroll:true});toast('새 작업을 시작합니다. 이전 작업은 아래 목록에 그대로 있습니다.');return;}
  if(action==='start'){document.querySelector('main.layout').scrollIntoView({behavior:'smooth',block:'start'});return;}
  if(action==='library'){$('#feed').scrollIntoView({behavior:'smooth',block:'start'});return;}
  let item=feedItems.find(it=>it.id===nativeOverviewId);if(!item)return;const kind=item.kind==='story'?'story':'jobs';
