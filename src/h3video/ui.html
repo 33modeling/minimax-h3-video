@@ -121,6 +121,7 @@ details[open]>summary::before{transform:rotate(45deg)}
 .srow.noimgrow{background:color-mix(in srgb,var(--warn-soft) 55%,transparent)}
 .plan-foot{padding:8px 12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:13.5px;font-weight:600}
 /* 만들기 버튼 */
+#videoOverview:has(.mw-steps){display:none}
 .go-bar{position:sticky;bottom:0;z-index:10;margin:16px -16px 0;padding:12px 16px;background:var(--card);border-top:1px solid var(--line);border-radius:0 0 var(--r) var(--r);display:flex;gap:12px;align-items:center}
 .primary{padding:11px 20px;border:0;border-radius:10px;background:var(--acc);color:#fff;font-weight:600;cursor:pointer;display:inline-flex;gap:8px;align-items:center;white-space:nowrap}
 .primary:disabled{opacity:.5;cursor:not-allowed}
@@ -274,7 +275,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 </div></div>
 
 <section class="video-start"><div><p>VIDEO STUDIO</p><h2>영상 작업실</h2><span>장면 생성부터 보정, 자막과 최종 영상까지.</span></div><div class="video-start-actions"><button class="btn main" id="openVideoStudio" type="button" disabled>영상 편집실 열기 ↗</button><button class="btn main" id="openMotionStudio" type="button" disabled>모션 · 타임라인 편집</button></div></section>
-<div id="videoOverview" class="video-overview"></div><section id="serverControls"></section><div class="banners" id="banners"></div>
+<div class="banners" id="banners"></div>
 <section id="videoWorkbench" class="vw" hidden aria-label="영상 편집실"></section>
 <main class="layout">
 <section class="maker card" aria-label="새 영상">
@@ -373,6 +374,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
   <div class="feed" id="feed"></div>
 </section>
 </main>
+<div id="videoOverview" class="video-overview"></div><section id="serverControls"></section>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button type="button" id="toast-b" hidden></button></div>
 <button type="button" class="btn stop-now" id="multi-stop" hidden>여러 편 제작 즉시 중지</button>
 <aside id="liveJobControls" class="live-job-controls" hidden aria-label="진행 작업 중지" style="position:fixed;bottom:0;left:0;right:0;z-index:120;padding:12px max(12px,env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px"></aside><dialog id="recovery-dialog" class="vr-dialog vs-scene-dialog" aria-labelledby="recovery-title"><form id="recovery-form"><header class="vr-head"><h2 id="recovery-title">장면 수정</h2><button type="button" id="recovery-close" aria-label="장면 수정 닫기">닫기</button></header><p id="recovery-scope" class="vs-scope"></p><label class="vr-label" for="recovery-scene">수정할 장면<select id="recovery-scene"></select></label><label class="vr-label" for="recovery-prompt">영상 생성 프롬프트<textarea id="recovery-prompt" rows="7" required></textarea></label><label class="vr-label" for="recovery-instructions">추가 수정 지시 <span class="vw-note">선택 · 저장할 때 위 프롬프트 끝에 반영됩니다.</span><textarea id="recovery-instructions" rows="3" placeholder="예: 인물과 배경은 유지하고, 카메라가 천천히 가까워지게 수정해 줘."></textarea></label><label class="vr-label" id="recovery-text-label">스토리라인·내레이션<textarea id="recovery-text" rows="3"></textarea></label><label class="vr-label" id="recovery-seconds-label">장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" class="vw-error" role="alert"></p><div class="vw-actions vs-scene-actions"><button type="submit" value="save">프롬프트 저장</button><button type="submit" value="generate" id="recovery-generate" class="vw-primary">저장 후 이 장면부터 다시 만들기</button></div><p id="recovery-feedback" class="vw-note" aria-live="polite"></p></form></dialog>
