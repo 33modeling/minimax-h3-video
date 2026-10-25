@@ -3,12 +3,13 @@
 import { baseName, referencedPaths } from '../core/spec.js';
 import { kindOf } from './match.js';
 import { listZip } from './zip.js';
+import { isCaptionFileName } from './captions-import.js';
 
 const MIME = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska',
   mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac',
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp',
-  json: 'application/json', zip: 'application/zip',
+  json: 'application/json', zip: 'application/zip', srt: 'application/x-subrip', vtt: 'text/vtt',
 };
 const extOf = (name) => {
   const m = /\.([^./\\]+)$/.exec(String(name));
@@ -22,7 +23,7 @@ export function isMediaFile(f) {
   return /^(video|audio|image)\//.test(mimeOf(f.name));
 }
 
-// zip → File 목록. 쓸 수 있는 것(JSON·영상·그림·음악)만, 폴더 경로는 버리고 이름만 남긴다(같은 이름은 처음 것).
+// zip → File 목록. 쓸 수 있는 것(JSON·영상·그림·음악·자막 SRT·VTT)만, 폴더 경로는 버리고 이름만 남긴다(같은 이름은 처음 것).
 // 숨김 파일·__MACOSX·index.html 같은 것은 skipped 로.
 export async function zipToFiles(blob) {
   const entries = listZip(new Uint8Array(await blob.arrayBuffer()));
@@ -33,7 +34,7 @@ export async function zipToFiles(blob) {
     const name = baseName(e.name);
     const probe = { name, type: mimeOf(name) };
     const junk = !name || name.startsWith('.') || e.name.startsWith('__MACOSX/');
-    if (junk || !(isJsonFile(probe) || isMediaFile(probe)) || seen.has(name)) {
+    if (junk || !(isJsonFile(probe) || isMediaFile(probe) || isCaptionFileName(name)) || seen.has(name)) {
       if (!junk) skipped.push(e.name);
       continue;
     }

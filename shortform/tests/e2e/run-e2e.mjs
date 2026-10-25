@@ -223,7 +223,7 @@ const scenarios = {
   // 표지 PNG: 고른 프레임 + 제목(자막 모양 설정). 1440·390·320px 에서 숏폼·유튜브 크기와 빨간 제목 위치를 본다
   async cover() {
     for (const vp of ['xl', 'phone', 'narrow']) {
-      const { page, done } = await newPage(`cover-${vp}`, { vp, allow: ['status of 404'] }); // 허브 글꼴·creative-ai 는 허브에서만 있음
+      const { page, done } = await newPage(`cover-${vp}`, { vp }); // 허브 글꼴·creative-ai 는 vite.config.js 의 hub-shared-files 가 내준다
       await loadJob(page, `cover-${vp}`, composeJob('cutaway', { caption_style: { position: 'top', color: '#ff0000', border_color: '#000000', border_width: 4 } }), composeFiles('cutaway'));
       await waitReady(page, `cover-${vp}`);
       check((await page.inputValue('#coverTitle')) === 'cutaway 템플릿 확인', `cover ${vp}: 제목이 작업 JSON 에서 채워지지 않음`);
@@ -752,6 +752,33 @@ const scenarios = {
   },
 
   // 배치: 320~1440 가로 넘침 없음, 폰은 준비되면 아래 고정 만들기 단추(만들기 단추가 화면 밖일 때), 그 단추로 끝까지
+  // 받아쓰기 자막: asr-studio SRT 를 '자막 불러오기'로 → captions 시각 그대로, '숏폼 자막으로 보내기'(#from=asr) 넘기기
+  async captions() {
+    const { page, done } = await newPage('captions');
+    await loadJob(page, 'captions', composeJob('montage', { captions: ['옛 자막'] }), composeFiles('montage'));
+    await waitReady(page, 'captions');
+    const srt = join(OUT, '회의.srt');
+    writeFileSync(srt, '\uFEFF1\r\n00:00:00,400 --> 00:00:02,100\r\n민수: 첫 줄 <중요>\r\n\r\n2\r\n00:00:03,000 --> 00:00:05,500\r\n둘째 줄\r\n\r\n3\r\n00:00:40,000 --> 00:00:41,000\r\n늦은 줄\r\n');
+    await page.setInputFiles('#captionFile', srt);
+    await page.waitForFunction(() => /자막 3줄/.test(document.getElementById('dropNote').textContent));
+    const caps = JSON.parse(await page.inputValue('#jsonText')).captions;
+    check(JSON.stringify(caps) === JSON.stringify([{ text: '민수: 첫 줄 <중요>', start: 0.4, end: 2.1 }, { text: '둘째 줄', start: 3, end: 5.5 }, { text: '늦은 줄', start: 40, end: 41 }]), `captions: SRT 가 captions 로 안 들어감 ${JSON.stringify(caps)}`);
+    const note = await page.locator('#dropNote').innerText();
+    check(/뒤에 있는 자막 1줄은 들어가지 않아요/.test(note), `captions: 늦은 자막 안내 없음 ${note}`);
+    await waitReady(page, 'captions-after');
+    check(/자막 2줄/.test(await page.locator('#planLine').innerText()), 'captions: 계획에 자막 2줄이 아님');
+    // 넘기기: 지금 작업은 보관하고 새 작업에 자막만
+    await page.evaluate(() => localStorage.setItem('shorts-captions-handoff', JSON.stringify({ v: 1, from: 'asr-studio', at: new Date().toISOString(), title: '넘긴 회의', segments: [{ start: 1, end: 2.5, speaker: '', text: '넘긴 줄' }] })));
+    await page.goto(BASE + '#from=asr');
+    await page.waitForFunction(() => /넘긴 회의/.test(document.getElementById('dropNote').textContent), null, { timeout: 10000 });
+    const job = JSON.parse(await page.inputValue('#jsonText'));
+    check(job.title === '넘긴 회의' && job.captions.length === 1 && job.captions[0].start === 1, `captions: 넘긴 자막 이상 ${JSON.stringify(job)}`);
+    check((await page.evaluate(() => localStorage.getItem('shorts-captions-handoff'))) === null && !page.url().includes('#from=asr'), 'captions: 넘긴 값·주소가 남음');
+    const lib = await page.$$eval('#recoveryLibrary option', (o) => o.map((x) => x.textContent));
+    check(lib.some((t) => t.includes('montage 템플릿 확인')), `captions: 앞 작업이 작업 목록에 없음 ${lib}`);
+    await done();
+  },
+
   async layout() {
     for (const w of [320, 390, 768, 1024, 1440]) {
       const { page, done } = await newPage(`layout-${w}`);
@@ -761,6 +788,20 @@ const scenarios = {
       await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
       await page.waitForTimeout(200);
       check((await overflow(page)) <= 0, `layout ${w}: 가로 넘침 ${await overflow(page)}px`);
+      // 한 줄 배치에서도 소개가 맨 위(저장한 작업 칸이 소개 위로 올라가던 문제)
+      const firstTop = await page.evaluate(() => {
+        const ids = [...document.querySelectorAll('main.layout section, main.layout details.panel, main.layout aside')].filter((e) => e.offsetParent);
+        return ids.sort((x, y) => x.getBoundingClientRect().top - y.getBoundingClientRect().top)[0]?.id;
+      });
+      check(firstTop === 'intro', `layout ${w}: 맨 위 칸이 소개가 아님(${firstTop})`);
+      if (w <= 820) {
+        // 휴대폰 폭: 누름 대상 44px
+        const small = await page.evaluate(() => [...document.querySelectorAll('button, select, summary, input:not([type=file]):not([type=hidden])')]
+          .filter((e) => e.offsetParent && !e.closest('[hidden]') && !e.closest('#helpDialog,#tour'))
+          .map((e) => [e.id || e.className || e.tagName, Math.round(e.getBoundingClientRect().height), e.type])
+          .filter(([, h, t]) => h < 44 && t !== 'checkbox' && t !== 'radio'));
+        check(!small.length, `layout ${w}: 44px 보다 작은 누름 대상 ${JSON.stringify(small.slice(0, 6))}`);
+      }
       await done();
     }
     const { page, done } = await newPage('dock', { vp: 'phone' });

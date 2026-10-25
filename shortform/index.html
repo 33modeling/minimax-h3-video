@@ -56,10 +56,10 @@
           <svg class="drop-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div class="drop-text">
             <strong>파일을 한꺼번에 놓으세요</strong>
-            <small>작업 JSON·영상·그림·음악·zip을 같이 놓으면 알맞은 칸에 나눠 넣어요</small>
+            <small>작업 JSON·영상·그림·음악·zip·자막(SRT·VTT)을 같이 놓으면 알맞은 칸에 나눠 넣어요</small>
           </div>
           <button type="button" class="ghost small" id="pickAll">파일 고르기</button>
-          <input id="allFiles" type="file" multiple hidden accept=".json,.zip,application/json,application/zip,video/*,audio/*,image/*">
+          <input id="allFiles" type="file" multiple hidden accept=".json,.zip,.srt,.vtt,application/json,application/zip,video/*,audio/*,image/*">
         </div>
         <p class="drop-note" id="dropNote" aria-live="polite" hidden></p>
         <div class="slots" id="slots">
@@ -104,6 +104,7 @@
           <button type="button" class="link" id="exampleBtn">예시 JSON 받기</button>
           <button type="button" class="link" id="exportBtn">설정 내보내기(JSON)</button>
           <label class="link" for="importFile">설정 불러오기<input id="importFile" type="file" accept=".json,application/json" hidden></label>
+          <label class="link" for="captionFile" title="받아쓰기 작업실에서 내보낸 SRT·VTT·JSON의 시각대로 자막을 넣어요">자막 불러오기(받아쓰기 SRT·VTT·JSON)<input id="captionFile" type="file" accept=".srt,.vtt,.json,text/vtt,application/x-subrip,application/json" hidden></label>
         </div>
         <details class="json-edit" id="jsonDetails">
           <summary>JSON 직접 보기·고치기</summary>
@@ -207,7 +208,7 @@
         </div>
       </details>
 
-      <section class="panel"><h2 class="panel-title">저장한 영상 작업 · 중간 수정</h2><div class="settings"><label>작업 목록<select id="recoveryLibrary"><option value="">저장한 영상 작업</option></select></label><button id="recoverySave" type="button" class="ghost small">지금 작업 저장</button><button id="recoveryRestore" type="button" class="ghost small">수정 전 JSON 복원</button><button id="recoveryNew" type="button" class="ghost small">새 작업</button></div><p id="recoveryMessage" role="status">원본 파일과 완료한 AI 장면을 기기에 저장합니다. 일시중지한 뒤 JSON·자막·배치를 수정하고 이어 만들기를 누르세요.</p></section>
+      <section class="panel" id="recoveryPanel"><h2 class="panel-title">저장한 영상 작업 · 중간 수정</h2><div class="settings"><label>작업 목록<select id="recoveryLibrary"><option value="">저장한 영상 작업</option></select></label><button id="recoverySave" type="button" class="ghost small">지금 작업 저장</button><button id="recoveryRestore" type="button" class="ghost small">수정 전 JSON 복원</button><button id="recoveryNew" type="button" class="ghost small">새 작업</button></div><p id="recoveryMessage" role="status">원본 파일과 완료한 AI 장면을 기기에 저장합니다. 일시중지한 뒤 JSON·자막·배치를 수정하고 이어 만들기를 누르세요.</p></section>
     <details class="panel fold" id="claudePanel">
         <summary><span class="panel-title">아이디어로 기획 (Claude)</span> <small>선택 · 아이디어로 작업 JSON 쓰기</small></summary>
         <div class="fold-body">
@@ -241,7 +242,7 @@
           <input id="scrub" type="range" min="0" max="1000" value="0" disabled aria-label="미리보기 시각">
           <span id="scrubTime">0.0초</span>
         </div>
-        <div class="frame-tools"><label>미리보기 안전 여백<select id="safeArea"><option value="off">표시 안 함</option><option value="action">사방 10%</option><option value="vertical">세로 영상 UI 여백 참고</option></select></label><button type="button" id="stillExport" class="ghost small" disabled>현재 프레임 PNG 저장</button><p>여백은 미리보기 참고선이며 영상·PNG에 들어가지 않습니다. 플랫폼마다 화면 UI가 다를 수 있습니다.</p><p id="stillMessage" role="status"></p><div class="cover-tools" id="coverTools"><h3>표지 만들기</h3><p>미리보기에서 고른 장면에 제목을 얹어 PNG로 저장합니다. 글자색·테두리·위치·크기는 아래 자막 모양 설정을 따릅니다.</p><label>표지 제목<input id="coverTitle" type="text" maxlength="80" placeholder="표지에 넣을 제목" autocomplete="off"></label><label>크기<select id="coverSize"><option value="shorts">숏폼 1080×1920</option><option value="youtube">유튜브 1280×720</option></select></label><button type="button" id="coverExport" class="ghost small" disabled>표지 PNG 저장</button><p id="coverMessage" role="status"></p><img id="coverPreview" alt="저장한 표지 미리보기" hidden></div></div><p class="plan-sum" id="planSum">아직 만들 것이 없어요</p>
+        <p class="plan-sum" id="planSum">아직 만들 것이 없어요</p>
         <p class="plan-line" id="planLine">아직 계획이 없습니다.</p>
         <div id="makeArea" class="make-area">
           <button type="button" id="makeBtn" class="primary big" disabled>만들기</button><button type="button" id="restartBtn" class="ghost" disabled>처음부터 다시 · 새 저장본</button>
@@ -265,6 +266,8 @@
           </div>
           <p class="result-empty" id="resultEmpty">완성된 영상은 여기에 나와요.</p>
         </div>
+        <!-- 프레임 PNG·표지: 만들기 버튼 아래에 둔다(위에 두면 붙어 있는 오른쪽 칸에서 만들기 버튼이 화면 밖으로 밀려났다) -->
+        <div class="frame-tools"><label>미리보기 안전 여백<select id="safeArea"><option value="off">표시 안 함</option><option value="action">사방 10%</option><option value="vertical">세로 영상 UI 여백 참고</option></select></label><button type="button" id="stillExport" class="ghost small" disabled>현재 프레임 PNG 저장</button><p>여백은 미리보기 참고선이며 영상·PNG에 들어가지 않습니다. 플랫폼마다 화면 UI가 다를 수 있습니다.</p><p id="stillMessage" role="status"></p><div class="cover-tools" id="coverTools"><h3>표지 만들기</h3><p>미리보기에서 고른 장면에 제목을 얹어 PNG로 저장합니다. 글자색·테두리·위치·크기는 아래 자막 모양 설정을 따릅니다.</p><label>표지 제목<input id="coverTitle" type="text" maxlength="80" placeholder="표지에 넣을 제목" autocomplete="off"></label><label>크기<select id="coverSize"><option value="shorts">숏폼 1080×1920</option><option value="youtube">유튜브 1280×720</option></select></label><button type="button" id="coverExport" class="ghost small" disabled>표지 PNG 저장</button><p id="coverMessage" role="status"></p><img id="coverPreview" alt="저장한 표지 미리보기" hidden></div></div>
         <div class="engine" id="engineNote"></div>
       </div>
     </aside>
@@ -282,6 +285,7 @@
     <ul>
       <li><b>파일을 한꺼번에 놓기</b> — JSON·영상·그림·음악·zip을 같이 놓으면 알맞은 칸에 나눠 넣어요. 칸마다 직접 놓거나 고를 수도 있어요.</li>
       <li><b>1. 작업 JSON</b> — 무엇을 만들지 적은 설정 파일. 직접 고치거나 Claude가 쓰게 할 수 있어요. 동화책 콘티·동화책 만들기 JSON도 돼요.</li>
+      <li><b>자막 불러오기</b> — 받아쓰기 작업실에서 내보낸 SRT·VTT·JSON(또는 그 화면의 "숏폼 자막으로 보내기")을 넣으면 구간 시각 그대로 자막(captions)이 들어가요.</li>
       <li><b>2. 내 영상·그림·음악</b> — JSON이 이름으로 가리키는 영상·배경음, 이야기의 쪽 그림. 파일마다 어디에 쓰이는지 붙어요.</li>
       <li><b>3. 첫 장면 그림 · 4. 참고 자료</b> — AI 영상의 시작 그림과 인물·동작·목소리 참고. 넣으면 JSON에 이름이 들어가요.</li>
       <li><b>모양·화질</b> — 템플릿 카드, 가로 영상 맞춤, 해상도, fps, 품질.</li>
