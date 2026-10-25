@@ -1,3 +1,4 @@
+import {mountCaptionStyle} from './app/caption-style.js';
 import {safeInsets,exportStill} from './render/still-export.js';
 import './style.css';
 import {mountPromptLibrary,draftProject} from '../../src/h3video/studio/prompt-library.js';
@@ -45,6 +46,7 @@ const LS = {
   },
 };
 
+let captionControls = {refresh(){}};
 const state = {
   jsonText: '',
   jsonLabel: '', // 1번 칸에 보일 이름(파일 이름·직접 입력·예시 등)
@@ -429,6 +431,7 @@ async function analyze() {
     setMessages([{ level: 'error', text: jsonErrorText(state.jsonText, e) }]);
     return;
   }
+  captionControls.refresh(raw.caption_style);
   syncSettings(raw);
   const eff = effectiveSpec(raw);
   const match = matchFiles(eff, state.files);
@@ -1440,3 +1443,8 @@ recoveryBoot.finally(()=>{if(location.hash==='#from=frame'&&window.opener)window
 function guide(){const inset=safeInsets(el.safeArea.value);el.safeGuide.hidden=!inset;if(inset)Object.assign(el.safeGuide.style,Object.fromEntries(Object.entries(inset).map(([k,v])=>[k,v+'%'])));LS.set('shorts.safeArea',el.safeArea.value);}
 el.safeArea.value=['off','action','vertical'].includes(LS.get('shorts.safeArea'))?LS.get('shorts.safeArea'):'off';el.safeArea.onchange=guide;guide();
 el.stillExport.onclick=async()=>{if(state.busy||state.playing){el.stillMessage.textContent='미리보기를 정지한 뒤 저장하세요.';return;}el.stillExport.disabled=true;try{const job=state.job,k=scrubFrame(),blob=await exportStill(job,k),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='frame-'+String(k).padStart(6,'0')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);el.stillMessage.textContent=job.plan.width+'×'+job.plan.height+' PNG를 만들었습니다.';}catch(e){el.stillMessage.textContent=e.message;}finally{el.stillExport.disabled=!state.job;}};
+
+captionControls = mountCaptionStyle(document.querySelector('.frame-tools'), {
+  getSpec:parseJsonText, busy:()=>state.busy||Boolean(state.playing),
+  apply:async config=>{ if (writeFields({caption_style:config}, {quiet:true})) { await analyze(); await saveCurrent(); } }
+});

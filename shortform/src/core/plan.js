@@ -297,6 +297,7 @@ export function planTimeline(spec, inputs) {
     audio.push({ kind: 'bgm', index: 0, t0: 0, t1: T, src: 0, gain: spec.bgm_volume, loop: true });
   }
   const style = textStyle(W, H, template);
+  style.caption = captionStyle(style.caption, W, H, spec.caption_style);
   const captions = timeCaptions(spec.captions || [], T).map((c) => ({ ...c, lines: layoutCaption(c.text, W, style.caption) }));
   const title = layoutTitle(spec.title, W, style.title);
   const fps = spec.fps || FPS;
@@ -308,4 +309,25 @@ export function planTimeline(spec, inputs) {
 export function describePlan(plan) {
   const segs = plan.segments.filter((s) => s.kind === 'clip').length;
   return `${TEMPLATE_KO[plan.template]} · ${plan.width}×${plan.height} · ${plan.fps}fps · 품질 ${plan.quality.name} · ${plan.duration.toFixed(1)}초 · 소스 구간 ${segs}개 · 자막 ${plan.captions.length}줄`;
+}
+
+// Optional overrides preserve the legacy layout exactly when omitted.
+export function captionStyle(base, W, H, config = {}) {
+  const st = {...base};
+  if (config.scale != null) { st.fontSize = even(base.fontSize * config.scale); st.lineHeight = Math.round(st.fontSize * 1.28); }
+  if (config.max_lines != null) st.maxLines = config.max_lines;
+  if (config.color) st.color = config.color;
+  if (config.border_color) st.borderColor = config.border_color;
+  if (config.border_width != null) st.border = config.border_width;
+  const ratios = {top:.2,center:.5,bottom:.8};
+  if (config.position && config.position !== 'auto') st.centerY = Math.round(H * ratios[config.position]);
+  // Keep even a six-line block inside the canvas after explicit overrides.
+  if (Object.keys(config).length) {
+    const maxHeight = H * .8;
+    st.fontSize = Math.min(st.fontSize, Math.floor(maxHeight / (st.maxLines * 1.28)));
+    st.lineHeight = Math.round(st.fontSize * 1.28);
+    const half = st.lineHeight * st.maxLines / 2 + st.border;
+    st.centerY = Math.round(Math.max(half, Math.min(H - half, st.centerY)));
+  }
+  return st;
 }

@@ -195,7 +195,7 @@ def build_command(plan: dict, paths: dict, out: str, workdir: str, font: str | N
     for cap in plan["captions"]:
         for ln in cap["lines"]:
             draws.append(f"drawtext=fontfile={_esc_path(font)}:textfile={text_file(ln['text'])}:expansion=none:fontsize={cs['fontSize']}:"
-                         f"fontcolor=white:borderw={cs['border']}:bordercolor=black:x=(w-text_w)/2:y={ln['cy']}-{cs['lineHeight']}/2:"
+                         f"fontcolor=0x{cs['color'][1:]}:borderw={cs['border']}:bordercolor=0x{cs['borderColor'][1:]}:x=(w-text_w)/2:y={ln['cy']}-{cs['lineHeight']}/2:"
                          f"enable='gte(t,{cap['start']:.3f})*lt(t,{cap['end']:.3f})'")
     chain = ",".join(draws + ["format=yuv420p"])
     fg.append(f"[{cur}]{chain}[vout]")

@@ -292,6 +292,7 @@ def plan_timeline(spec: dict, inputs: dict) -> dict:
     if inputs.get("bgm") and spec["bgm_volume"] > 0:
         audio.append({"kind": "bgm", "index": 0, "t0": 0, "t1": T, "src": 0, "gain": spec["bgm_volume"], "loop": True})
     style = text_style(W, H, template)
+    style["caption"] = caption_style(style["caption"], W, H, spec.get("caption_style", {}))
     captions = [dict(c, lines=layout_caption(c["text"], W, style["caption"])) for c in time_captions(spec.get("captions") or [], T)]
     title = layout_title(spec.get("title"), W, style["title"])
     fps = spec.get("fps") or FPS
@@ -310,3 +311,23 @@ def describe_plan(plan: dict) -> str:
     segs = sum(1 for s in plan["segments"] if s["kind"] == "clip")
     return (f"{TEMPLATE_KO[plan['template']]} · {plan['width']}×{plan['height']} · {plan['fps']}fps · 품질 {plan['quality']['name']} · {to_fixed1(plan['duration'])}초 · "
             f"소스 구간 {segs}개 · 자막 {len(plan['captions'])}줄")
+
+
+def caption_style(base: dict, W: int, H: int, config: dict | None = None) -> dict:
+    config = config or {}
+    st = dict(base)
+    if "scale" in config:
+        st["fontSize"] = even(base["fontSize"] * config["scale"])
+        st["lineHeight"] = js_round(st["fontSize"] * 1.28)
+    if "max_lines" in config: st["maxLines"] = config["max_lines"]
+    if config.get("color"): st["color"] = config["color"]
+    if config.get("border_color"): st["borderColor"] = config["border_color"]
+    if "border_width" in config: st["border"] = config["border_width"]
+    if config.get("position", "auto") != "auto":
+        st["centerY"] = js_round(H * {"top": .2, "center": .5, "bottom": .8}[config["position"]])
+    if config:
+        st["fontSize"] = min(st["fontSize"], math.floor(H * .8 / (st["maxLines"] * 1.28)))
+        st["lineHeight"] = js_round(st["fontSize"] * 1.28)
+        half = st["lineHeight"] * st["maxLines"] / 2 + st["border"]
+        st["centerY"] = js_round(max(half, min(H - half, st["centerY"])))
+    return st
