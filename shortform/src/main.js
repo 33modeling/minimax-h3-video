@@ -1,5 +1,6 @@
 import {mountCaptionStyle} from './app/caption-style.js';
 import {safeInsets,exportStill} from './render/still-export.js';
+import {exportCover,COVER_SIZES} from './render/cover-export.js';
 import './style.css';
 import {mountPromptLibrary,draftProject} from '../../src/h3video/studio/prompt-library.js';
 import {listProjects,saveDraft,saveScene,saveOutput,loadProject,restorePrevious} from './app/recovery.js';
@@ -367,7 +368,7 @@ function setEmpty(text) {
 }
 
 function clearPlan() {
-  el.stillExport.disabled=true;
+  el.stillExport.disabled=true;el.coverExport.disabled=true;
   stopPlay();
   state.job = null;
   state.mixed = null;
@@ -433,6 +434,7 @@ async function analyze() {
   }
   captionControls.refresh(raw.caption_style);
   syncSettings(raw);
+  if (!el.coverTitle.value && document.activeElement !== el.coverTitle && typeof raw.title === 'string') el.coverTitle.value = raw.title;
   const eff = effectiveSpec(raw);
   const match = matchFiles(eff, state.files);
   renderSlots(match);
@@ -524,6 +526,7 @@ async function prepareCompose(base, genFiles, my) {
   el.previewEmpty.hidden = true;
   el.stageCard.classList.remove('is-empty');
   el.stillExport.disabled = false;
+  el.coverExport.disabled = false;
   el.scrub.disabled = false;
   el.playBtn.disabled = false;
   setReady(!state.busy && engine && engine.kind !== 'none');
@@ -1444,6 +1447,8 @@ function guide(){const inset=safeInsets(el.safeArea.value);el.safeGuide.hidden=!
 el.safeArea.value=['off','action','vertical'].includes(LS.get('shorts.safeArea'))?LS.get('shorts.safeArea'):'off';el.safeArea.onchange=guide;guide();
 el.stillExport.onclick=async()=>{if(state.busy||state.playing){el.stillMessage.textContent='미리보기를 정지한 뒤 저장하세요.';return;}el.stillExport.disabled=true;try{const job=state.job,k=scrubFrame(),blob=await exportStill(job,k),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='frame-'+String(k).padStart(6,'0')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);el.stillMessage.textContent=job.plan.width+'×'+job.plan.height+' PNG를 만들었습니다.';}catch(e){el.stillMessage.textContent=e.message;}finally{el.stillExport.disabled=!state.job;}};
 
+el.coverExport.onclick=async()=>{if(state.busy||state.playing){el.coverMessage.textContent='미리보기를 정지한 뒤 저장하세요.';return;}el.coverExport.disabled=true;try{const job=state.job,k=scrubFrame(),size=el.coverSize.value,raw=parseJsonText(),config=raw.caption_style||{},blob=await exportCover(job,k,{title:el.coverTitle.value,size,config}),url=URL.createObjectURL(blob),a=document.createElement('a'),o=COVER_SIZES[size];a.href=url;a.download=`cover-${o.width}x${o.height}.png`;a.click();if(el.coverPreview.src)URL.revokeObjectURL(el.coverPreview.src);el.coverPreview.src=url;el.coverPreview.hidden=false;el.coverPreview.dataset.size=size;el.coverMessage.textContent=`${o.label} 표지 PNG를 만들었습니다.`;}catch(e){el.coverMessage.textContent=e.message;}finally{el.coverExport.disabled=!state.job;}};
+el.coverSize.value=COVER_SIZES[LS.get('shorts.coverSize')]?LS.get('shorts.coverSize'):'shorts';el.coverSize.onchange=()=>LS.set('shorts.coverSize',el.coverSize.value);
 captionControls = mountCaptionStyle(document.querySelector('.frame-tools'), {
   getSpec:parseJsonText, busy:()=>state.busy||Boolean(state.playing),
   apply:async config=>{ if (writeFields({caption_style:config}, {quiet:true})) { await analyze(); await saveCurrent(); } }

@@ -20,7 +20,7 @@ const arg = (name, def) => {
 const ONLY = arg('only', '');
 const PORT = Number(arg('port', 4290));
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
-const VP = { desktop: { width: 1280, height: 900 }, wide: { width: 1400, height: 900 }, phone: { width: 390, height: 844 }, narrow: { width: 320, height: 640 } };
+const VP = { xl: { width: 1440, height: 900 }, desktop: { width: 1280, height: 900 }, wide: { width: 1400, height: 900 }, phone: { width: 390, height: 844 }, narrow: { width: 320, height: 640 } };
 const media = (...names) => names.map((n) => join(MEDIA, n));
 
 mkdirSync(OUT, { recursive: true });
@@ -218,6 +218,53 @@ const scenarios = {
     await n.page.waitForTimeout(200);
     check((await overflow(n.page)) <= 0, `narrow 320: 가로 넘침 ${await overflow(n.page)}px`);
     await n.done();
+  },
+
+  // 표지 PNG: 고른 프레임 + 제목(자막 모양 설정). 1440·390·320px 에서 숏폼·유튜브 크기와 빨간 제목 위치를 본다
+  async cover() {
+    for (const vp of ['xl', 'phone', 'narrow']) {
+      const { page, done } = await newPage(`cover-${vp}`, { vp, allow: ['status of 404'] }); // 허브 글꼴·creative-ai 는 허브에서만 있음
+      await loadJob(page, `cover-${vp}`, composeJob('cutaway', { caption_style: { position: 'top', color: '#ff0000', border_color: '#000000', border_width: 4 } }), composeFiles('cutaway'));
+      await waitReady(page, `cover-${vp}`);
+      check((await page.inputValue('#coverTitle')) === 'cutaway 템플릿 확인', `cover ${vp}: 제목이 작업 JSON 에서 채워지지 않음`);
+      await page.locator('#scrub').evaluate((x) => { x.value = '400'; x.dispatchEvent(new Event('input', { bubbles: true })); });
+      const pixels = () => page.evaluate(async () => {
+        const img = document.getElementById('coverPreview');
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+        const d = x.getImageData(0, 0, c.width, c.height).data;
+        const prev = window.__coverBare; window.__coverBare = d;
+        if (!prev || prev.length !== d.length) return null;
+        // 제목 없는 표지와 비교해 바뀐 빨간 픽셀이 어디에 있는지 센다
+        let top = 0, rest = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 220 && d[i + 1] < 40 && d[i + 2] < 40 && Math.abs(d[i + 1] - prev[i + 1]) + Math.abs(d[i + 2] - prev[i + 2]) + Math.abs(d[i] - prev[i]) > 30) ((i / 4 / c.width) < c.height * 0.35 ? top++ : rest++);
+        return { top, rest };
+      });
+      for (const [size, w, h] of [['shorts', 1080, 1920], ['youtube', 1280, 720]]) {
+        await page.selectOption('#coverSize', size);
+        let red = null;
+        for (const title of ['', '표지 제목 확인']) {
+          await page.fill('#coverTitle', title);
+          const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#coverExport')]);
+          const file = join(OUT, `cover-${vp}-${size}${title ? '' : '-bare'}.png`);
+          await dl.saveAs(file);
+          const info = probe(file);
+          check(dl.suggestedFilename() === `cover-${w}x${h}.png` && info.w === w && info.h === h, `cover ${vp} ${size}: 크기 이상 ${JSON.stringify(info)} ${dl.suggestedFilename()}`);
+          await page.waitForFunction((s) => document.getElementById('coverPreview').dataset.size === s, size);
+          red = await pixels();
+        }
+        check(red && red.top > 100 && red.rest < red.top / 20, `cover ${vp} ${size}: 빨간 제목이 위쪽에 없음 ${JSON.stringify(red)}`);
+      }
+      check((await page.locator('#coverMessage').textContent()).includes('1280×720'), `cover ${vp}: 완료 안내 없음`);
+      check((await overflow(page)) <= 0, `cover ${vp}: 가로 넘침 ${await overflow(page)}px`);
+      const box = await page.locator('#coverExport').boundingBox();
+      check(box && box.height >= 44, `cover ${vp}: 버튼 높이 44px 미만`);
+      check((await page.locator('#coverTitle').evaluate((x) => parseFloat(getComputedStyle(x).fontSize))) >= 16, `cover ${vp}: 입력 글자 16px 미만`);
+      await page.locator('#coverTools').screenshot({ path: join(OUT, `cover-ui-${vp}.png`) });
+      await done();
+    }
   },
 
   // 해상도 프리셋·직접 입력 + fps·품질 선택이 JSON 과 결과에 반영되는지
