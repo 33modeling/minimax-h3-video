@@ -12,5 +12,6 @@ export async function printStoryboard(project,full=u=>u){const rows=storyboardRo
  await Promise.all(rows.map(async r=>{const shot=r.video?await videoThumb(full(r.video)):null;const src=shot||(r.image?full(r.image):'');if(src)thumbs.set(r.id,src);}));
  document.querySelector('.vw-storyboard-print')?.remove();const sheet=document.createElement('section');sheet.className='vw-storyboard-print';sheet.setAttribute('aria-hidden','true');sheet.innerHTML=storyboardHtml(project,thumbs);document.body.append(sheet);
  await Promise.all([...sheet.querySelectorAll('img')].map(img=>img.decode().catch(()=>{img.closest('.sb-thumb').innerHTML='<span>미리보기 없음</span>';})));
- const root=document.documentElement;root.classList.add('vw-printing');const cleanup=()=>{root.classList.remove('vw-printing');sheet.remove();removeEventListener('afterprint',cleanup);};addEventListener('afterprint',cleanup);
+ // 'PDF로 저장' 기본 파일 이름은 문서 제목이라서, 인쇄하는 동안만 프로젝트 이름으로 바꾼다
+ const root=document.documentElement,pageTitle=document.title;document.title=`${project.title||'영상'} 스토리보드`;root.classList.add('vw-printing');const cleanup=()=>{root.classList.remove('vw-printing');document.title=pageTitle;sheet.remove();removeEventListener('afterprint',cleanup);};addEventListener('afterprint',cleanup);
  window.print();return {sheet,count:rows.length,thumbs:thumbs.size,cleanup};}

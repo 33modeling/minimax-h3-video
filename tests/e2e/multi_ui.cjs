@@ -26,7 +26,7 @@ function check(ok, what) { if (!ok) throw new Error(what); console.log(`  ok  ${
     await page.fill('[aria-label="인물 1 목소리"]', '작고 높은 목소리');
     await page.waitForFunction(() => !document.querySelector('#multi-list').textContent.includes('확인 중') && !document.querySelector('#multi-go').disabled);
     const made = [];
-    page.on('response', async r => { if (r.url().endsWith('/api/story') && r.request().method() === 'POST') made.push(await r.json()); });
+    page.on('response', async r => { if (r.url().endsWith('/api/story') && r.request().method() === 'POST') try { made.push(await r.json()); } catch { /* 페이지를 닫은 뒤 도착한 응답 */ } });
     await page.click('#multi-go');
     await page.waitForFunction(() => /2편을 대기열에 넣었어요/.test(document.querySelector('#multi-msg').textContent), null, {timeout: 20000});
     check(made.length === 2 && made.every(m => /^multi-/.test(m.multi) && m.multi === made[0].multi), '편마다 같은 묶음 표시로 넣음');

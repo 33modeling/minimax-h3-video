@@ -94,8 +94,14 @@ def caption_file(captions, vtt=False):
         ms = round(float(value) * 1000)
         return f'{ms // 3600000:02}:{ms // 60000 % 60:02}:{ms // 1000 % 60:02}{"." if vtt else ","}{ms % 1000:03}'
     rows = ['WEBVTT\n'] if vtt else []
-    for index, caption in enumerate(captions):
-        text = str(caption['text']).replace('-->', '→')
+    # 빈 줄은 큐의 끝이라서, 글이 없는 줄은 빼고 글 안의 빈 줄은 접어야 SRT·VTT 가 깨지지 않는다
+    cues = []
+    for caption in captions:
+        lines = [line.strip() for line in str(caption['text']).replace('\r', '').replace('-->', '→').split('\n')]
+        text = '\n'.join(line for line in lines if line)
+        if text:
+            cues.append((caption, text))
+    for index, (caption, text) in enumerate(cues):
         rows.append(f'{index + 1}\n{stamp(caption["start"])} --> {stamp(caption["end"])}\n{text}\n')
     return '\n'.join(rows) + '\n'
 
@@ -150,13 +156,15 @@ class VideoStudio:
         home = Path(os.environ.get('H3_STUDIO_TOOLS', Path.home() / '.local/share/h3video/studio'))
         upscale = Path(os.environ.get('STUDIO_UPSCALER_DIR', Path.home() / '.local/share/storybook-maker/upscaler'))
         shared = Path(os.environ.get('H3_SHARED_STUDIO', ROOT.parent / 'storybook-maker'))
-        return dict(ffmpeg=bool(shutil.which('ffmpeg')), transcription=(home / 'whisper-small/model.bin').exists(),
-                    aiUpscale=(upscale / 'realesrgan-ncnn-vulkan').exists(),
+        # os.path.exists 는 권한 없는 경로를 '없음'으로 본다(Path.exists 는 PermissionError 로 편집실 전체가 열리지 않았다)
+        present = os.path.exists
+        return dict(ffmpeg=bool(shutil.which('ffmpeg')), transcription=present(home / 'whisper-small/model.bin'),
+                    aiUpscale=present(upscale / 'realesrgan-ncnn-vulkan'),
                     referenceAnalysis=bool(downloader()), referenceOCR=bool(shutil.which('tesseract')),
                     referenceVisionConfigured=bool(os.environ.get('H3_REFERENCE_VISION_BASE_URL') and os.environ.get('H3_REFERENCE_VISION_MODEL')),
                     qwenImage=dict(endpoint=os.environ.get('QWEN_IMAGE_BASE_URL', 'http://127.0.0.1:8091'),
                                    model=os.environ.get('QWEN_IMAGE_MODEL', 'Qwen/Qwen-Image-2.1')),
-                    faceInspection=(shared / '.venv-studio/bin/python').exists(), draftSize=576, draftSteps=20,
+                    faceInspection=present(shared / '.venv-studio/bin/python'), draftSize=576, draftSteps=20,
                     generationServer=self.app.endpoint)
 
     def view(self, project):
@@ -764,7 +772,7 @@ class VideoStudio:
                         command = [shutil.which('node'), client]
                     else:
                         python = ROOT / '.venv-video-studio/bin/python'
-                        if not python.exists():
+                        if not os.path.exists(python):
                             raise H3Error('이미지 편집 도구를 설치하세요: npm run install:studio')
                         command = [python, ROOT / 'scripts/qwen-retouch.py']
                     self.command(p, command,
@@ -841,7 +849,7 @@ class VideoStudio:
             self.ffmpeg(p, ['-i', source, '-vf', 'fps=1,scale=320:-2', samples / '%06d.png'])
             shared = Path(os.environ.get('H3_SHARED_STUDIO', ROOT.parent / 'storybook-maker'))
             python = shared / '.venv-studio/bin/python'
-            if python.exists():
+            if os.path.exists(python):
                 values = [{'file': str(f), 'time': entries[index]['start'] + n} for n,f in enumerate(sorted(samples.glob('*.png')))]
                 report = json.loads(self.command(p, [python, ROOT / 'scripts/video-face-check.py'], {'samples': values}))
                 for event in report['events']:
@@ -865,7 +873,7 @@ class VideoStudio:
                 self.inspect(p, snapshot, work)
             elif operation == 'transcribe':
                 python = ROOT / '.venv-video-studio/bin/python'
-                if not python.exists() or not self.capabilities()['transcription']:
+                if not os.path.exists(python) or not self.capabilities()['transcription']:
                     raise H3Error('자동 자막 도구를 설치하세요: python3 scripts/install-video-tools.py')
                 source = self.compose(p, snapshot, work / 'speech', snapshot['delivery']['ratios'][0], 320, subtitles=False)
                 self.progress(p, .8, '실제 음성을 인식해 자막 시간 맞추는 중')

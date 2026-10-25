@@ -27,9 +27,10 @@ try{
   assert.equal(await sheet.locator('img[src^="data:image/jpeg"]').count(),2,'video frame thumbnails missing');
   const text=await sheet.textContent();for(const t of ['장면 1','장면 2','1초','a moving scene','두 번째 장면 프롬프트','첫 자막 <확인>','장면 2개'])assert.ok(text.includes(t),'missing '+t);
   assert.equal(await sheet.evaluate(el=>getComputedStyle(el).display),'none','sheet must be hidden on screen');
+  const pageTitle=await page.evaluate(()=>document.title);assert.equal(pageTitle,project.title+' 스토리보드','PDF file name should follow the project title');
   await page.emulateMedia({media:'print'});assert.equal(await sheet.evaluate(el=>getComputedStyle(el).display),'block');assert.equal(await page.locator('#videoWorkbench').evaluate(el=>el.offsetParent===null),true,'editor must be hidden when printing');
   if(width===1440){const pdf=path.join(report,'storyboard.pdf');await page.pdf({path:pdf,format:'A4',printBackground:true});const head=(await fs.readFile(pdf)).subarray(0,5).toString();assert.equal(head,'%PDF-');await page.screenshot({path:path.join(report,'storyboard-print-1440.png'),fullPage:true});}
-  await page.evaluate(()=>dispatchEvent(new Event('afterprint')));await page.emulateMedia({media:'screen'});assert.equal(await page.locator('.vw-storyboard-print').count(),0,'sheet not removed after print');
+  await page.evaluate(()=>dispatchEvent(new Event('afterprint')));assert.notEqual(await page.evaluate(()=>document.title),project.title+' 스토리보드','page title restored after print');await page.emulateMedia({media:'screen'});assert.equal(await page.locator('.vw-storyboard-print').count(),0,'sheet not removed after print');
   await page.screenshot({path:path.join(report,`storyboard-editor-${width}.png`)});
   assert.deepEqual(errors,[]);await context.close();
  }

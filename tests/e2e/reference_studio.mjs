@@ -4,14 +4,14 @@ const root=path.resolve(import.meta.dirname,'../..'),temp=fs.mkdtempSync(path.jo
 const server=spawn('python3',[path.join(root,'tests/studio_browser_server.py'),temp],{stdio:['ignore','pipe','pipe']});let config,buffer='',stderr='';
 server.stdout.on('data',chunk=>{buffer+=chunk;for(const line of buffer.split('\n'))try{const v=JSON.parse(line);if(v.url)config=v;}catch{}});server.stderr.on('data',chunk=>stderr=(stderr+chunk).slice(-3000));
 let browser;try{
-for(let i=0;i<100&&!config;i++)await new Promise(r=>setTimeout(r,100));assert.ok(config,stderr);
+for(let i=0;i<300&&!config;i++)await new Promise(r=>setTimeout(r,100));assert.ok(config,stderr);
 const api=config.url,host=process.env.H3_REF_UI||api+'/',label=process.env.H3_REF_LABEL||'source',report=process.env.H3_REF_EVIDENCE||path.join(root,'test-results/reference-studio');fs.mkdirSync(report,{recursive:true});
 const file=path.join(temp,'reference-fixture.mp4');execFileSync('ffmpeg',['-loglevel','error','-y','-f','lavfi','-i',"color=c=0x203f65:s=640x360:r=4:d=2,drawtext=text='HELLO WORLD':fontsize=44:fontcolor=white:x=80:y=70",'-c:v','libx264','-pix_fmt','yuv420p',file]);
 browser=await chromium.launch({headless:true});const result=[];
 for(const width of [320,390,820,1440]){
  const ctx=await browser.newContext({viewport:{width,height:1100},acceptDownloads:true});await ctx.addInitScript(u=>localStorage.setItem('h3video.server',u),api);
  if(host!==api+'/'){const secret=fs.readFileSync('/home/kms/dev/33modeling-site/_worker.js','utf8').match(/const PASSWORD\s*=\s*"([^"]+)"/)[1];const r=await ctx.request.post(new URL('/',host).href,{form:{pw:secret},maxRedirects:0});const cookie=r.headers()['set-cookie']||'';for(const c of cookie.split(/,(?=\s*[^;,]+=)/)){const pair=c.trim().split(';')[0],i=pair.indexOf('=');if(i>0)await ctx.addCookies([{name:pair.slice(0,i),value:pair.slice(i+1),url:new URL('/',host).href}]);}await ctx.grantPermissions(['local-network-access']);}
- const page=await ctx.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(host,{waitUntil:'networkidle'});await page.locator('#openVideoStudio').click();await page.locator('[data-action=reference]').click();const modal=page.locator('.vr-dialog');await modal.waitFor();
+ const page=await ctx.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(host,{waitUntil:'networkidle'});await page.locator('#openVideoStudio').click();await page.locator('[data-action=reference]').click();const modal=page.locator('.vr-dialog:not(#recovery-dialog)');await modal.waitFor();
  await modal.locator('[data-ref-field=end]').fill('2');await modal.locator('[data-ref-field=transcribe]').uncheck();await modal.locator('[data-ref-upload]').setInputFiles(file);await modal.locator('[data-ref-prompt]').waitFor({timeout:45000});
  assert.ok((await modal.locator('[data-overlay=text]').inputValue()).includes('HELLO'));
  await modal.locator('[data-overlay=font_family]').fill('Georgia');await modal.locator('[data-overlay-box=x]').fill('.2');await modal.locator('[data-ref-prompt]').fill('수정한 제품 소개 영상');await modal.locator('[data-ref-action=save]').click();await page.waitForTimeout(400);
