@@ -18,6 +18,8 @@ import { prepareSegments, drawFrame, frameCount } from './render/draw.js';
 import { pickEngine, exportVideo, Cancelled } from './render/export.js';
 import { generateScene, checkConnection, DEFAULT_H3VIDEO, DEFAULT_FL2VA, DEFAULT_REF2VA, H3_SHORT_EDGE } from './ai/generate.js';
 import { sourceFrames } from './ai/frames.js';
+import { takeHandoff } from '../../src/h3video/studio/handoff-store.js';
+import { VIDEO_HANDOFF_KEY, VIDEO_HANDOFF_HASH, checkVideoHandoff } from './app/video-handoff.js';
 import { CAPTION_HANDOFF_KEY, CAPTION_HANDOFF_HASH, isCaptionFileName, looksLikeTranscriptText, parseCaptionFile, fromTranscript, captionSummary } from './app/captions-import.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1511,8 +1513,25 @@ async function takeCaptionHandoff(){
   el.filesPanel.scrollIntoView({block:'start'});
 }
 if(location.hash===CAPTION_HANDOFF_HASH)recoveryBoot.then(takeCaptionHandoff);
-// 이미 열린 숏폼 탭에서 주소만 #from=asr 로 바뀐 경우(새로 읽지 않음)
-addEventListener('hashchange',()=>{if(location.hash===CAPTION_HANDOFF_HASH)recoveryBoot.then(takeCaptionHandoff);});
+// 이미 열린 숏폼 탭에서 주소만 #from=asr·#from=video 로 바뀐 경우(새로 읽지 않음)
+addEventListener('hashchange',()=>{if(location.hash===CAPTION_HANDOFF_HASH)recoveryBoot.then(takeCaptionHandoff);if(location.hash===VIDEO_HANDOFF_HASH)recoveryBoot.then(takeVideoHandoff);});
+// 영상 만들기의 '숏폼으로 보내기': 같은 출처 IndexedDB 로 받은 영상을 '내 영상' 칸에. 작업 JSON 이 있으면 새 작업으로(지금 작업은 작업 목록에 보관),
+// JSON 없이 파일만 있으면 지우지 않고 그 옆에 더한다.
+async function takeVideoHandoff(){
+  history.replaceState(null,'',location.pathname+location.search);
+  let record=null;
+  try{record=await takeHandoff(VIDEO_HANDOFF_KEY);}catch{showDropNote('브라우저 저장소를 열 수 없어 영상을 받지 못했어요. 영상 만들기의 ‘받기’로 내려받아 여기에 놓아 주세요.','warn');return;}
+  let got;
+  try{got=checkVideoHandoff(record);}catch(e){showDropNote(e.message,'warn');el.filesPanel.scrollIntoView({block:'start'});return;}
+  if(state.busy){showDropNote('만드는 중이라 영상을 넣지 못했어요. 끝난 뒤 영상 만들기에서 다시 보내 주세요.','warn');return;}
+  const kept=!!state.jsonText.trim(),added=!kept&&state.files.length>0;
+  if(kept)await startNewJob();
+  await takeDrop([got.file],'media');
+  showDropNote([`영상 만들기에서 「${got.title||got.file.name}」 영상을 받아 ‘내 영상’ 칸에 넣었어요`,kept?'앞 작업은 작업 목록에 보관했어요':added?'전에 넣어 둔 파일은 그대로 두었어요':''],'info');
+  await refreshLibrary();
+  el.filesPanel.scrollIntoView({block:'start'});
+}
+if(location.hash===VIDEO_HANDOFF_HASH)recoveryBoot.then(takeVideoHandoff);
 
 function guide(){const inset=safeInsets(el.safeArea.value);el.safeGuide.hidden=!inset;if(inset)Object.assign(el.safeGuide.style,Object.fromEntries(Object.entries(inset).map(([k,v])=>[k,v+'%'])));LS.set('shorts.safeArea',el.safeArea.value);}
 el.safeArea.value=['off','action','vertical'].includes(LS.get('shorts.safeArea'))?LS.get('shorts.safeArea'):'off';el.safeArea.onchange=guide;guide();

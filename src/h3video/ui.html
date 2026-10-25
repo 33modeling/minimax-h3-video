@@ -1267,6 +1267,7 @@ function cardHtml(it) {
   const acts = [];
   // ?download=1: 서버가 '내려받기'로 보낸다 (허브처럼 다른 주소에서 연 화면은 download 속성이 안 먹어 영상 페이지로 넘어가 버린다)
   if (it.video_url) acts.push(`<a class="btn" href="${esc(full(it.video_url) + (it.video_url.includes('?') ? '&' : '?') + 'download=1')}" download>${icon('down')}받기</a>`);
+  if (it.video_url && it.status === 'completed') acts.push(`<button type="button" class="btn" data-act="shorts" title="다 만든 영상을 숏폼 제작의 '내 영상' 칸으로 넘깁니다">숏폼으로 보내기</button>`);
   if (live) acts.push(`<button type="button" class="btn" data-recovery="stop">지금 중지 · 완료 구간 보존</button>`);
   if(it.status==='paused'||it.status==='failed')acts.push(`<button type="button" class="btn main" data-recovery="continue">저장본 이어 만들기</button>`);
   if(!live)acts.push(`<button type="button" class="btn" data-recovery="restart">처음부터 다시 · 새 작업</button><button type="button" class="btn" data-recovery="edit">일부 수정</button>`);
@@ -1401,12 +1402,47 @@ $('#feed').addEventListener('click', async e => {
       const r = await api(act === 'retry' ? `/api/jobs/${encodeURIComponent(id)}/retry` : `/api/story/${encodeURIComponent(id)}/resume`, {method: 'POST'});
       toast(act === 'retry' ? '같은 설정으로 다시 만들어요' : `안 된 장면 ${r.redo}개를 다시 만들어요`); poll();
     } catch (err) { toast('다시 하지 못했어요: ' + err.message); b.disabled = false; }
+  } else if (act === 'shorts') {
+    b.disabled = true;
+    try { await sendToShorts(it); } finally { b.disabled = false; }
   } else if (act === 'again') {
     b.disabled = true;
     try { await (it.kind === 'story' ? loadStory(it) : loadJob(it)); } catch (err) { toast('불러오지 못했어요: ' + err.message); }
     b.disabled = false;
   }
 });
+// ---------- 숏폼으로 보내기 ----------
+// 다 만든 영상을 숏폼 제작(../shorts/)의 '내 영상' 칸으로. 영상은 커서 localStorage 가 아니라 같은 출처 IndexedDB('creative-handoff')에 두고
+// ../shorts/#from=video 를 연다(받는 쪽: shortform/src/main.js takeVideoHandoff). 허브 밖(이 PC 서버가 직접 내준 화면)에는 숏폼이 없으니 영상을 내려받는다.
+const SHORTS_VIDEO_KEY = 'shorts-video-input';
+async function sendToShorts(it) {
+  const href = new URL('../shorts/#from=video', location.href).href;
+  const name = (String(titleOf(it) || '영상').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim().slice(0, 40) || '영상') + '.mp4';
+  const fallback = why => {
+    const a = document.createElement('a'); a.href = full(it.video_url) + (it.video_url.includes('?') ? '&' : '?') + 'download=1'; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    toast(`${why}영상(${name})을 내려받았어요. 숏폼 제작의 ‘내 영상’ 칸에 넣어 주세요.`);
+  };
+  if (SERVED) return fallback('이 화면에서는 숏폼 제작을 바로 열 수 없어서 ');
+  const tab = window.open('', '_blank');   // 누른 순간 열어야 팝업 차단에 걸리지 않는다
+  if (!tab) return fallback('새 탭이 막혀서 ');
+  try {
+    const probe = await fetch(href.replace(/#.*$/, ''), {method: 'HEAD', cache: 'no-store'}).catch(() => null);
+    if (!probe || !probe.ok) { tab.close(); return fallback('이 화면에서는 숏폼 제작을 찾지 못해서 '); }
+    const r = await fetch(full(it.video_url));
+    if (!r.ok) throw new Error('영상을 서버에서 읽지 못했어요');
+    const blob = await r.blob();
+    if (!blob.size) throw new Error('영상 파일이 비어 있어요');
+    const file = new File([blob], name, {type: blob.type && blob.type.startsWith('video/') ? blob.type : 'video/mp4'});
+    const store = await import('./studio/handoff-store.js');
+    await store.putHandoff(SHORTS_VIDEO_KEY, {v: 1, from: 'video-maker', at: new Date().toISOString(), title: titleOf(it) || '', ratio: (it.kind === 'story' ? it.ratio : it.aspect_ratio) || '', seconds: Number(it.kind === 'story' ? it.seconds : it.total_seconds) || 0, file});
+    tab.location.replace(href);
+    toast('숏폼 제작으로 영상을 보냈어요. 새 탭을 확인하세요.');
+  } catch (err) {
+    try { tab.close(); } catch (e) { /* 이미 닫힘 */ }
+    fallback('영상을 넘기지 못해서 ');
+  }
+}
 async function copyText(text, pre) {
   try { await navigator.clipboard.writeText(text); toast('복사했어요'); return; } catch (e) { /* 아래 방법으로 */ }
   const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
@@ -1512,12 +1548,21 @@ addEventListener('message',event=>{
  const trusted=event.origin===location.origin||event.origin==='https://frame-storyboard-33.glassytune4.chatgpt.site'||event.origin==='https://33modeling.pages.dev'||/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(event.origin);
  if(!trusted||event.source!==window.opener)return;
  if(event.data?.type==='creative-image-handoff'){
-  const {project,files:incoming,transferId}=event.data;
-  if(project?.schema!=='image-maker/video-v1'||!Array.isArray(project.clips)||!project.clips.length||!Array.isArray(incoming)||incoming.length!==project.clips.length||typeof transferId!=='string')return;
+  const {project,files:incoming,transferId}=event.data;if(typeof transferId!=='string')return;
+  // 받지 않을 때도 보낸 쪽에 까닭을 알려 준다(전에는 말없이 무시해 보낸 쪽이 1분 기다린 뒤 '확인을 받지 못했습니다'만 띄웠다)
+  const reject=error=>{toast(error);event.source.postMessage({type:'image-maker-rejected',transferId,error},event.origin);};
+  const old='받은 장면 자료의 형식이 이 영상 만들기와 맞지 않아요. 보내는 화면을 새로 고친 뒤 다시 보내 주세요(옛 화면에서 보냈을 수 있어요).';
+  if(project?.schema!=='image-maker/video-v1'||!Array.isArray(project.clips)||!Array.isArray(incoming))return reject(old);
+  if(!project.clips.length)return reject('받은 장면이 없어요. 장면 그림을 만든 뒤 다시 보내 주세요.');
+  if(incoming.length!==project.clips.length)return reject(`장면 ${project.clips.length}개와 그림 ${incoming.length}장의 수가 맞지 않아 받지 않았어요. 다시 보내 주세요.`);
   const names=new Set();
-  for(const file of incoming){if(!(file instanceof File)||kindOf(file)!=='image'||names.has(file.name))return;names.add(file.name);}
-  if(project.clips.some(c=>!c||typeof c.prompt!=='string'||!c.prompt.trim()||!names.has(c.image)||!Number.isInteger(c.seconds)||c.seconds<5||c.seconds>15))return;
+  for(const file of incoming){if(!(file instanceof File)||kindOf(file)!=='image')return reject('그림이 아닌 파일이 섞여 있어 받지 않았어요.');if(names.has(file.name))return reject(`같은 이름의 그림(${file.name})이 두 번 들어 있어 받지 않았어요.`);names.add(file.name);}
+  const bad=project.clips.findIndex(c=>!c||typeof c.prompt!=='string'||!c.prompt.trim()||!names.has(c.image)||!Number.isInteger(c.seconds)||c.seconds<5||c.seconds>15);
+  if(bad>=0)return reject(`${bad+1}번째 장면의 글·그림 이름·길이(5~15초)를 확인해 주세요. 받지 않았어요.`);
   if(!receivedImageTransfers.has(transferId)){
+   // 지금 'JSON 한번에' 칸에 다른 이야기가 있으면 말없이 바꾸지 않고 먼저 묻는다
+   const current=files.json[0]?.file?.name||(files.pages.length?`쪽 그림 ${files.pages.length}장`:'');
+   if(current&&!confirm(`지금 넣어 둔 이야기(${current})가 있어요. 받은 장면 ${project.clips.length}개로 바꿀까요?\n취소를 누르면 지금 작업을 그대로 둡니다.`)){event.source.postMessage({type:'image-maker-rejected',transferId,error:'영상 만들기에서 지금 작업을 두기로 해서 받지 않았어요.'},event.origin);toast('받은 장면은 넣지 않았어요. 지금 작업을 그대로 둡니다.');return;}
    receivedImageTransfers.add(transferId);setMode('story');files.pages.forEach(drop);files.pages=[];files.json.forEach(drop);files.json=[];
    addFiles('json',[...incoming,new File([JSON.stringify(project)],'image-maker-video.json',{type:'application/json'})]);
    toast((project.sourceKind==='books'?'동화책 Maker':'Image Maker')+'의 이미지와 스토리라인을 받았습니다. 장면을 확인하고 영상 만들기를 누르세요.');

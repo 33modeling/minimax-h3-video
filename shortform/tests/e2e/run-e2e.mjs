@@ -779,6 +779,31 @@ const scenarios = {
     await done();
   },
 
+  // 영상 만들기 '숏폼으로 보내기'(#from=video): IndexedDB 로 받은 영상을 '내 영상' 칸에, 지금 작업은 작업 목록에 보관. 옛 값은 안내만
+  async videoHandoff() {
+    const { page, done } = await newPage('video-handoff');
+    await loadJob(page, 'video-handoff', composeJob('montage'), composeFiles('montage'));
+    await waitReady(page, 'video-handoff');
+    const seed = (at, name) => page.evaluate(async ({ at, name }) => {
+      const db = await new Promise((ok, no) => { const q = indexedDB.open('creative-handoff', 1); q.onupgradeneeded = () => q.result.createObjectStore('items', { keyPath: 'key' }); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); });
+      await new Promise((ok) => { const tx = db.transaction('items', 'readwrite'); tx.objectStore('items').put({ key: 'shorts-video-input', v: 1, from: 'video-maker', at, title: '바다 영상', file: new File([new Uint8Array(256)], name, { type: 'video/mp4' }) }); tx.oncomplete = ok; });
+      db.close();
+    }, { at, name });
+    await seed(new Date(Date.now() - 3600_000).toISOString(), '옛것.mp4');
+    await page.goto(BASE + '#from=video');
+    await page.waitForFunction(() => /30분/.test(document.getElementById('dropNote').textContent), null, { timeout: 10000 });
+    check(!(await page.locator('#chipsMedia').innerText()).includes('옛것.mp4'), 'video-handoff: 옛 영상이 들어감');
+    await seed(new Date().toISOString(), '바다.mp4');
+    await page.evaluate(() => { location.hash = '#from=video'; });
+    await page.waitForFunction(() => /바다 영상/.test(document.getElementById('dropNote').textContent), null, { timeout: 10000 });
+    const chips = await page.locator('#chipsMedia').innerText();
+    check(chips.includes('바다.mp4'), `video-handoff: 내 영상 칸에 없음 ${chips}`);
+    check(/앞 작업은 작업 목록에 보관/.test(await page.locator('#dropNote').innerText()) && !page.url().includes('#from=video'), 'video-handoff: 보관 안내·주소');
+    const lib = await page.$$eval('#recoveryLibrary option', (o) => o.map((x) => x.textContent));
+    check(lib.some((t) => t.includes('montage 템플릿 확인')), `video-handoff: 앞 작업이 작업 목록에 없음 ${lib}`);
+    await done();
+  },
+
   async layout() {
     for (const w of [320, 390, 768, 1024, 1440]) {
       const { page, done } = await newPage(`layout-${w}`);
