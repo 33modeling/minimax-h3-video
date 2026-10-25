@@ -229,7 +229,7 @@
       <div class="stage-card is-empty" id="stageCard">
         <div class="stage-head"><h2 id="preview-h">미리보기</h2><span class="stage-sub">저해상도</span></div>
         <div class="phone" id="previewWrap">
-          <canvas id="preview" width="270" height="480" aria-label="저해상도 미리보기"></canvas>
+          <div id="safeGuide" class="safe-guide" hidden aria-hidden="true"><span>안전 여백 참고선</span></div><canvas id="preview" width="270" height="480" aria-label="저해상도 미리보기"></canvas>
           <div class="preview-empty" id="previewEmpty">
             <span class="sk sk-title" aria-hidden="true"></span>
             <span class="pe-text" id="previewEmptyText">파일을 넣으면<br>여기서 미리 봐요</span>
@@ -241,7 +241,7 @@
           <input id="scrub" type="range" min="0" max="1000" value="0" disabled aria-label="미리보기 시각">
           <span id="scrubTime">0.0초</span>
         </div>
-        <p class="plan-sum" id="planSum">아직 만들 것이 없어요</p>
+        <div class="frame-tools"><label>미리보기 안전 여백<select id="safeArea"><option value="off">표시 안 함</option><option value="action">사방 10%</option><option value="vertical">세로 영상 UI 여백 참고</option></select></label><button type="button" id="stillExport" class="ghost small" disabled>현재 프레임 PNG 저장</button><p>여백은 미리보기 참고선이며 영상·PNG에 들어가지 않습니다. 플랫폼마다 화면 UI가 다를 수 있습니다.</p><p id="stillMessage" role="status"></p></div><p class="plan-sum" id="planSum">아직 만들 것이 없어요</p>
         <p class="plan-line" id="planLine">아직 계획이 없습니다.</p>
         <div id="makeArea" class="make-area">
           <button type="button" id="makeBtn" class="primary big" disabled>만들기</button><button type="button" id="restartBtn" class="ghost" disabled>처음부터 다시 · 새 저장본</button>

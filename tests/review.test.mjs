@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {reviewTimeline,reviewIssues,reviewCSV,reviewMarkdown} from '../src/h3video/studio/review.js';
+const p=()=>({title:'검토',clips:[{id:'a',label:'=A',seconds:5,transition:'fade',transitionSeconds:1,selected:'a.mp4'},{id:'b',label:'장면 B',seconds:3,imageUrl:'x.png'}]});
+test('review uses actual transition overlap, stable chronology, no mutation',()=>{const v=p(),s=JSON.stringify(v),rows=reviewTimeline(v.clips);assert.equal(rows[0].overlap,1);assert.equal(rows[1].start,4);assert.equal(rows[1].end,7);assert.equal(JSON.stringify(v),s);assert.throws(()=>reviewTimeline([{seconds:NaN}]));});
+test('QA distinguishes still-only scenes and stale captions from measured quality',()=>{const v=p();v.captionsStale=true;assert.equal(reviewIssues(v).length,2);assert.match(reviewIssues(v)[0].text,/그림 콘티/);assert.match(reviewMarkdown(v),/화질·음성 품질 측정은 포함하지/);});
+test('CSV columns preserve overlap and formula defense',()=>{const text=reviewCSV(p());assert.match(text,/"'=A"/);assert.match(text,/"4","7","3","0","cut"/);});

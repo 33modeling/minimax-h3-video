@@ -10,8 +10,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/unit/ && python3 -m unittest discover -s tests -p 'test_*.py'",
-    "test:js": "node --test tests/unit/",
+    "test": "node --test tests/unit/*.test.mjs && python3 -m unittest discover -s tests -p 'test_*.py'",
+    "test:js": "node --test tests/unit/*.test.mjs",
     "test:py": "python3 -m unittest discover -s tests -p 'test_*.py'",
     "e2e": "vite build && node tests/e2e/run-e2e.mjs"
   },

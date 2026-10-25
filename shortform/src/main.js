@@ -1,3 +1,4 @@
+import {safeInsets,exportStill} from './render/still-export.js';
 import './style.css';
 import {mountPromptLibrary,draftProject} from '../../src/h3video/studio/prompt-library.js';
 import {listProjects,saveDraft,saveScene,saveOutput,loadProject,restorePrevious} from './app/recovery.js';
@@ -364,6 +365,7 @@ function setEmpty(text) {
 }
 
 function clearPlan() {
+  el.stillExport.disabled=true;
   stopPlay();
   state.job = null;
   state.mixed = null;
@@ -518,6 +520,7 @@ async function prepareCompose(base, genFiles, my) {
   el.planLine.textContent = describePlan(plan) + (genFiles ? ` · AI 장면 ${genFiles.length}개` : '');
   el.previewEmpty.hidden = true;
   el.stageCard.classList.remove('is-empty');
+  el.stillExport.disabled = false;
   el.scrub.disabled = false;
   el.playBtn.disabled = false;
   setReady(!state.busy && engine && engine.kind !== 'none');
@@ -1433,3 +1436,7 @@ const enginePick = (async () => {
 recoveryBoot=(async()=>{try{const saved=await loadProject(recoveryId);recoveryReady=true;if(saved)await restoreSaved(saved);else await analyze();await refreshLibrary();}catch{recoveryReady=true;await analyze();}})();
 
 recoveryBoot.finally(()=>{if(location.hash==='#from=frame'&&window.opener)window.opener.postMessage({type:'shorts-ready'},location.origin);});
+
+function guide(){const inset=safeInsets(el.safeArea.value);el.safeGuide.hidden=!inset;if(inset)Object.assign(el.safeGuide.style,Object.fromEntries(Object.entries(inset).map(([k,v])=>[k,v+'%'])));LS.set('shorts.safeArea',el.safeArea.value);}
+el.safeArea.value=['off','action','vertical'].includes(LS.get('shorts.safeArea'))?LS.get('shorts.safeArea'):'off';el.safeArea.onchange=guide;guide();
+el.stillExport.onclick=async()=>{if(state.busy||state.playing){el.stillMessage.textContent='미리보기를 정지한 뒤 저장하세요.';return;}el.stillExport.disabled=true;try{const job=state.job,k=scrubFrame(),blob=await exportStill(job,k),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='frame-'+String(k).padStart(6,'0')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);el.stillMessage.textContent=job.plan.width+'×'+job.plan.height+' PNG를 만들었습니다.';}catch(e){el.stillMessage.textContent=e.message;}finally{el.stillExport.disabled=!state.job;}};

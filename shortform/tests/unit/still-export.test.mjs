@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {safeInsets,exportStill} from '../../src/render/still-export.js';
+test('guides are explicit preview insets and reject unknown presets',()=>{assert.equal(safeInsets('off'),null);assert.deepEqual(safeInsets('vertical'),{top:12,right:16,bottom:22,left:8});assert.throws(()=>safeInsets('unknown'));});
+test('still export rejects missing jobs or out of range frames before media access',async()=>{await assert.rejects(()=>exportStill(null,0));await assert.rejects(()=>exportStill({plan:{fps:30,duration:1,width:720,height:1280},segs:[]},30));});
