@@ -322,6 +322,7 @@ class MaxSecondsTest(unittest.TestCase):
         e.cp_world, e.headroom = world, int(headroom_gb * 2**30)
         return e
 
+    @unittest.skipUnless(importlib.util.find_spec("diffusers"), "diffusers 없음")   # 캔버스 크기 계산이 diffusers 를 쓴다
     def test_max_seconds(self):
         self.assertEqual(self.engine().max_seconds("16:9", 768, 1), 12)        # --ref 모드(영상 모델 1장)
         self.assertEqual(self.engine().max_seconds("16:9", 576, 1), 15)
@@ -332,6 +333,7 @@ class MaxSecondsTest(unittest.TestCase):
         self.assertIsNone(e.max_seconds("16:9", 768, 1))                       # 여유를 모르면 나누지 않는다
         self.assertLess(self.engine().max_seconds("16:9", 768, 0, images=3, video_seconds=10), 12)   # 참고 자료만큼 줄어든다
 
+    @unittest.skipUnless(importlib.util.find_spec("diffusers"), "diffusers 없음")   # 캔버스 크기 계산이 diffusers 를 쓴다
     def test_http_and_split(self):
         import tempfile
         import threading
@@ -356,6 +358,9 @@ class MaxSecondsTest(unittest.TestCase):
                 self.assertIsNone(H3Client("http://127.0.0.1:9").max_seconds("16:9", 768))   # 서버 없으면 None
             finally:
                 httpd.shutdown()
+
+    def test_plan_scenes_limits(self):
+        from h3video import spec
         self.assertEqual(spec.plan_scenes(15), [15])                      # 모르면 그대로
         self.assertEqual(spec.plan_scenes(12, 10, 12), [12])
         self.assertEqual(spec.plan_scenes(30, 15, 12), [10, 10, 10])
