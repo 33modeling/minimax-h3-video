@@ -7,7 +7,7 @@ import {listProjects,saveDraft,saveScene,saveOutput,loadProject,restorePrevious}
 import { checkSpec, normalizeSpec, composeInputs, baseName, aiScenes, schema } from './core/spec.js';
 import { planTimeline, describePlan, TEMPLATE_KO } from './core/plan.js';
 import { plan as claudePlan } from './core/claude.js';
-import { isOpenAIModel } from './core/openai-client.js';
+import { isOpenAIModel, OPENAI_MODELS } from './core/openai-client.js';
 import { keyStore } from '../../src/h3video/studio/ai-keys.js';
 import { matchFiles, fileFor, outputName, kindOf } from './app/match.js';
 import { isStory, storyToSpec } from './core/story.js';
@@ -1319,8 +1319,11 @@ document.querySelector('#openaiKeyClear').addEventListener('click', () => {
   el.planOut.textContent = 'OpenAI 키를 지웠어요.';
 });
 const planLabel = () => (isOpenAIModel(llmModel.value) ? 'OpenAI에게 기획 요청' : 'Claude에게 기획 요청');
+const planHint = document.querySelector('#planHint'), claudeHint = planHint.textContent;
 function showLlmKeys() {
   const openai = isOpenAIModel(llmModel.value);
+  // 고른 모델이 OpenAI 면 아래 안내도 그 모델로(Claude 안내가 남아 있지 않게)
+  planHint.textContent = openai ? `${OPENAI_MODELS[llmModel.value].split(' · ')[0]}가 작업 JSON을 써서 1번 칸을 채워요. 2번 칸에 영상이 있으면 프레임 몇 장을 함께 보내요.` : claudeHint;
   document.querySelector('#openaiKeyRow').hidden = !openai;
   document.querySelector('#claudeKeyRow').hidden = openai;
   if (!planAbort) el.planBtn.textContent = planLabel();
@@ -1360,7 +1363,7 @@ el.planBtn.addEventListener('click', async () => {
       signal: planAbort.signal,
       log: (t) => (el.planOut.textContent = t),
     });
-    useJson(JSON.stringify(res.spec, null, 2) + '\n', 'Claude 기획');
+    useJson(JSON.stringify(res.spec, null, 2) + '\n', `${useOpenAI ? 'OpenAI' : useQwen ? 'Qwen' : 'Claude'} 기획`);
     el.jsonDetails.open = true;
     el.planOut.textContent = `작업 JSON을 채웠어요(시도 ${res.attempts}회). 확인하고 "만들기"를 누르세요.`;
     el.planOut.className = 'check-out ok';

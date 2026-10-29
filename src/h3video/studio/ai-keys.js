@@ -156,6 +156,17 @@ export function parseText(provider, data) {
   return text;
 }
 
+// 틀린 키로 POST /v1/responses 를 보내면 OpenAI 가 CORS 머리글(access-control-allow-origin) 없는 401 을 돌려줘서, 브라우저에는
+// 'Failed to fetch'(연결 실패)로만 보인다(2026-10-29 curl·Chrome 으로 확인). 같은 키로 GET /v1/models/{모델} 은 CORS 머리글이 붙은
+// 401·404 를 돌려주므로, 연결 실패 뒤 한 번 물어 원인을 가린다. 키는 Authorization 헤더에만 넣는다. 원인을 모르면 null.
+export async function probeOpenAI({key, model, base = 'https://api.openai.com/v1', fetchImpl = globalThis.fetch, timeoutMs = 15000} = {}) {
+  try {
+    const res = await fetchImpl(`${String(base).replace(/\/+$/, '')}/models/${encodeURIComponent(model)}`,
+      {headers: {Authorization: 'Bearer ' + String(key || '').trim()}, signal: AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined});
+    return res.ok ? null : {status: res.status, raw: await res.text().catch(() => '')};
+  } catch { return null; }
+}
+
 export async function generateText(provider, {fetchImpl = globalThis.fetch, timeoutMs = 120000, ...opts} = {}) {
   const {url, init} = buildTextRequest(provider, opts);
   const name = NAMES[provider];
@@ -163,6 +174,8 @@ export async function generateText(provider, {fetchImpl = globalThis.fetch, time
   try { res = await fetchImpl(url, {...init, signal: AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined}); }
   catch (e) {
     if (e?.name === 'TimeoutError' || e?.name === 'AbortError') throw new AiError(`${name} 응답이 너무 늦어 멈췄어요. 잠시 뒤 다시 하세요.`);
+    const why = provider === 'openai' ? await probeOpenAI({key: opts.key, model: JSON.parse(init.body).model, fetchImpl}) : null;
+    if (why) throw new AiError(describeError(provider, why.status, why.raw));
     throw new AiError(`${name} API에 연결하지 못했어요. 인터넷 연결을 확인하세요.`);
   }
   const raw = await res.text().catch(() => '');

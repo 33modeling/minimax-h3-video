@@ -1,7 +1,7 @@
 // 생성 방식(studio/ai-keys.js): 고르기·키 저장·요청 만들기·응답 읽기·오류 문장. fetch 는 가짜로 바꿔 끼운다(네트워크 없음).
 import test from 'node:test';import assert from 'node:assert/strict';
 import {resolveProviders,keyStore,buildTextRequest,generateText,parseText,describeError,redact,writeUserText,reviseUserText,referenceLabels,
- ENDPOINTS,DEFAULT_MODELS,STORE_KEYS,AiError,WRITE_SYSTEM} from '../src/h3video/studio/ai-keys.js';
+ ENDPOINTS,DEFAULT_MODELS,STORE_KEYS,AiError,WRITE_SYSTEM,probeOpenAI} from '../src/h3video/studio/ai-keys.js';
 
 const memory=()=>{const m=new Map();return {getItem:k=>m.has(k)?m.get(k):null,setItem:(k,v)=>m.set(k,String(v)),removeItem:k=>m.delete(k),map:m};};
 const broken={getItem(){throw Error('blocked');},setItem(){throw Error('blocked');},removeItem(){throw Error('blocked');}};
@@ -83,6 +83,18 @@ test('generateText calls only the provider URL and reports failures in Korean',a
  await assert.rejects(generateText('openai',{key:KEY_O,text:'x',fetchImpl:async()=>{throw new TypeError('Failed to fetch');}}),/연결하지 못했어요/);
  await assert.rejects(generateText('openai',{key:KEY_O,text:'x',fetchImpl:async()=>{const e=new Error('t');e.name='TimeoutError';throw e;}}),/너무 늦어/);
  await assert.rejects(generateText('claude',{key:KEY_C,text:'x',fetchImpl:async()=>new Response('not json',{status:200})}),/읽지 못했어요/);
+});
+test('a wrong OpenAI key that the browser sees only as a failed fetch is named by a model lookup',async()=>{
+ // 실제 OpenAI 는 틀린 키의 POST /v1/responses 에 CORS 머리글 없는 401 을 돌려줘 브라우저에서는 fetch 가 TypeError 로 끝난다.
+ const seen=[];
+ const run=probe=>generateText('openai',{key:KEY_O,model:'gpt-6-astra',text:'x',fetchImpl:async(url,init)=>{seen.push({url,init});if(url===ENDPOINTS.openai)throw new TypeError('Failed to fetch');return probe();}});
+ await assert.rejects(run(()=>new Response(JSON.stringify({error:{message:'Incorrect API key provided: sk-proj-****abcd.',code:'invalid_api_key'}}),{status:401})),e=>/OpenAI API 키가 맞지 않아요\(401\)/.test(e.message)&&!e.message.includes('sk-'));
+ assert.equal(seen.length,2);assert.equal(seen[1].url,'https://api.openai.com/v1/models/gpt-6-astra');assert.equal(seen[1].init.headers.Authorization,'Bearer '+KEY_O);assert.ok(!seen[1].url.includes(KEY_O));
+ await assert.rejects(run(()=>new Response('{"error":{"message":"The model does not exist"}}',{status:404})),/찾지 못했어요\(404\)/);
+ await assert.rejects(run(()=>new Response('{}',{status:200})),/OpenAI API에 연결하지 못했어요/);
+ await assert.rejects(run(()=>{throw new TypeError('Failed to fetch');}),/OpenAI API에 연결하지 못했어요/);
+ const claude=[];await assert.rejects(generateText('claude',{key:KEY_C,text:'x',fetchImpl:async url=>{claude.push(url);throw new TypeError('Failed to fetch');}}),/Claude API에 연결하지 못했어요/);assert.equal(claude.length,1);
+ assert.deepEqual(await probeOpenAI({key:KEY_O,model:'gpt-6.1-terra',base:'http://127.0.0.1:9/v1/',fetchImpl:async url=>new Response('{}',{status:url==='http://127.0.0.1:9/v1/models/gpt-6.1-terra'?401:500})}),{status:401,raw:'{}'});
 });
 test('writing text keeps duration, frames and reference labels the server expects',()=>{
  const fl=writeUserText({prompt:'아이가 웃는다',seconds:'8',aspect:'16:9',mode:'fl',hasFirst:true,hasLast:true});

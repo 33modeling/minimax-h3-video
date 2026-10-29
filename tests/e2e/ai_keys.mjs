@@ -2,6 +2,8 @@
 //  1) 키 없음: 지금처럼 로컬 서버(/api/jobs)로만 보내고 공급자 API 는 부르지 않는다
 //  2) OpenAI 키: 글은 OpenAI(Responses API)가 쓰고, 영상 작업은 로컬 서버로 간다(Sora 영상 API 는 2026-09-24 종료)
 //  3) Claude 키: 미리 다듬기·보내기·장면 수정 지시 반영, 오류(401·429) 안내, 이 기기에 저장·키 지우기
+//     OpenAI 틀린 키: 실제 OpenAI 는 POST /v1/responses 에 CORS 머리글 없는 401 을 돌려줘 브라우저에는 연결 실패로만 보인다(abort 로 흉내) → 모델 조회로 401 을 알린다
+//     키로 글 쓰는 동안 Ctrl+Enter 를 두 번 눌러도 공급자 요청·작업은 한 번
 //  4) 휴대폰 390px: 가로 넘침 없음, 누름 대상 44px
 // 실행: node tests/e2e/ai_keys.mjs   (Chrome: CHROME 또는 /usr/bin/google-chrome)
 import assert from 'node:assert/strict';
@@ -31,7 +33,7 @@ try {
   browser = await chromium.launch({headless: true, executablePath: process.env.CHROME || '/usr/bin/google-chrome'});
   const context = await browser.newContext({viewport: {width: 1400, height: 1000}});
   const provider = [], local = [], errors = [];
-  let claudeFail = 0;
+  let claudeFail = 0, openaiWrongKey = false, openaiSlow = 0;
   const cors = {'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS'};
   await context.route(/^https:\/\/api\.(openai|anthropic)\.com\//, async route => {
     const req = route.request();
@@ -39,7 +41,11 @@ try {
     const body = req.postDataJSON();
     provider.push({url: req.url(), headers: await req.allHeaders(), body});
     if (req.url().startsWith('https://api.openai.com/')) {
+      if (openaiWrongKey && req.url() === 'https://api.openai.com/v1/models/gpt-6.1-terra')
+        return route.fulfill({status: 401, headers: cors, contentType: 'application/json', body: JSON.stringify({error: {message: 'Incorrect API key provided: sk-test-****6789.', type: 'invalid_request_error', code: 'invalid_api_key'}})});
       assert.equal(req.url(), 'https://api.openai.com/v1/responses');
+      if (openaiWrongKey) return route.abort('failed');
+      if (openaiSlow) await new Promise(r => setTimeout(r, openaiSlow));
       return route.fulfill({status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({id: 'resp_e2e', object: 'response', status: 'completed',
         output: [{type: 'reasoning', id: 'rs_1', summary: []}, {type: 'message', id: 'msg_1', role: 'assistant', status: 'completed', content: [{type: 'output_text', text: OPENAI_TEXT, annotations: []}]}]})});
     }
@@ -52,7 +58,7 @@ try {
   });
   const page = await context.newPage();
   page.on('pageerror', e => errors.push(e.message));
-  page.on('console', m => { if (m.type() === 'error' && !/status of (401|429)/.test(m.text())) errors.push('console ' + m.text()); });
+  page.on('console', m => { if (m.type() === 'error' && !/status of (401|429)|net::ERR_FAILED/.test(m.text())) errors.push('console ' + m.text()); });
   page.on('request', r => { if (r.url().startsWith(url)) local.push({url: r.url(), method: r.method(), body: r.postData() || '', headers: r.headers()}); });
   await page.goto(url + '/');
   await page.locator('#ai-box:not([hidden])').waitFor();
@@ -164,6 +170,36 @@ try {
   await page.locator('#recovery-dialog[open]').waitFor({state: 'detached'}).catch(() => {});
   await page.waitForFunction(() => !document.querySelector('#recovery-dialog').open);
   ok('장면 수정: 수정 지시를 Claude가 반영한 프롬프트로 저장');
+
+  // OpenAI 틀린 키: 브라우저에는 연결 실패로만 보여도 모델 조회(GET /v1/models/…)로 키가 틀렸다고 알리고 작업은 보내지 않는다
+  await page.check('input[name=ai-method][value=openai]');
+  assert.equal(await page.inputValue('#ai-key-input'), KEY_O);
+  const jobsBeforeWrong = local.filter(r => r.url === url + '/api/jobs' && r.method === 'POST').length;
+  openaiWrongKey = true;
+  await page.fill('#prompt', '틀린 오픈에이아이 키'); await page.click('#go');
+  await page.waitForFunction(() => /OpenAI API 키가 맞지 않아요\(401\)/.test(document.querySelector('#msg').textContent));
+  openaiWrongKey = false;
+  assert.equal(provider.length, 7);
+  assert.equal(provider[6].url, 'https://api.openai.com/v1/models/gpt-6.1-terra');
+  assert.equal(provider[6].headers.authorization, 'Bearer ' + KEY_O);
+  assert.doesNotMatch(await page.textContent('#msg'), /sk-/);
+  assert.equal(local.filter(r => r.url === url + '/api/jobs' && r.method === 'POST').length, jobsBeforeWrong);
+  ok('OpenAI 틀린 키(CORS 없는 401 → 연결 실패): 모델 조회로 키가 틀렸다고 알리고 작업은 보내지 않음');
+
+  // 두 번 누르기: 키로 글을 쓰는 동안(10~40초) Ctrl+Enter 를 또 눌러도 키 요금·작업은 한 번만
+  const jobsBeforeDouble = local.filter(r => r.url === url + '/api/jobs' && r.method === 'POST').length, providerBeforeDouble = provider.length;
+  openaiSlow = 1500;
+  await page.fill('#prompt', '두 번 누르기 오픈에이아이');
+  const doubleSent = page.waitForRequest(r => r.url() === url + '/api/jobs' && r.method() === 'POST', {timeout: 60000});
+  await page.focus('#prompt'); await page.keyboard.press('Control+Enter'); await page.waitForTimeout(200);
+  assert.equal(await page.isDisabled('#go'), true);
+  await page.keyboard.press('Control+Enter');
+  await doubleSent; await page.waitForTimeout(1500);
+  openaiSlow = 0;
+  assert.equal(provider.length - providerBeforeDouble, 1);
+  assert.equal(local.filter(r => r.url === url + '/api/jobs' && r.method === 'POST').length - jobsBeforeDouble, 1);
+  assert.equal(await page.isDisabled('#go'), false);
+  ok('키로 글 쓰는 중 Ctrl+Enter 를 두 번 눌러도 OpenAI 요청·작업은 한 번');
 
   // 키 지우기
   await page.click('#ai-clear');

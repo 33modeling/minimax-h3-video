@@ -1,7 +1,7 @@
 // 숏폼 기획을 OpenAI 키로(웹). Claude 기획과 같은 요청 본문(시스템 프롬프트·스키마·검증·1회 재요청, core/claude.js)을
 // OpenAI Responses API(POST /v1/responses) 모양으로 바꿔 브라우저에서 api.openai.com 으로 직접 보낸다. 키는 Authorization 헤더에만 넣는다.
 // OpenAI 영상 API(Sora 2)는 2026-09-24에 닫혀서 장면 영상은 지금처럼 영상 서버가 만든다. 여기서는 글(작업 JSON)만 쓴다.
-import { MODELS } from '../../../src/h3video/studio/ai-keys.js';
+import { MODELS, probeOpenAI } from '../../../src/h3video/studio/ai-keys.js';
 
 export const OPENAI_MODELS = MODELS.openai;   // 영상 만들기 '생성 방식'과 같은 모델 목록
 export const OPENAI_BASE = 'https://api.openai.com/v1';
@@ -47,6 +47,9 @@ export async function openaiMessage({ body, apiKey, model, baseUrl, signal, fetc
     res = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, body: JSON.stringify(responsesBody(body, model)), signal });
   } catch (e) {
     if (e.name === 'AbortError') throw e;
+    // 틀린 키면 OpenAI 가 CORS 머리글 없는 401 을 돌려줘 연결 실패로만 보인다 → 모델 조회로 원인을 가린다(studio/ai-keys.js probeOpenAI).
+    const why = await probeOpenAI({ key, model, base: baseUrl || OPENAI_BASE, fetchImpl });
+    if (why) throw new Error(openaiErrorText(why.status, why.raw));
     throw new Error('OpenAI API 에 연결하지 못했습니다. 인터넷 연결을 확인하세요');
   }
   const raw = await res.text().catch(() => '');

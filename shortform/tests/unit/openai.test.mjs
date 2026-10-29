@@ -52,6 +52,23 @@ test('openaiMessage sends the key only in the Authorization header and maps stop
   await assert.rejects(openaiMessage({ body: buildRequest('i', []), apiKey: KEY, model: 'gpt-6.1-terra', fetchImpl: async () => new Response(JSON.stringify({ error: { message: 'Incorrect API key provided: sk-abc***' } }), { status: 401 }) }), (e) => /키가 맞지 않습니다\(401\)/.test(e.message) && !e.message.includes('sk-'));
 });
 
+test('a wrong key that the browser sees only as a failed fetch is named by a model lookup', async () => {
+  // 실제 OpenAI 는 틀린 키의 POST /v1/responses 에 CORS 머리글 없는 401 을 돌려줘 브라우저에서는 fetch 가 TypeError 로 끝난다.
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push({ url, init });
+    if (url.endsWith('/responses')) throw new TypeError('Failed to fetch');
+    return new Response(JSON.stringify({ error: { message: 'Incorrect API key provided: sk-proj-****abcd.', code: 'invalid_api_key' } }), { status: 401 });
+  };
+  await assert.rejects(openaiMessage({ body: buildRequest('i', []), apiKey: KEY, model: 'gpt-6.1-terra', fetchImpl }), (e) => /키가 맞지 않습니다\(401\)/.test(e.message) && !e.message.includes('sk-'));
+  assert.equal(seen[1].url, 'https://api.openai.com/v1/models/gpt-6.1-terra');
+  assert.equal(seen[1].init.headers.Authorization, 'Bearer ' + KEY);
+  assert.ok(!seen[1].url.includes(KEY));
+  await assert.rejects(openaiMessage({ body: buildRequest('i', []), apiKey: KEY, model: 'gpt-6.1-terra', fetchImpl: async () => { throw new TypeError('Failed to fetch'); } }), /연결하지 못했습니다/);
+  const aborted = new Error('aborted'); aborted.name = 'AbortError';
+  await assert.rejects(openaiMessage({ body: buildRequest('i', []), apiKey: KEY, model: 'gpt-6.1-terra', fetchImpl: async () => { throw aborted; } }), (e) => e === aborted);
+});
+
 test('HTTP errors read as plain Korean', () => {
   assert.match(openaiErrorText(429, JSON.stringify({ error: { message: 'You exceeded your current quota', code: 'insufficient_quota' } })), /크레딧이나 사용 한도/);
   assert.match(openaiErrorText(429, '{}'), /요청 한도에 걸렸습니다/);

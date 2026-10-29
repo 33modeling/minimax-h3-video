@@ -418,6 +418,7 @@ const LS = {
 const SERVED = document.documentElement.dataset.served === 'h3video';
 const trim = u => String(u || '').trim().replace(/\/+$/, '');
 let BASE = SERVED ? '' : trim(LS.get('h3video.server', '') || LS.get('shorts.h3Server', '') || 'http://localhost:8790');
+let goBusy = false;   // 보내는 중(키로 글 쓰는 10~40초 포함)에는 다시 보내지 않는다: Ctrl+Enter·미리 다듬기를 겹쳐 눌러 키 요금과 작업이 두 번 나가지 않게
 const full = p => !p ? p : /^https?:/.test(p) ? p : BASE + p;
 // 다른 곳(허브)에서 연 화면이 이 서버를 켜게 하는 명령 (허브 주소는 web.sh 기본값)
 const WEB_CMD = SERVED ? 'bash scripts/web.sh' : location.origin === 'https://33modeling.pages.dev' ? 'bash scripts/web.sh'
@@ -493,17 +494,17 @@ function aiInputs(text) {
     refs: mode === 'ref' ? files.ref.map(it => ({kind: it.kind, file: it.file})) : []};
 }
 $('#ai-write').addEventListener('click', async () => {
-  if (!aiOn()) return;
+  if (!aiOn() || goBusy) return;
   const text = $('#prompt').value.trim();
   if (!text) { setMsg('무엇을 만들지 글로 적어 주세요.', true); $('#prompt').focus(); return; }
   const b = $('#ai-write'), who = AI.name();
-  b.disabled = true; setMsg(`${who}가 영상용 글을 쓰는 중… 보통 10~40초 걸려요`);
+  goBusy = true; b.disabled = true; updateGo(); setMsg(`${who}가 영상용 글을 쓰는 중… 보통 10~40초 걸려요`);
   try {
     const out = await AI.write(aiInputs(text + castLines(text)));
     aiWritten = {from: text, to: out}; $('#prompt').value = out; LS.set('h3video.draft', out);
     setMsg(`${who}가 다듬은 글을 넣었어요. 고친 뒤 영상 만들기를 누르세요.`);
   } catch (err) { setMsg(`${who}로 글을 쓰지 못했어요: ${err.message}`, true); }
-  finally { b.disabled = false; }
+  finally { goBusy = false; b.disabled = false; updateGo(); }
 });
 
 // ---------- 파일 넣는 곳 ----------
@@ -1064,7 +1065,7 @@ function updateGo() {
   if (mode === 'story') b.textContent = storyData ? `장면 ${storyData.clips.length}개 만들기 · ${storyData.total_seconds}초`
     : !files.json.length ? 'JSON 파일을 넣어 주세요' : storyBusy ? '장면을 나누는 중…' : '장면 표의 문제를 먼저 고쳐 주세요';
   else b.textContent = lastPlan && lastPlan.scenes.length > 1 ? `영상 만들기 · 장면 ${lastPlan.scenes.length}개` : '영상 만들기';
-  $('#go').disabled = mode === 'story' && !storyData;
+  $('#go').disabled = goBusy || (mode === 'story' && !storyData);
 }
 function problems() {
   if (mode === 'story') return files.json.length ? (storyData ? null : '장면 표에 문제가 있어요. 위 메시지를 확인하세요.') : 'JSON 파일을 넣어 주세요.';
@@ -1084,9 +1085,10 @@ function problems() {
 }
 $('#f').addEventListener('submit', async e => {
   e.preventDefault();
+  if (goBusy) return;   // 이미 보내는 중(Ctrl+Enter 를 또 눌러도 한 번만)
   const p = problems();
   if (p) { const [t, focus] = Array.isArray(p) ? p : [p]; setMsg(t, true); if (focus) $(focus).focus(); return; }
-  const go = $('#go'); go.disabled = true; setMsg('서버 확인 중…');
+  const go = $('#go'); goBusy = true; go.disabled = true; setMsg('서버 확인 중…');
   try {
     let r;
     await checkHealth();   // 만들 서버가 꺼져 있으면 보내자마자 실패하는 작업을 만들지 않는다
@@ -1131,7 +1133,7 @@ $('#f').addEventListener('submit', async e => {
     }
     setMsg(''); poll();
   } catch (err) { setMsg('보내지 못했어요: ' + err.message, true); }
-  finally { go.disabled = false; updateGo(); }
+  finally { goBusy = false; go.disabled = false; updateGo(); }
 });
 $('#prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('#f').requestSubmit(); });
 // 쓰던 글은 이 브라우저에 남겨 둔다
