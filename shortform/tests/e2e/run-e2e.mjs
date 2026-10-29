@@ -544,9 +544,17 @@ const scenarios = {
     const last = r2 && r2.body.messages.at(-1);
     check(last && last.role === 'user' && last.content[0].type === 'text' && /검증에 실패/.test(last.content[0].text) && r2.body.messages.at(-2).role === 'assistant',
       'claude: 재요청에 오류 문장이 안 붙음');
-    check((await page.evaluate(() => localStorage.getItem('shorts.anthropicKey'))) === 'sk-ant-test-123', 'claude: 키가 localStorage 에 저장 안 됨');
+    // 키는 저장하지 않는다: 입력·기획 뒤에도 두 저장소 어디에도 키가 없어야 한다
+    const keyLeft = () => page.evaluate(() => [sessionStorage, localStorage].some((s) => Object.keys(s).some((k) => /sk-ant-test|sk-test/.test(s.getItem(k) || '')) || s.getItem('shorts.anthropicKey') !== null));
+    check(!(await keyLeft()), 'claude: 키가 저장소에 남음');
     await page.click('#keyClear');
-    check((await page.evaluate(() => localStorage.getItem('shorts.anthropicKey'))) === null && (await page.inputValue('#apiKey')) === '', 'claude: 키 지우기 안 됨');
+    check((await page.inputValue('#apiKey')) === '', 'claude: 키 지우기 안 됨');
+    await page.fill('#apiKey', 'sk-ant-test-123');
+    await page.evaluate(() => localStorage.setItem('shorts.anthropicKey', 'sk-ant-old'));   // 예전 판이 남긴 키 → 열 때 지워져야 한다
+    await page.reload();
+    await page.waitForSelector('#apiKey', { state: 'attached' });
+    await page.waitForFunction(() => document.querySelector('#planBtn')?.textContent);
+    check((await page.inputValue('#apiKey')) === '' && !(await keyLeft()) && (await page.evaluate(() => localStorage.getItem('shorts.anthropicKey'))) === null, 'claude: 새로고침 뒤 키 칸이 비지 않거나 저장소에 키가 남음');
     await done();
     fake.close();
   },

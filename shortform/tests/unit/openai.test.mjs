@@ -91,3 +91,25 @@ test('plan() with an OpenAI model asks api.openai.com, validates, and retries on
     assert.match(JSON.stringify(seen[1].body.input[2]), /검증에 실패했습니다/);
   } finally { globalThis.fetch = real; }
 });
+
+// 키는 저장하지 않는다(영상 만들기 '생성 방식'과 같은 틀): 메모리에만, 예전 판이 저장한 키 칸은 열 때 두 저장소에서 지운다.
+test('API keys are never stored: shared OpenAI slot stays in memory, old entries are removed', async () => {
+  const { keyStore, OLD_KEY_ENTRIES } = await import('../../../src/h3video/studio/ai-keys.js');
+  const memory = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), map: m }; };
+  const session = memory(), local = memory();
+  for (const s of [session, local]) for (const k of OLD_KEY_ENTRIES) s.setItem(k, KEY);
+  const store = keyStore({ session, local });
+  assert.equal(session.map.size + local.map.size, 0);
+  store.setKey('openai', KEY);
+  assert.equal(store.key('openai'), KEY);
+  for (const s of [session, local]) for (const v of s.map.values()) assert.ok(!v.includes(KEY));
+  store.clear();
+  assert.equal(store.key('openai'), '');
+  const { readFileSync } = await import('node:fs');
+  const main = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(main, /LS\.set\('shorts\.anthropicKey'|LS\.get\('shorts\.anthropicKey'|setRemember|openaiRemember/);
+  assert.match(main, /removeItem\(OLD_CLAUDE_KEY\)/);
+  assert.doesNotMatch(html, /이 기기에 저장|openaiRemember|localStorage\)에만 저장/);
+  assert.equal(html.split('키는 저장하지 않습니다. 새로고침하면 다시 붙여 넣어야 합니다.').length - 1, 2);
+});

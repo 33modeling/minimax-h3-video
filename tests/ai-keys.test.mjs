@@ -1,7 +1,7 @@
 // 생성 방식(studio/ai-keys.js): 고르기·키 저장·요청 만들기·응답 읽기·오류 문장. fetch 는 가짜로 바꿔 끼운다(네트워크 없음).
 import test from 'node:test';import assert from 'node:assert/strict';
 import {resolveProviders,keyStore,buildTextRequest,generateText,parseText,describeError,redact,writeUserText,reviseUserText,referenceLabels,
- ENDPOINTS,DEFAULT_MODELS,STORE_KEYS,AiError,WRITE_SYSTEM,probeOpenAI} from '../src/h3video/studio/ai-keys.js';
+ ENDPOINTS,DEFAULT_MODELS,STORE_KEYS,OLD_KEY_ENTRIES,AiError,WRITE_SYSTEM,probeOpenAI} from '../src/h3video/studio/ai-keys.js';
 
 const memory=()=>{const m=new Map();return {getItem:k=>m.has(k)?m.get(k):null,setItem:(k,v)=>m.set(k,String(v)),removeItem:k=>m.delete(k),map:m};};
 const broken={getItem(){throw Error('blocked');},setItem(){throw Error('blocked');},removeItem(){throw Error('blocked');}};
@@ -18,23 +18,33 @@ test('a key picks that provider for text while video stays on the local server',
  assert.deepEqual(resolveProviders({method:'openai',openaiKey:KEY_O}),{method:'openai',text:'openai',video:'local',missingKey:false});
  assert.deepEqual(resolveProviders({method:'claude',claudeKey:KEY_C,openaiKey:KEY_O}),{method:'claude',text:'claude',video:'local',missingKey:false});
 });
-test('keys live in sessionStorage by default and move to localStorage only when remembered',()=>{
+const noKeyIn=(...stores)=>{for(const s of stores)for(const [k,v] of s.map)assert.ok(!/sk-/.test(v)&&!/key|remember/i.test(k),`저장소에 키가 남음: ${k}`);};
+test('keys live only in page memory, never in sessionStorage or localStorage',()=>{
  const session=memory(),local=memory(),store=keyStore({session,local});
  assert.equal(store.method(),'local');assert.equal(store.key('openai'),'');
- store.setKey('openai',' '+KEY_O+' ');assert.equal(session.getItem(STORE_KEYS.openai),KEY_O);assert.equal(local.getItem(STORE_KEYS.openai),null);assert.equal(store.key('openai'),KEY_O);
- store.setKey('claude',KEY_C);store.setRemember(true);
- assert.equal(local.getItem(STORE_KEYS.openai),KEY_O);assert.equal(local.getItem(STORE_KEYS.claude),KEY_C);assert.equal(session.getItem(STORE_KEYS.openai),null);assert.equal(store.remember(),true);
- store.setRemember(false);assert.equal(local.getItem(STORE_KEYS.openai),null);assert.equal(session.getItem(STORE_KEYS.claude),KEY_C);
- store.setRemember(true);store.clear();
- for(const s of [session,local])for(const k of [STORE_KEYS.openai,STORE_KEYS.claude])assert.equal(s.getItem(k),null);
- store.setMethod('claude');assert.equal(store.method(),'claude');store.setMethod('local');assert.equal(local.getItem(STORE_KEYS.method),null);
- assert.equal(store.model('claude'),DEFAULT_MODELS.claude);store.setModel('claude','claude-sonnet-5-5');assert.equal(store.model('claude'),'claude-sonnet-5-5');
- store.setModel('openai','not-a-model');assert.equal(store.model('openai'),DEFAULT_MODELS.openai);
+ store.setKey('openai',' '+KEY_O+' ');store.setKey('claude',KEY_C);
+ assert.equal(store.key('openai'),KEY_O);assert.equal(store.key('claude'),KEY_C);
+ store.setMethod('claude');store.setModel('claude','claude-sonnet-5-5');
+ noKeyIn(session,local);
+ assert.equal('setRemember' in store,false);assert.equal('remember' in store,false);
+ store.clear();assert.equal(store.key('openai'),'');assert.equal(store.key('claude'),'');
+ assert.equal(store.method(),'claude');store.setMethod('local');assert.equal(local.getItem(STORE_KEYS.method),null);
+ assert.equal(store.model('claude'),'claude-sonnet-5-5');store.setModel('openai','not-a-model');assert.equal(store.model('openai'),DEFAULT_MODELS.openai);
+ noKeyIn(session,local);
+});
+test('opening removes keys stored by the old version from both storages',()=>{
+ const session=memory(),local=memory();
+ for(const s of [session,local]){s.setItem('h3video.ai.remember','1');s.setItem('h3video.ai.openaiKey',KEY_O);s.setItem('h3video.ai.claudeKey',KEY_C);}
+ local.setItem(STORE_KEYS.method,'openai');
+ assert.deepEqual(OLD_KEY_ENTRIES,['h3video.ai.remember','h3video.ai.openaiKey','h3video.ai.claudeKey']);
+ const store=keyStore({session,local});
+ noKeyIn(session,local);assert.equal(session.map.size,0);assert.equal(store.method(),'openai');
+ store.clear();assert.equal(store.key('openai'),'');
 });
 test('blocked browser storage never throws',()=>{
  const store=keyStore({session:broken,local:broken});
- assert.equal(store.key('openai'),'');assert.equal(store.setKey('openai',KEY_O),false);assert.equal(store.method(),'local');
- store.setRemember(true);store.clear();store.setMethod('openai');store.setModel('openai','gpt-6-astra');assert.equal(store.remember(),false);
+ assert.equal(store.key('openai'),'');assert.equal(store.setKey('openai',KEY_O),true);assert.equal(store.key('openai'),KEY_O);assert.equal(store.method(),'local');
+ store.clear();store.setMethod('openai');store.setModel('openai','gpt-6-astra');assert.equal(store.key('openai'),'');
  const none=keyStore({session:null,local:null});assert.equal(none.key('claude'),'');
 });
 test('OpenAI request goes straight to api.openai.com with the key only in the Authorization header',()=>{

@@ -1,6 +1,7 @@
 // 생성 방식: 로컬 서버(기본) · OpenAI(코덱스) API 키 · Claude API 키.
-// 키는 이 브라우저에만 둔다(기본 sessionStorage, '이 기기에 저장'을 켜면 localStorage). 이 화면이 공급자 API(api.openai.com·api.anthropic.com)로
-// 직접 보내고, 우리 서버·주소(URL)·로그에는 넣지 않는다.
+// 키는 저장하지 않는다: 이 페이지 메모리(모듈 변수)에만 두고 sessionStorage·localStorage 에 쓰지 않는다. 새로고침하면 다시 붙여 넣어야 하고,
+// 그 전에는 로컬 서버가 맡는다. 이 화면이 공급자 API(api.openai.com·api.anthropic.com)로 직접 보내고, 로컬 서버·주소(URL)·로그에는 넣지 않는다.
+// (그림 만들기 image-maker/web/ai-keys.js 와 같은 틀)
 // OpenAI 영상 API(Sora 2, /v1/videos)는 2026-09-24에 닫혔고 대체 API가 없다(OpenAI 공식 문서: video-generation 안내·API 참조·deprecations).
 // Claude 도 영상을 만들지 않는다. 그래서 키는 글 쓰는 단계(영상용 프롬프트 쓰기, 장면 수정 지시 반영)에 쓰고 영상은 지금처럼 로컬 서버가 만든다.
 export const METHODS = ['local', 'openai', 'claude'];
@@ -12,33 +13,26 @@ export const MODELS = {
 export const DEFAULT_MODELS = {openai: 'gpt-6.1-terra', claude: 'claude-opus-5-5'};   // claude 는 숏폼(shortform/src/core/claude.js)과 같은 모델
 export const ENDPOINTS = {openai: 'https://api.openai.com/v1/responses', claude: 'https://api.anthropic.com/v1/messages'};
 export const ANTHROPIC_VERSION = '2023-06-01';
-export const STORE_KEYS = {method: 'h3video.ai.method', remember: 'h3video.ai.remember', openai: 'h3video.ai.openaiKey', claude: 'h3video.ai.claudeKey',
-  openaiModel: 'h3video.ai.openaiModel', claudeModel: 'h3video.ai.claudeModel'};
+export const STORE_KEYS = {method: 'h3video.ai.method', openaiModel: 'h3video.ai.openaiModel', claudeModel: 'h3video.ai.claudeModel'};
+// 예전 판이 키를 저장하던 이름. 열 때마다 두 저장소에서 지운다.
+export const OLD_KEY_ENTRIES = ['h3video.ai.remember', 'h3video.ai.openaiKey', 'h3video.ai.claudeKey'];
 export class AiError extends Error {}
 
 const attempt = (fn, fallback) => { try { return fn(); } catch { return fallback; } };
 const ownStorage = name => attempt(() => globalThis[name] || null, null);
 
-// 저장소가 막혀도(사생활 모드·미리보기) 화면은 돈다: 모든 읽기·쓰기를 try 로 감싼다.
+// 키는 이 변수에만 있다(새로고침하면 사라진다).
+const memoryKeys = {openai: '', claude: ''};
+// 방식·모델만 localStorage 에 둔다. 저장소가 막혀도(사생활 모드·미리보기) 화면은 돈다: 모든 읽기·쓰기를 try 로 감싼다.
 export function keyStore({session = ownStorage('sessionStorage'), local = ownStorage('localStorage')} = {}) {
   const get = (s, k) => attempt(() => (s ? s.getItem(k) : null), null);
   const put = (s, k, v) => attempt(() => { if (!s) return false; if (v == null || v === '') s.removeItem(k); else s.setItem(k, v); return true; }, false);
-  const remember = () => get(local, STORE_KEYS.remember) === '1';
-  const key = p => (p === 'openai' || p === 'claude' ? get(session, STORE_KEYS[p]) || get(local, STORE_KEYS[p]) || '' : '');
-  const setKey = (p, value) => {
-    const v = String(value || '').trim(), on = remember();
-    const ok = put(on ? local : session, STORE_KEYS[p], v);
-    put(on ? session : local, STORE_KEYS[p], null);
-    return ok;
-  };
+  for (const s of [session, local]) for (const k of OLD_KEY_ENTRIES) attempt(() => s && s.removeItem(k), null);
+  const key = p => (p === 'openai' || p === 'claude' ? memoryKeys[p] : '');
+  const setKey = (p, value) => { if (p !== 'openai' && p !== 'claude') return false; memoryKeys[p] = String(value || '').trim(); return true; };
   return {
-    remember, key, setKey,
-    setRemember(on) {
-      const keys = {openai: key('openai'), claude: key('claude')};
-      put(local, STORE_KEYS.remember, on ? '1' : null);
-      for (const p of ['openai', 'claude']) setKey(p, keys[p]);
-    },
-    clear() { for (const p of ['openai', 'claude']) { put(session, STORE_KEYS[p], null); put(local, STORE_KEYS[p], null); } },
+    key, setKey,
+    clear() { memoryKeys.openai = ''; memoryKeys.claude = ''; },
     method() { const m = get(local, STORE_KEYS.method); return METHODS.includes(m) ? m : 'local'; },
     setMethod: m => put(local, STORE_KEYS.method, METHODS.includes(m) && m !== 'local' ? m : null),
     model(p) { const m = get(local, STORE_KEYS[p + 'Model']); return MODELS[p]?.[m] ? m : DEFAULT_MODELS[p]; },
@@ -207,8 +201,8 @@ const DESC = {
   claude: 'Claude는 영상을 만들지 못해서, Claude 키로는 영상용 글만 쓰고 영상은 로컬 서버가 만들어요.',
 };
 const NOTE = {
-  openai: '키는 이 브라우저에만 두고, 이 화면이 api.openai.com으로 직접 보내요. 우리 서버로는 보내지 않아요. 사용 요금은 키 주인의 OpenAI 계정에 청구돼요.',
-  claude: '키는 이 브라우저에만 두고, 이 화면이 api.anthropic.com으로 직접 보내요. 우리 서버로는 보내지 않아요. 사용 요금은 키 주인의 Anthropic 계정에 청구돼요.',
+  openai: 'OpenAI 키는 이 화면이 api.openai.com으로 직접 보내요. 로컬 서버로는 보내지 않아요. 사용 요금은 키 주인의 OpenAI 계정에 청구돼요.',
+  claude: 'Claude 키는 이 화면이 api.anthropic.com으로 직접 보내요. 로컬 서버로는 보내지 않아요. 사용 요금은 키 주인의 Anthropic 계정에 청구돼요.',
 };
 const PLACEHOLDER = {openai: 'sk-...', claude: 'sk-ant-...'};
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -223,11 +217,12 @@ export function mountAiMethod(root, {onChange = () => {}, getMode = () => '', st
     <div class="ai-key" data-ai-key hidden>
       <label class="lab" for="ai-key-input" data-ai-key-label>API 키</label>
       <div class="ai-row"><input id="ai-key-input" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="ai-key-note"><select id="ai-model" aria-label="글 쓰는 모델"></select></div>
-      <div class="ai-row"><label class="chk"><input type="checkbox" id="ai-remember"> 이 기기에 저장</label><button type="button" class="btn" id="ai-clear">키 지우기</button></div>
+      <div class="ai-row"><button type="button" class="btn" id="ai-clear">키 지우기</button></div>
+      <p class="help" data-ai-nostore>키는 저장하지 않습니다. 새로고침하면 다시 붙여 넣어야 합니다.</p>
       <p class="help" id="ai-key-note" data-ai-note></p>
     </div>
     <p class="help ai-status" data-ai-status role="status" aria-live="polite"></p>`;
-  const q = s => root.querySelector(s), input = q('#ai-key-input'), model = q('#ai-model'), remember = q('#ai-remember');
+  const q = s => root.querySelector(s), input = q('#ai-key-input'), model = q('#ai-model');
   const providers = () => resolveProviders({method, openaiKey: keys.openai, claudeKey: keys.claude});
   const status = (text, bad = false) => { const el = q('[data-ai-status]'); el.textContent = text; el.classList.toggle('bad', bad); };
   function summary() {
@@ -247,21 +242,19 @@ export function mountAiMethod(root, {onChange = () => {}, getMode = () => '', st
       input.placeholder = PLACEHOLDER[method]; input.value = keys[method];
       model.innerHTML = Object.entries(MODELS[method]).map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
       model.value = store.model(method);
-      q('[data-ai-note]').textContent = NOTE[method] + ' ‘이 기기에 저장’을 켜지 않으면 탭을 닫을 때 키가 지워져요.';
+      q('[data-ai-note]').textContent = NOTE[method];
     }
-    remember.checked = store.remember();
     status(summary());
   }
   root.addEventListener('change', e => {
     if (e.target.name === 'ai-method') { method = METHODS.includes(e.target.value) ? e.target.value : 'local'; store.setMethod(method); render(); onChange(); }
     else if (e.target === model && method !== 'local') { store.setModel(method, model.value); status(summary()); onChange(); }
-    else if (e.target === remember) { store.setRemember(remember.checked); status(remember.checked ? '키를 이 기기에 저장해요. 공용 PC라면 다 쓴 뒤 키 지우기를 누르세요.' : '키를 이 탭에만 둬요. 탭을 닫으면 지워져요.'); }
   });
   input.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });   // 폼 안: Enter 가 영상 만들기를 누르지 않게
   input.addEventListener('input', () => { if (method === 'local') return; keys[method] = input.value.trim(); store.setKey(method, keys[method]); status(summary()); onChange(); });
   q('#ai-clear').addEventListener('click', () => {
     store.clear(); keys.openai = ''; keys.claude = ''; input.value = '';
-    status('OpenAI·Claude 키를 이 브라우저에서 지웠어요. 키를 넣기 전에는 로컬 서버가 다 맡아요.'); onChange();
+    status('OpenAI·Claude 키를 지웠어요. 키를 넣기 전에는 로컬 서버가 다 맡아요.'); onChange();
   });
   render();
   const call = (system, text, images = []) => {

@@ -1297,22 +1297,24 @@ const siteConnectionReady=import(/* @vite-ignore */ new URL('../creative-ai/clie
   if(connection.mount)connection.mount(el.claudePanel.querySelector('.fold-body'));
   return connection;
  }).catch(()=>siteConnection);
-el.apiKey.value = LS.get('shorts.anthropicKey', '');
-el.apiKey.addEventListener('change', () => LS.set('shorts.anthropicKey', el.apiKey.value.trim()));
+// 키는 저장하지 않는다: 이 페이지 메모리(모듈 변수)에만 두고 새로고침하면 다시 붙여 넣는다. 예전 판이 저장하던 키는 열 때 두 저장소에서 지운다.
+const OLD_CLAUDE_KEY = 'shorts.anthropicKey';
+for (const name of ['sessionStorage', 'localStorage']) { try { window[name].removeItem(OLD_CLAUDE_KEY); } catch { /* 저장소가 막힘 */ } }
+let claudeKey = '';
+el.apiKey.value = '';
+el.apiKey.addEventListener('input', () => { claudeKey = el.apiKey.value.trim(); });
 el.keyClear.addEventListener('click', () => {
-  LS.set('shorts.anthropicKey', null);
+  claudeKey = '';
   el.apiKey.value = '';
   el.planOut.textContent = '키를 지웠어요.';
 });
 let planAbort = null;
-// OpenAI(코덱스) 키: 영상 만들기 '생성 방식'과 같은 저장 칸(studio/ai-keys.js keyStore) — 같은 사이트면 한 번 넣은 키를 함께 쓴다.
-// 기본은 이 탭(sessionStorage)에만, '이 기기에 저장'을 켜면 localStorage. 키는 api.openai.com 으로만 보낸다.
+// OpenAI(코덱스) 키: 영상 만들기 '생성 방식'과 같은 틀(studio/ai-keys.js keyStore) — 키는 이 페이지 메모리에만 두고 저장하지 않는다
+// (예전 판이 저장하던 키 칸은 keyStore() 가 열 때 지운다). 키는 api.openai.com 으로만 보낸다.
 const aiKeys = keyStore();
-const openaiKeyInput = document.querySelector('#openaiKey'), openaiRemember = document.querySelector('#openaiRemember'), llmModel = document.querySelector('#llmModel');
+const openaiKeyInput = document.querySelector('#openaiKey'), llmModel = document.querySelector('#llmModel');
 openaiKeyInput.value = aiKeys.key('openai');
-openaiRemember.checked = aiKeys.remember();
 openaiKeyInput.addEventListener('input', () => aiKeys.setKey('openai', openaiKeyInput.value));
-openaiRemember.addEventListener('change', () => aiKeys.setRemember(openaiRemember.checked));
 document.querySelector('#openaiKeyClear').addEventListener('click', () => {
   aiKeys.setKey('openai', '');
   openaiKeyInput.value = '';
@@ -1336,8 +1338,7 @@ el.planBtn.addEventListener('click', async () => {
     planAbort.abort();
     return;
   }
-  const apiKey = el.apiKey.value.trim();
-  LS.set('shorts.anthropicKey', apiKey);
+  const apiKey = claudeKey = el.apiKey.value.trim();
   planAbort = new AbortController();
   el.planBtn.textContent = '요청 취소';
   el.planOut.className = 'check-out';

@@ -1,7 +1,8 @@
 // 생성 방식(키) 브라우저 점검: 실제 웹 서버(127.0.0.1:4561)와 가짜 영상 서버를 띄우고, api.openai.com·api.anthropic.com 은 가로채 가짜 응답을 준다.
 //  1) 키 없음: 지금처럼 로컬 서버(/api/jobs)로만 보내고 공급자 API 는 부르지 않는다
 //  2) OpenAI 키: 글은 OpenAI(Responses API)가 쓰고, 영상 작업은 로컬 서버로 간다(Sora 영상 API 는 2026-09-24 종료)
-//  3) Claude 키: 미리 다듬기·보내기·장면 수정 지시 반영, 오류(401·429) 안내, 이 기기에 저장·키 지우기
+//  3) Claude 키: 미리 다듬기·보내기·장면 수정 지시 반영, 오류(401·429) 안내, 키 지우기
+//     키는 저장하지 않는다: 넣기·글쓰기·새로고침 뒤에도 sessionStorage·localStorage 에 키가 없고, 새로고침하면 키 칸이 빈다(예전 판 키 칸도 지운다)
 //     OpenAI 틀린 키: 실제 OpenAI 는 POST /v1/responses 에 CORS 머리글 없는 401 을 돌려줘 브라우저에는 연결 실패로만 보인다(abort 로 흉내) → 모델 조회로 401 을 알린다
 //     키로 글 쓰는 동안 Ctrl+Enter 를 두 번 눌러도 공급자 요청·작업은 한 번
 //  4) 휴대폰 390px: 가로 넘침 없음, 누름 대상 44px
@@ -69,6 +70,8 @@ try {
     await page.click('#go');
     return (await sent).postData();
   };
+  // 두 저장소 어디에든 키(값)나 예전 키 칸 이름이 남아 있으면 그 목록
+  const storedKeys = p => p.evaluate(keys => [sessionStorage, localStorage].flatMap(s => Object.keys(s).filter(k => /remember|openaiKey|claudeKey|anthropicKey/.test(k) || keys.some(key => (s.getItem(k) || '').includes(key)))), [KEY_O, KEY_C]);
   const card = title => page.locator('#feed article.job', {has: page.locator('h3', {hasText: title})}).first();
 
   // 1) 키 없음 = 지금 그대로
@@ -99,7 +102,9 @@ try {
   assert.equal(provider.length, 0);
   ok('OpenAI를 골라도 키가 없으면 로컬 서버 그대로');
   await page.fill('#ai-key-input', KEY_O);
-  assert.deepEqual(await page.evaluate(() => [sessionStorage.getItem('h3video.ai.openaiKey'), localStorage.getItem('h3video.ai.openaiKey')]), [KEY_O, null]);
+  assert.deepEqual(await storedKeys(page), []);
+  assert.match(await page.textContent('[data-ai-nostore]'), /^키는 저장하지 않습니다\. 새로고침하면 다시 붙여 넣어야 합니다\.$/);
+  assert.equal(await page.locator('#ai-method input[type=checkbox]').count(), 0, '이 기기에 저장 칸은 없다');
   assert.match(await page.textContent('[data-ai-status]'), /글은 GPT-6\.1 Terra, 영상은 로컬 서버/);
   assert.equal(await page.textContent('#ai-current'), 'OpenAI 키 · 글은 OpenAI, 영상은 로컬 서버');
   await page.press('#ai-key-input', 'Enter');
@@ -116,18 +121,16 @@ try {
   assert.equal(field(body, 'prompt'), OPENAI_TEXT);
   assert.equal(field(body, 'title'), '오픈에이아이 테스트 비 오는 서울 밤거리');
   await card('오픈에이아이 테스트 비 오는 서울 밤거리').locator('.st.completed').waitFor({timeout: 60000});
+  assert.deepEqual(await storedKeys(page), []);
   ok('OpenAI 키: Responses API로 글을 쓰고 그 글로 로컬 서버 작업 완성');
 
-  // 3) Claude 키: 이 기기에 저장·미리 다듬기·보내기
+  // 3) Claude 키: 미리 다듬기·보내기 (키는 저장하지 않음)
   await page.check('input[name=ai-method][value=claude]');
   assert.match(await page.textContent('[data-ai-desc]'), /Claude는 영상을 만들지 못해서, Claude 키로는 영상용 글만 쓰고 영상은 로컬 서버가 만들어요/);
   assert.equal(await page.inputValue('#ai-key-input'), '');
   await page.fill('#ai-key-input', KEY_C);
-  await page.check('#ai-remember');
-  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('h3video.ai.claudeKey'), localStorage.getItem('h3video.ai.openaiKey'), sessionStorage.getItem('h3video.ai.claudeKey')]), [KEY_C, KEY_O, null]);
-  await page.uncheck('#ai-remember');
-  assert.deepEqual(await page.evaluate(() => [localStorage.getItem('h3video.ai.claudeKey'), sessionStorage.getItem('h3video.ai.claudeKey')]), [null, KEY_C]);
-  ok('키는 기본 sessionStorage, 이 기기에 저장을 켜면 localStorage로 옮김');
+  assert.deepEqual(await storedKeys(page), []);
+  ok('OpenAI·Claude 키를 넣어도 sessionStorage·localStorage 어디에도 저장하지 않음');
   await page.fill('#prompt', '클로드 테스트 고양이가 창가에서 하품한다');
   assert.equal(await page.textContent('#ai-write'), 'Claude로 미리 다듬기');
   await page.click('#ai-write');
@@ -142,6 +145,7 @@ try {
   assert.equal(field(body, 'prompt'), CLAUDE_TEXT);
   assert.equal(field(body, 'title'), '클로드 테스트 고양이가 창가에서 하품한다');
   await card('클로드 테스트 고양이가 창가에서 하품한다').locator('.st.completed').waitFor({timeout: 60000});
+  assert.deepEqual(await storedKeys(page), []);
   ok('Claude 키: 미리 다듬기 → 그 글 그대로 로컬 서버 작업 완성');
 
   // 오류: 429·401 은 쉬운 말로, 작업은 보내지 않는다
@@ -203,11 +207,35 @@ try {
 
   // 키 지우기
   await page.click('#ai-clear');
-  assert.deepEqual(await page.evaluate(() => ['h3video.ai.openaiKey', 'h3video.ai.claudeKey'].flatMap(k => [sessionStorage.getItem(k), localStorage.getItem(k)])), [null, null, null, null]);
+  assert.deepEqual(await storedKeys(page), []);
   assert.equal(await page.inputValue('#ai-key-input'), '');
-  assert.match(await page.textContent('[data-ai-status]'), /키를 이 브라우저에서 지웠어요/);
+  assert.match(await page.textContent('[data-ai-status]'), /OpenAI·Claude 키를 지웠어요/);
   assert.equal(await page.isHidden('#ai-write-row'), true);
-  ok('키 지우기: 두 키를 두 저장소에서 모두 지움');
+  await page.check('input[name=ai-method][value=claude]');
+  assert.equal(await page.inputValue('#ai-key-input'), '');
+  await page.check('input[name=ai-method][value=openai]');
+  ok('키 지우기: 두 키를 메모리에서 지우고 키 칸이 빔');
+
+  // 새로고침: 키 칸은 비고(예전 판이 저장한 키 칸도 지운다), 고른 방식은 남고, 키가 없으니 로컬 서버가 맡는다
+  await page.fill('#ai-key-input', KEY_O);
+  await page.evaluate(([o, c]) => { for (const s of [sessionStorage, localStorage]) { s.setItem('h3video.ai.remember', '1'); s.setItem('h3video.ai.openaiKey', o); s.setItem('h3video.ai.claudeKey', c); } }, [KEY_O, KEY_C]);
+  await page.reload();
+  await page.locator('#ai-box:not([hidden])').waitFor();
+  await page.locator('#pill-fl.ok').waitFor({timeout: 15000});
+  assert.deepEqual(await storedKeys(page), []);
+  assert.equal(await page.isChecked('input[name=ai-method][value=openai]'), true);
+  await page.click('#ai-box > summary');
+  assert.equal(await page.inputValue('#ai-key-input'), '');
+  await page.check('input[name=ai-method][value=claude]');
+  assert.equal(await page.inputValue('#ai-key-input'), '');
+  assert.equal(await page.textContent('#ai-current'), 'Claude 키 · 키 없음, 로컬 서버');
+  const providerBeforeReload = provider.length;
+  body = await submitJob('새로고침 뒤 키 없음');
+  assert.equal(field(body, 'prompt'), '새로고침 뒤 키 없음');
+  assert.equal(provider.length, providerBeforeReload);
+  await card('새로고침 뒤 키 없음').locator('.st.completed').waitFor({timeout: 60000});
+  assert.deepEqual(await storedKeys(page), []);
+  ok('새로고침: 키 칸이 비고 두 저장소에 키 없음, 고른 방식은 남고 키가 없으니 로컬 서버로 완성');
 
   // 우리 서버로는 키가 가지 않는다
   for (const r of local) for (const key of [KEY_O, KEY_C]) {
@@ -231,7 +259,7 @@ try {
   await mobile.locator('#ai-key-input').waitFor();
   const overflow = await mobile.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   assert.ok(overflow <= 0, `가로 넘침 ${overflow}px`);
-  for (const sel of ['.ai-opt', '#ai-key-input', '#ai-model', '#ai-clear', 'label.chk:has(#ai-remember)']) {
+  for (const sel of ['.ai-opt', '#ai-key-input', '#ai-model', '#ai-clear']) {
     for (const box of await mobile.locator('#ai-method ' + sel).evaluateAll(els => els.map(e => e.getBoundingClientRect().toJSON()))) {
       assert.ok(box.height >= 44, `${sel} 높이 ${box.height}`); assert.ok(box.right <= 390 && box.left >= 0, `${sel} 화면 밖 ${box.left}~${box.right}`);
     }
