@@ -1,4 +1,5 @@
 import { qwenMessage, QWEN_MODEL } from './qwen-client.js';
+import { openaiMessage, isOpenAIModel } from './openai-client.js';
 // Claude 기획(웹). shorts/claude.py 와 같은 요청(시스템 프롬프트·스키마 변환·구조화 출력)을 쓴다(tests/unit/web.test.mjs 가 비교).
 // 웹은 브라우저에서 Messages API 를 직접 부른다(anthropic-dangerous-direct-browser-access).
 // 결과는 구조화 출력 output_config.format(json_schema)으로 JSON 텍스트만 받는다. Opus 5.5 는 tool_choice 강제(any/tool)를
@@ -136,7 +137,8 @@ async function defaultPost(url, body, apiKey, signal) {
 
 // 기획 → 검증 → (실패 시 1회 재요청). 반환 { spec, attempts }
 export async function plan({ idea, sources = [], apiKey, model = DEFAULT_MODEL, baseUrl, connection, signal, post = defaultPost, log = () => {} }) {
-  if (model !== QWEN_MODEL && !apiKey && !connection?.configured) throw new PlanError('Anthropic API 키를 넣어 주세요');
+  if (isOpenAIModel(model) && !String(apiKey || '').trim()) throw new PlanError('OpenAI API 키를 넣어 주세요');
+  if (model !== QWEN_MODEL && !isOpenAIModel(model) && !apiKey && !connection?.configured) throw new PlanError('Anthropic API 키를 넣어 주세요');
   if (!String(idea || '').trim()) throw new PlanError('아이디어를 적어 주세요');
   const url = connection?.configured?connection.messagesURL:(baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '') + '/v1/messages';
   const transport=connection?.configured?async(url,body,key,signal)=>{const response=await connection.send(body,{signal,beta:FALLBACK_BETA});if(!response.ok)throw new PlanError(httpErrorText(response.status,await response.text()));return response.json();}:post;
@@ -145,7 +147,7 @@ export async function plan({ idea, sources = [], apiKey, model = DEFAULT_MODEL, 
   let last = [];
   for (let attempt = 0; attempt < 2; attempt++) {
     attempts += 1;
-    const response = model === QWEN_MODEL ? await qwenMessage({body,baseUrl,apiKey,model,signal}) : null;
+    const response = model === QWEN_MODEL ? await qwenMessage({body,baseUrl,apiKey,model,signal}) : isOpenAIModel(model) ? await openaiMessage({body,baseUrl,apiKey,model,signal}) : null;
     const resp = response ? {stop_reason:response.stop_reason,content:[{type:'text',text:response.text}]} : await transport(url, body, apiKey, signal);
     const { obj, errors } = parseReply(resp);
     if (obj && !errors.length) return { spec: obj, attempts };
@@ -158,5 +160,5 @@ export async function plan({ idea, sources = [], apiKey, model = DEFAULT_MODEL, 
       messages: [...body.messages, { role: 'assistant', content: resp.content || [] }, { role: 'user', content: [{ type: 'text', text: fix }] }],
     };
   }
-  throw new PlanError(`Claude 가 만든 명세가 검증을 통과하지 못했습니다: ${last.slice(0, 3).join('; ')}`);
+  throw new PlanError(`${isOpenAIModel(model) ? 'OpenAI' : model === QWEN_MODEL ? 'Qwen' : 'Claude'} 가 만든 명세가 검증을 통과하지 못했습니다: ${last.slice(0, 3).join('; ')}`);
 }

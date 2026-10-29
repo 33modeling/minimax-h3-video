@@ -239,6 +239,27 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 #promptLibrary{max-width:1400px;margin:0 auto;padding:0 20px}
 .maker{border-radius:18px}.modes{gap:6px;padding:6px}.mode{min-height:70px;border-radius:10px}.mode-desc{line-height:1.7;margin:14px 2px}.field{margin-top:20px}.lab{margin-bottom:9px}.drop{padding:22px 14px;border-radius:13px}.go-bar{border-radius:0 0 18px 18px}.video-start h2{letter-spacing:-.8px}.video-start{border-radius:18px}.feed{gap:16px}
 @media(max-width:600px){#promptLibrary{padding:0 12px;margin-top:16px}.mode{min-height:64px;font-size:12px}}
+/* 생성 방식 (studio/ai-keys.js): 로컬 서버 · OpenAI(코덱스) API 키 · Claude API 키 */
+details.ai-box{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.ai-current{margin-left:2px;padding:1px 9px;border-radius:999px;background:var(--soft);color:var(--ink);font-size:12.5px;font-weight:600}
+.ai-current.on{background:var(--acc-soft);color:var(--acc)}
+.ai-method{margin:10px 0 0;padding:10px 12px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);min-width:0}
+.ai-method>legend{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.ai-opts{display:flex;flex-wrap:wrap;gap:6px}
+.ai-opt{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);font-size:13px;cursor:pointer;min-height:34px}
+.ai-opt:has(input:checked){border-color:var(--acc);background:var(--acc-soft);font-weight:600}
+.ai-opt input{margin:0;width:16px;height:16px;accent-color:var(--acc)}
+.ai-key{margin-top:10px}
+.ai-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
+.ai-row input[type=password]{flex:1 1 220px;min-width:0;width:auto;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink);min-height:40px}
+.ai-row select{flex:0 1 230px;width:auto;min-width:0}
+.ai-row .chk{margin-top:0}
+.ai-status{color:var(--ink)}
+.ai-status:empty{display:none}
+.ai-status.bad{color:var(--bad)}
+.ai-write-row{margin-top:8px}
+@media(max-width:560px){.ai-opt{flex:1 1 100%}.ai-row select{flex:1 1 100%}.ai-row input[type=password]{flex-basis:100%}}
+@media (pointer:coarse){.ai-opt{min-height:44px}}
 </style><link rel="stylesheet" href="./studio/workspace.css"><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
@@ -305,6 +326,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
     <div class="field" data-modes="text fl ref">
       <label class="lab" for="prompt">무엇을 만들까요?</label>
       <textarea id="prompt" name="prompt" placeholder=""></textarea>
+      <div class="ai-write-row" id="ai-write-row" hidden><button type="button" class="btn" id="ai-write">미리 다듬기</button></div>
       <div class="help" id="prompt-help">한국어로 대강 써도 돼요. 서버가 영상용 글로 다듬어서 만들어요. <span class="kbd">Ctrl+Enter</span> 로 바로 만들기.</div>
       <div class="help" id="cast-use" hidden></div>
     </div>
@@ -362,6 +384,10 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
       <div class="cast-row"><button type="button" class="btn" id="cast-save-default" title="처음 열 때와 기본값 불러오기에 이 인물들을 써요">기본값으로 저장</button><button type="button" class="btn" id="cast-load-default">기본값 불러오기</button></div>
       <div class="help" id="cast-status" role="status"></div>
     </details>
+    <details class="ai-box" id="ai-box" hidden>
+      <summary>생성 방식 <span class="ai-current" id="ai-current">로컬 서버</span></summary>
+      <fieldset class="ai-method" id="ai-method"></fieldset>
+    </details>
     <div class="go-bar">
       <button class="primary" id="go" type="submit"><svg class="i"><use href="#i-play"/></svg><span>영상 만들기</span></button>
       <span class="msg" id="msg" role="status" aria-live="polite"></span>
@@ -377,7 +403,7 @@ pre.code{margin:0;flex:1;min-width:0;padding:9px 10px;background:var(--soft);bor
 <div id="videoOverview" class="video-overview"></div><section id="serverControls"></section>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button type="button" id="toast-b" hidden></button></div>
 <button type="button" class="btn stop-now" id="multi-stop" hidden>여러 편 제작 즉시 중지</button>
-<aside id="liveJobControls" class="live-job-controls" hidden aria-label="진행 작업 중지" style="position:fixed;bottom:0;left:0;right:0;z-index:120;padding:12px max(12px,env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px"></aside><dialog id="recovery-dialog" class="vr-dialog vs-scene-dialog" aria-labelledby="recovery-title"><form id="recovery-form"><header class="vr-head"><h2 id="recovery-title">장면 수정</h2><button type="button" id="recovery-close" aria-label="장면 수정 닫기">닫기</button></header><p id="recovery-scope" class="vs-scope"></p><label class="vr-label" for="recovery-scene">수정할 장면<select id="recovery-scene"></select></label><label class="vr-label" for="recovery-prompt">영상 생성 프롬프트<textarea id="recovery-prompt" rows="7" required></textarea></label><label class="vr-label" for="recovery-instructions">추가 수정 지시 <span class="vw-note">선택 · 저장할 때 위 프롬프트 끝에 반영됩니다.</span><textarea id="recovery-instructions" rows="3" placeholder="예: 인물과 배경은 유지하고, 카메라가 천천히 가까워지게 수정해 줘."></textarea></label><label class="vr-label" id="recovery-text-label">스토리라인·내레이션<textarea id="recovery-text" rows="3"></textarea></label><label class="vr-label" id="recovery-seconds-label">장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" class="vw-error" role="alert"></p><div class="vw-actions vs-scene-actions"><button type="submit" value="save">프롬프트 저장</button><button type="submit" value="generate" id="recovery-generate" class="vw-primary">저장 후 이 장면부터 다시 만들기</button></div><p id="recovery-feedback" class="vw-note" aria-live="polite"></p></form></dialog>
+<aside id="liveJobControls" class="live-job-controls" hidden aria-label="진행 작업 중지" style="position:fixed;bottom:0;left:0;right:0;z-index:120;padding:12px max(12px,env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px"></aside><dialog id="recovery-dialog" class="vr-dialog vs-scene-dialog" aria-labelledby="recovery-title"><form id="recovery-form"><header class="vr-head"><h2 id="recovery-title">장면 수정</h2><button type="button" id="recovery-close" aria-label="장면 수정 닫기">닫기</button></header><p id="recovery-scope" class="vs-scope"></p><label class="vr-label" for="recovery-scene">수정할 장면<select id="recovery-scene"></select></label><label class="vr-label" for="recovery-prompt">영상 생성 프롬프트<textarea id="recovery-prompt" rows="7" required></textarea></label><label class="vr-label" for="recovery-instructions">추가 수정 지시 <span class="vw-note" id="recovery-instructions-note">선택 · 저장할 때 위 프롬프트 끝에 반영됩니다.</span><textarea id="recovery-instructions" rows="3" placeholder="예: 인물과 배경은 유지하고, 카메라가 천천히 가까워지게 수정해 줘."></textarea></label><label class="vr-label" id="recovery-text-label">스토리라인·내레이션<textarea id="recovery-text" rows="3"></textarea></label><label class="vr-label" id="recovery-seconds-label">장면 길이 (초)<input id="recovery-seconds" type="number" min="4" step="1"></label><p id="recovery-error" class="vw-error" role="alert"></p><div class="vw-actions vs-scene-actions"><button type="submit" value="save">프롬프트 저장</button><button type="submit" value="generate" id="recovery-generate" class="vw-primary">저장 후 이 장면부터 다시 만들기</button></div><p id="recovery-feedback" class="vw-note" aria-live="polite"></p></form></dialog>
 <script>
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -441,12 +467,44 @@ function setMode(m) {
   for (const el of $$('[data-modes]')) el.hidden = !el.dataset.modes.split(' ').includes(m);
   $('#mode-desc').textContent = MODES[m].desc;
   if (MODES[m].ph) $('#prompt').placeholder = MODES[m].ph;
-  $('#prompt-help').innerHTML = m === 'ref'
-    ? '사진·영상·소리는 넣은 순서대로 1번·2번이에요. 글에 <b>1번 사진</b>, <b>1번 영상</b>처럼 번호로 가리키세요.'
-    : '한국어로 대강 써도 돼요. 서버가 영상용 글로 다듬어서 만들어요. <span class="kbd">Ctrl+Enter</span>로 바로 만들기.';
+  promptHelp(); if (AI) AI.refresh();
   setMsg(''); updateGo(); schedulePlan(); renderBanners(); castUse();
 }
 for (const b of $$('.mode')) b.addEventListener('click', () => setMode(b.dataset.mode));
+
+// ---------- 생성 방식 (studio/ai-keys.js) ----------
+// 키가 있으면 영상용 글은 그 키(OpenAI·Claude)로 이 브라우저에서 쓰고, 영상은 지금처럼 로컬 서버가 만든다. 모듈을 못 불러오면 지금처럼 로컬 서버만.
+let AI = null, aiWritten = null;   // aiWritten: {from: 원래 글, to: 미리 다듬은 글} — 다듬은 글을 그대로 보낼 때 다시 다듬지 않는다
+const aiOn = () => !!(AI && AI.active());
+function promptHelp() {
+  const who = aiOn() ? AI.name() : '';
+  const how = who ? `${who}가 영상용 글로 다듬은 뒤 로컬 서버가 만들어요.` : '서버가 영상용 글로 다듬어서 만들어요.';
+  $('#prompt-help').innerHTML = mode === 'ref'
+    ? `사진·영상·소리는 넣은 순서대로 1번·2번이에요. 글에 <b>1번 사진</b>, <b>1번 영상</b>처럼 번호로 가리키세요.${who ? ' ' + esc(how) : ''}`
+    : `한국어로 대강 써도 돼요. ${esc(how)} <span class="kbd">Ctrl+Enter</span>로 바로 만들기.`;
+  $('#ai-write-row').hidden = !who;
+  $('#ai-write').textContent = who ? `${who}로 미리 다듬기` : '미리 다듬기';
+  if (AI) { $('#ai-current').textContent = AI.label(); $('#ai-current').classList.toggle('on', !!who); }
+  $('#recovery-instructions-note').textContent = who ? `선택 · 저장할 때 ${who}가 위 프롬프트에 반영합니다.` : '선택 · 저장할 때 위 프롬프트 끝에 반영됩니다.';
+}
+function aiInputs(text) {
+  return {prompt: text, seconds: $('#seconds').value, aspect: $('#aspect').value, mode,
+    first: mode === 'fl' && files.first.length ? files.first[0].file : null, last: mode === 'fl' && files.last.length ? files.last[0].file : null,
+    refs: mode === 'ref' ? files.ref.map(it => ({kind: it.kind, file: it.file})) : []};
+}
+$('#ai-write').addEventListener('click', async () => {
+  if (!aiOn()) return;
+  const text = $('#prompt').value.trim();
+  if (!text) { setMsg('무엇을 만들지 글로 적어 주세요.', true); $('#prompt').focus(); return; }
+  const b = $('#ai-write'), who = AI.name();
+  b.disabled = true; setMsg(`${who}가 영상용 글을 쓰는 중… 보통 10~40초 걸려요`);
+  try {
+    const out = await AI.write(aiInputs(text + castLines(text)));
+    aiWritten = {from: text, to: out}; $('#prompt').value = out; LS.set('h3video.draft', out);
+    setMsg(`${who}가 다듬은 글을 넣었어요. 고친 뒤 영상 만들기를 누르세요.`);
+  } catch (err) { setMsg(`${who}로 글을 쓰지 못했어요: ${err.message}`, true); }
+  finally { b.disabled = false; }
+});
 
 // ---------- 파일 넣는 곳 ----------
 const ZONES = {
@@ -1045,7 +1103,19 @@ $('#f').addEventListener('submit', async e => {
     } else {
       const fd = new FormData();
       const text = $('#prompt').value.trim();
-      fd.set('prompt', text + castLines(text)); fd.set('seconds', $('#seconds').value); fd.set('aspect_ratio', $('#aspect').value);
+      let sendPrompt = text + castLines(text);
+      if (aiOn() && !$('#raw').checked) {   // 생성 방식에 키가 있으면 글은 그 키로 쓰고, 영상은 로컬 서버가 만든다
+        const who = AI.name();
+        if (aiWritten && aiWritten.to === text) sendPrompt = text;   // 미리 다듬은 글은 그대로 보낸다
+        else {
+          setMsg(`${who}가 영상용 글을 쓰는 중… 보통 10~40초 걸려요`);
+          try { sendPrompt = await AI.write(aiInputs(sendPrompt)); }
+          catch (err) { setMsg(`${who}로 글을 쓰지 못해 보내지 않았어요: ${err.message}`, true); return; }
+          setMsg('보내는 중…');
+        }
+        if (!$('#title').value.trim()) fd.set('title', (aiWritten && aiWritten.to === text ? aiWritten.from : text).replace(/\s+/g, ' ').slice(0, 60));
+      }
+      fd.set('prompt', sendPrompt); fd.set('seconds', $('#seconds').value); fd.set('aspect_ratio', $('#aspect').value);
       fd.set('seed', $('#seed').value.trim() || 'random'); fd.set('size', $('#size').value);
       if ($('#title').value.trim()) fd.set('title', $('#title').value.trim());
       if ($('#steps').value.trim()) fd.set('steps', $('#steps').value.trim());
@@ -1530,8 +1600,15 @@ $('#feed').addEventListener('click',async event=>{
 });
 $('#recovery-form').onsubmit=async event=>{
  event.preventDefault();if(recoverySaving)return;const item=recoveryTarget,index=Number($('#recovery-scene').value),kind=item.kind==='story'?'story':'jobs',scene=recoveryChoices(item)[index],generate=event.submitter?.value==='generate';
- const prompt=$('#recovery-prompt').value.trim(),instructions=$('#recovery-instructions').value.trim();
+ let prompt=$('#recovery-prompt').value.trim(),instructions=$('#recovery-instructions').value.trim();
  if(!prompt){$('#recovery-error').textContent='영상 생성 프롬프트를 입력하세요.';$('#recovery-prompt').focus();return;}
+ if(instructions&&aiOn()){   // 생성 방식에 키가 있으면 수정 지시를 그 키로 프롬프트에 반영한다(없으면 지금처럼 끝에 붙인다)
+  const who=AI.name(),fields=$('#recovery-form').querySelectorAll('button,input,select,textarea');
+  recoverySaving=true;$('#recovery-error').textContent='';$('#recovery-feedback').textContent=`${who}가 수정 지시를 프롬프트에 반영하고 있습니다.`;fields.forEach(el=>el.disabled=true);
+  try{prompt=await AI.revise({prompt,instructions});$('#recovery-prompt').value=prompt;$('#recovery-instructions').value='';instructions='';}
+  catch(error){$('#recovery-error').textContent=`${who}로 반영하지 못했습니다: ${error.message}`;$('#recovery-feedback').textContent='입력한 내용은 유지됩니다.';return;}
+  finally{recoverySaving=false;fields.forEach(el=>el.disabled=false);}
+ }
  const revised=prompt+(instructions?'\n\n수정 지시:\n'+instructions:''),patch=kind==='story'?{clip:scene.id,prompt:revised,text:$('#recovery-text').value,seconds:Number($('#recovery-seconds').value)}:{scene:index,prompt:revised};
  const signature=JSON.stringify(patch),path=`/api/${kind}/${encodeURIComponent(item.id)}`;
  recoverySaving=true;$('#recovery-error').textContent='';$('#recovery-feedback').textContent='프롬프트를 저장하고 있습니다.';$('#recovery-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=true);
@@ -1577,6 +1654,7 @@ Promise.all([import('./studio/server-control.js'),import('./studio/project-recov
  const [group,...parts]=liveSelection.split(':'),id=parts.join(':');if(!id)return null;
  return createVideoRecovery({getBase:()=>BASE||location.origin,kind:group,id,save:async()=>{const pending=[];window.dispatchEvent(new CustomEvent('h3:save-project',{detail:{id,waitUntil:promise=>pending.push(promise)}}));await Promise.all(pending);}});
 },onConnected:async()=>{await loadSpec();await checkHealth();await poll();window.dispatchEvent(new Event('h3:refresh-project'));}})).catch(error=>toast(error.message));
+import('./studio/ai-keys.js').then(({mountAiMethod})=>{AI=mountAiMethod($('#ai-method'),{getMode:()=>mode,onChange:promptHelp});$('#ai-box').hidden=false;promptHelp();}).catch(()=>{$('#ai-box').hidden=true;});
 import('./studio/motion.js').then(({mountMotionStudio})=>mountMotionStudio({api,full,toast})).catch(error=>toast('모션 편집기를 불러오지 못했습니다: '+error.message));
 import('./studio/workspace.js').then(({mountWorkspace})=>{nativeWorkspace=mountWorkspace(document.getElementById('videoOverview'),{kind:'video',onAction:nativeWorkspaceAction});updateNativeOverview();}).catch(error=>toast('작업 현황을 불러오지 못했습니다: '+error.message));
 window.addEventListener('h3:workspace-recovery',event=>openVideoRecovery('studio/projects',event.detail.id));

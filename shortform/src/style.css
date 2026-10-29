@@ -299,6 +299,8 @@ label.block textarea { resize: vertical; font: inherit; }
 .settings select:focus, .settings input:focus, label.block textarea:focus { outline: 2px solid var(--accent-line); outline-offset: 1px; }
 .key-row { display: flex; gap: 8px; min-width: 0; }
 .key-row input { flex: 1; }
+.settings label.notify { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; }
+.settings > .hint { grid-column: 1 / -1; margin: 0; }
 
 .fold { padding: 0; }
 .fold > summary { cursor: pointer; padding: 14px 16px; list-style-position: inside; }

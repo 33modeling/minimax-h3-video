@@ -212,13 +212,20 @@
     <details class="panel fold" id="claudePanel">
         <summary><span class="panel-title">아이디어로 기획 (Claude)</span> <small>선택 · 아이디어로 작업 JSON 쓰기</small></summary>
         <div class="fold-body">
-          <label class="block">기획 모델<select id="llmModel"><option value="claude-opus-5-5">Claude Opus 5.5</option><option value="Qwen/Qwen3.8-27B">Qwen3.8-27B · LLM</option></select></label><label class="block">Qwen LLM 서버<input id="qwenLlmUrl" type="url" value="http://127.0.0.1:8000/v1"></label><label class="block">Qwen 서버 키 · 선택<input id="qwenLlmKey" type="password" autocomplete="off"></label><label class="block">아이디어
+          <label class="block">기획 모델<select id="llmModel"><option value="claude-opus-5-5">Claude Opus 5.5</option><option value="gpt-6.1-terra">OpenAI GPT-6.1 Terra · 내 키</option><option value="gpt-6-astra">OpenAI GPT-6 Astra · 내 키</option><option value="Qwen/Qwen3.8-27B">Qwen3.8-27B · LLM</option></select></label><label class="block">Qwen LLM 서버<input id="qwenLlmUrl" type="url" value="http://127.0.0.1:8000/v1"></label><label class="block">Qwen 서버 키 · 선택<input id="qwenLlmKey" type="password" autocomplete="off"></label><label class="block">아이디어
             <textarea id="idea" rows="3" placeholder="예: 비 오는 날 창가에서 커피 내리는 30초 브이로그, 잔잔한 분위기"></textarea>
           </label>
-          <div class="settings">
+          <div class="settings" id="claudeKeyRow">
             <label class="wide"><span class="lab">개인 API 키 <small id="claudeConnection">사이트 연결 확인 중</small> <button type="button" class="tip" data-tip="키는 이 브라우저(localStorage)에만 저장되고 Anthropic API로만 보내요. 공용 PC라면 다 쓴 뒤 '키 지우기'를 누르세요.">ⓘ</button></span>
               <span class="key-row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."><button type="button" class="ghost small" id="keyClear">키 지우기</button></span>
             </label>
+          </div>
+          <div class="settings" id="openaiKeyRow" hidden>
+            <label class="wide"><span class="lab">OpenAI(코덱스) API 키</span>
+              <span class="key-row"><input id="openaiKey" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="sk-..."><button type="button" class="ghost small" id="openaiKeyClear">키 지우기</button></span>
+            </label>
+            <label class="notify"><input type="checkbox" id="openaiRemember"> 이 기기에 저장</label>
+            <p class="hint">키는 이 브라우저에만 두고, 이 화면이 api.openai.com으로 직접 보내요. 우리 서버로는 보내지 않아요. 사용 요금은 키 주인의 OpenAI 계정에 청구돼요. ‘이 기기에 저장’을 켜지 않으면 탭을 닫을 때 키가 지워져요. OpenAI가 2026년 9월 24일에 영상 API(Sora 2)를 닫아서, 이 키로는 작업 JSON(장면 글·자막)만 쓰고 장면 영상은 지금처럼 영상 서버가 만들어요.</p>
           </div>
           <div class="check-row"><button type="button" class="ghost" id="planBtn">Claude에게 기획 요청</button><span id="planOut" class="check-out" aria-live="polite"></span></div>
           <p class="hint">claude-opus-5-5가 작업 JSON을 써서 1번 칸을 채워요. 2번 칸에 영상이 있으면 프레임 몇 장을 함께 보내요. 연결된 Claude로 기획하며 참고 프레임도 함께 전달합니다.</p>

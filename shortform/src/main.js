@@ -7,6 +7,8 @@ import {listProjects,saveDraft,saveScene,saveOutput,loadProject,restorePrevious}
 import { checkSpec, normalizeSpec, composeInputs, baseName, aiScenes, schema } from './core/spec.js';
 import { planTimeline, describePlan, TEMPLATE_KO } from './core/plan.js';
 import { plan as claudePlan } from './core/claude.js';
+import { isOpenAIModel } from './core/openai-client.js';
+import { keyStore } from '../../src/h3video/studio/ai-keys.js';
 import { matchFiles, fileFor, outputName, kindOf } from './app/match.js';
 import { isStory, storyToSpec } from './core/story.js';
 import { EXAMPLE_JOB, EXAMPLES } from './app/example.js';
@@ -26,6 +28,7 @@ const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const forceEngine = params.get('engine'); // 'recorder' 면 실시간 녹화 경로(테스트용)
 const anthropicBase = params.get('anthropic_base') || undefined; // 가짜 엔드포인트 테스트용
+const openaiBase = params.get('openai_base') || undefined; // 가짜 엔드포인트 테스트용
 const PRESETS = (schema.properties.resolution && schema.properties.resolution['x-presets']) || ['720x1280', '1080x1920'];
 
 const el = new Proxy({}, { get: (_, k) => $(k) });
@@ -1302,6 +1305,28 @@ el.keyClear.addEventListener('click', () => {
   el.planOut.textContent = '키를 지웠어요.';
 });
 let planAbort = null;
+// OpenAI(코덱스) 키: 영상 만들기 '생성 방식'과 같은 저장 칸(studio/ai-keys.js keyStore) — 같은 사이트면 한 번 넣은 키를 함께 쓴다.
+// 기본은 이 탭(sessionStorage)에만, '이 기기에 저장'을 켜면 localStorage. 키는 api.openai.com 으로만 보낸다.
+const aiKeys = keyStore();
+const openaiKeyInput = document.querySelector('#openaiKey'), openaiRemember = document.querySelector('#openaiRemember'), llmModel = document.querySelector('#llmModel');
+openaiKeyInput.value = aiKeys.key('openai');
+openaiRemember.checked = aiKeys.remember();
+openaiKeyInput.addEventListener('input', () => aiKeys.setKey('openai', openaiKeyInput.value));
+openaiRemember.addEventListener('change', () => aiKeys.setRemember(openaiRemember.checked));
+document.querySelector('#openaiKeyClear').addEventListener('click', () => {
+  aiKeys.setKey('openai', '');
+  openaiKeyInput.value = '';
+  el.planOut.textContent = 'OpenAI 키를 지웠어요.';
+});
+const planLabel = () => (isOpenAIModel(llmModel.value) ? 'OpenAI에게 기획 요청' : 'Claude에게 기획 요청');
+function showLlmKeys() {
+  const openai = isOpenAIModel(llmModel.value);
+  document.querySelector('#openaiKeyRow').hidden = !openai;
+  document.querySelector('#claudeKeyRow').hidden = openai;
+  if (!planAbort) el.planBtn.textContent = planLabel();
+}
+llmModel.addEventListener('change', showLlmKeys);
+showLlmKeys();
 el.planBtn.addEventListener('click', async () => {
   await siteConnectionReady;
   if (planAbort) {
@@ -1323,15 +1348,15 @@ el.planBtn.addEventListener('click', async () => {
         console.warn(e);
       }
     }
-    el.planOut.textContent = `Claude에게 기획을 요청하는 중…${sources.length ? ` (프레임 ${sources.reduce((a, s) => a + s.frames.length, 0)}장)` : ''} 1~2분 걸릴 수 있어요`;
-    const useQwen = document.querySelector('#llmModel').value === 'Qwen/Qwen3.8-27B';
+    el.planOut.textContent = `${isOpenAIModel(llmModel.value) ? 'OpenAI' : 'Claude'}에게 기획을 요청하는 중…${sources.length ? ` (프레임 ${sources.reduce((a, s) => a + s.frames.length, 0)}장)` : ''} 1~2분 걸릴 수 있어요`;
+    const useQwen = document.querySelector('#llmModel').value === 'Qwen/Qwen3.8-27B', useOpenAI = isOpenAIModel(llmModel.value);
     const res = await claudePlan({
       idea: el.idea.value,
       sources,
       model:document.querySelector('#llmModel').value,
-      apiKey:useQwen?document.querySelector('#qwenLlmKey').value.trim():apiKey,
-      baseUrl:useQwen?document.querySelector('#qwenLlmUrl').value.trim():anthropicBase,
-      connection:useQwen?undefined:siteConnection,
+      apiKey:useQwen?document.querySelector('#qwenLlmKey').value.trim():useOpenAI?openaiKeyInput.value.trim():apiKey,
+      baseUrl:useQwen?document.querySelector('#qwenLlmUrl').value.trim():useOpenAI?openaiBase:anthropicBase,
+      connection:useQwen||useOpenAI?undefined:siteConnection,
       signal: planAbort.signal,
       log: (t) => (el.planOut.textContent = t),
     });
@@ -1345,7 +1370,7 @@ el.planBtn.addEventListener('click', async () => {
     el.planOut.className = 'check-out bad';
   } finally {
     planAbort = null;
-    el.planBtn.textContent = 'Claude에게 기획 요청';
+    el.planBtn.textContent = planLabel();
   }
 });
 
