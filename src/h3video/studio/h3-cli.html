@@ -68,11 +68,22 @@ h3video gen "자연광 아래 도자기 컵, 느린 카메라 전진" -s 8
 h3video gen prompt.txt --first start.png -s 8
 h3video gen prompt.txt --first start.png --last end.png -s 8
 
+# 입력 파일 검사 · 서버·GPU 작업 없음
+h3video inspect "inputs/인물 사진.png" inputs/motion.mp4
+h3video inspect inputs/motion.mp4 --json
+
+# 파일마다 -i를 반복하면 참고 종류 자동 판별
+h3video gen "1번 사진 인물, 1번 영상의 동작" \
+  -i "inputs/인물 사진.png" -i inputs/motion.mp4 -s 8
+
+# 생성·복사 없이 JSON 계획만 확인
+h3video gen "1번 영상의 동작" -i inputs/motion.mp4 --dry-run --json
+
 # Ref2VA 서버가 준비되어 있을 때만
 h3video gen "1번 사진 인물, 1번 영상의 걷는 동작"   --image person.png --video motion.mp4 -s 8
 
 # 세로·시드·저장 위치
-h3video gen prompt.txt -s 8 -r 9:16 --seed 42 -o ./exports/</code></pre><p><code>--first/--last</code>는 실제 첫·끝 프레임, <code>--image/--video/--audio</code>는 참고 입력입니다. 두 종류를 혼합하지 않습니다. 참고 자료의 번호는 넣은 순서이며, 어떤 특징을 가져올지 명시하세요. 소리만 단독 참고 입력으로 쓰지 않습니다. 생성 결과는 출력된 <code>결과 파일:</code> 경로에서 확인합니다.</p><p>프롬프트는 문자열·텍스트 파일·표준입력으로 전달할 수 있습니다. <code>--open</code>은 기본 플레이어를 여는 옵션이므로 서버·헤드리스 작업에는 넣지 않아도 됩니다.</p></div></details><details class="h3-section" id="web"><summary><b>07</b><span>웹 UI 사용 · H3 제작실 연결<small>웹 서버와 GPU 생성 서버를 구분</small></span></summary><div class="h3-content"><p>CLI만 사용하면 웹 서버는 필요 없습니다. 웹 UI가 필요할 때만 별도 터미널에서 실행합니다. 아래 명령은 운영자가 사용할 설명이며, 현재 서비스를 자동으로 재시작하지 않습니다.</p><pre><code># 터미널 C · 웹 UI만 시작
+h3video gen prompt.txt -s 8 -r 9:16 --seed 42 -o ./exports/</code></pre><p><code>--input</code> 또는 <code>-i</code>는 파일 종류를 자동 판별하는 참고 입력입니다. 첫 화면을 고정하려면 <code>--first</code>를 사용하세요. H100에서 실행하면 그 서버나 공유 폴더의 파일 경로가 필요합니다. PC 경로가 자동 업로드되지는 않습니다. 웹에서는 파일을 클릭해서 고르거나 끌어 넣으세요.</p><p><code>inspect</code>는 FFprobe가 있으면 해상도·길이를 확인합니다. 원격 주소와 FFprobe가 없는 환경의 메타데이터는 미확인으로 표시합니다. <code>--dry-run --json</code>은 생성·복사 없이 한 개의 JSON 계획을 출력합니다.</p><p><code>--first/--last</code>는 실제 첫·끝 프레임, <code>--image/--video/--audio</code>는 참고 입력입니다. 두 종류를 혼합하지 않습니다. 참고 자료의 번호는 넣은 순서이며, 어떤 특징을 가져올지 명시하세요. 소리만 단독 참고 입력으로 쓰지 않습니다. 생성 결과는 출력된 <code>결과 파일:</code> 경로에서 확인합니다.</p><p>프롬프트는 문자열·텍스트 파일·표준입력으로 전달할 수 있습니다. <code>--open</code>은 기본 플레이어를 여는 옵션이므로 서버·헤드리스 작업에는 넣지 않아도 됩니다.</p></div></details><details class="h3-section" id="web"><summary><b>07</b><span>웹 UI 사용 · H3 제작실 연결<small>웹 서버와 GPU 생성 서버를 구분</small></span></summary><div class="h3-content"><p>CLI만 사용하면 웹 서버는 필요 없습니다. 웹 UI가 필요할 때만 별도 터미널에서 실행합니다. 아래 명령은 운영자가 사용할 설명이며, 현재 서비스를 자동으로 재시작하지 않습니다.</p><pre><code># 터미널 C · 웹 UI만 시작
 cd /user-volume/minimax-h3-video
 bash scripts/web.sh --cors https://77model.pages.dev</code></pre><p>로컬 브라우저와 노드가 다르면 이미 승인된 보안 연결을 사용합니다. SSH 터널이 필요한 환경에서는 운영자가 다음처럼 루프백에만 연결할 수 있습니다. 방화벽 전체 개방이나 <code>0.0.0.0</code> 공개 바인딩은 이 절차에 필요하지 않습니다.</p><pre><code># 브라우저가 있는 PC에서 — USER@HOST를 실제 서버로 교체
 ssh -N -L 127.0.0.1:8790:127.0.0.1:8790 USER@HOST</code></pre><p>브라우저에서 <code>http://127.0.0.1:8790</code>을 엽니다. 77의 <strong>동영상 만들기</strong>에서 사용할 때는 상단 서버 주소에 이 주소를 넣고 연결합니다. 브라우저가 로컬 네트워크 접근 허용을 요구할 수 있습니다. CORS는 방문한 정확한 출처만 허용하고 <code>*</code>로 바꾸지 마세요.</p><p>화면의 <strong>글로 만들기·그림으로 시작·참고 자료로·JSON 한번에</strong> 중 하나를 선택합니다. 필요한 파일을 넣고 장면 수·길이·시드를 확인한 뒤 생성합니다. 오른쪽 결과 카드에서 재생·저장·명령어로 보기를 사용합니다. 웹 서버를 켜는 것만으로 GPU 모델이 준비되지는 않습니다.</p></div></details><details class="h3-section" id="json"><summary><b>08</b><span>JSON·여러 장면·배치 작업<small>장면별 prompt·seconds·image와 재개</small></span></summary><div class="h3-content"><pre><code>{

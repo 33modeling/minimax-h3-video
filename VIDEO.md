@@ -229,3 +229,19 @@ h3video fetch <video_id> -o a.mp4     # 서버에 남은 완성본 받기 (참�
 | 그 밖에 | `bash scripts/diagnose.sh` 출력을 붙여 준다 |
 
 서버 설치·운영(처음 설치, 저장 위치, 환경 변수)은 [USAGE.md](USAGE.md).
+
+
+## 입력 검사와 자동 판별
+
+`h3video inspect 파일… [--json]`은 생성 서버 없이 로컬 파일의 종류·크기와 FFprobe 메타데이터를 확인합니다. 원격 URI의 내용은 조회하지 않으며 미확인으로 표시합니다. 파일 실패는 종료 코드 1, 명령 옵션 오류는 2입니다.
+
+`gen/ref`에서 `-i 파일` 또는 `--input 파일`을 반복하면 확장자로 이미지·영상·소리 참고 자료를 구분합니다. 한 장의 이미지도 참고 입력이므로, 그 그림에서 영상을 시작하려면 `--first 이미지`를 사용합니다. 참고 소리에는 이미지 또는 영상도 필요합니다. 각 종류의 번호는 명령에 적은 순서입니다.
+
+```bash
+h3video inspect "inputs/원본 영상.mp4" --json
+h3video gen "1번 사진의 인물과 1번 영상의 동작" \
+  --input inputs/person.png --input "inputs/원본 영상.mp4" \
+  --dry-run --json
+```
+
+JSON 계획의 스키마는 `h3video.plan.v1`입니다. `requests`는 장면별 요청이며, `inputs`에는 역할·종류·원본 경로와 확인 상태가 들어갑니다. 계획은 복사 전 파일 URI를 보여 주며 `inbox_dir`가 설정돼 있으면 실행 때 공유 폴더의 사본 URI로 바뀝니다. 계획을 보는 명령은 파일 복사·서버 연결·생성을 수행하지 않습니다.

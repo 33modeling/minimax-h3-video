@@ -22,6 +22,7 @@ from . import hints as HN
 from . import prompt as P
 from . import spec
 from .client import H3Client, H3Error, stage_input
+from .media_input import describe_input, inspect_input
 from .jobs import Job, JobStore, Worker, build_request, fit_to_server, new_job, plan_job
 
 SERVER_DOWN = (
@@ -34,6 +35,8 @@ SERVER_DOWN = (
 # 작업(pending·running·…)과 장면(queued·in_progress·…) 상태를 한국어로
 STATUS_KO = {"pending": "대기", "running": "진행", "completed": "완료", "failed": "실패", "queued": "서버 대기열", "in_progress": "진행"}
 EXAMPLES = [
+    ('h3video inspect "인물 사진.png" motion.mp4', "입력 종류·해상도·길이 확인 (서버 불필요)"),
+    ('h3video gen "1번 사진 인물, 1번 영상 동작" -i person.png -i motion.mp4 --dry-run --json', "자동 판별·JSON 미리보기"),
     ('h3video "비 오는 서울 밤거리, 네온 반사" -s 8', "글로 8초 영상"),
     ("h3video gen prompt.txt -s 40 -r 9:16 -o out/", "40초(장면 4개 이어 붙임), 세로, out/ 에도 저장"),
     ('h3video 사진.png "아이가 천천히 웃는다" -s 6', "이 그림에서 시작 (= gen --first 사진.png)"),
@@ -76,7 +79,7 @@ def quickstart() -> str:
 
 # (묶음 이름, [(명령, 한 줄 설명)])
 COMMAND_GROUPS = [
-    ("만들기", [("gen", "영상 만들기: 글, 첫/끝 그림(--first/--last), 참고 자료(--image/--video/--audio)"),
+    ("만들기", [("gen", "영상 만들기: 글, 첫/끝 그림(--first/--last), 참고 자료(--input 자동 판별)"),
                ("json", "JSON 하나 + 그림들로 장면마다 만들어 이어 붙이기 (장면 수·길이는 JSON 에서)"),
                ("batch", "파일의 여러 프롬프트를 차례로 (--- 줄로 구분)"),
                ("ref", "참고 자료로 만들기 (gen --image 와 같다)"),
@@ -86,7 +89,8 @@ COMMAND_GROUPS = [
                  ("show", "작업 자세히 (id, id 앞부분, last)"),
                  ("fetch", "서버에서 완성된 영상 받기 (video_id)"),
                  ("status", "서버의 영상 상태 (video_id)")]),
-    ("서버·설정", [("health", "서버 확인 (꺼져 있으면 할 일)"),
+    ("서버·설정", [("inspect", "입력 파일 종류·크기·해상도·길이 검사 (GPU·서버 요청 없음)"),
+                 ("health", "서버 확인 (꺼져 있으면 할 일)"),
                  ("doctor", "서버·결과 폴더·ffmpeg 를 한 번에 점검하고 할 일 알려 주기"),
                  ("config", "서버 주소·결과 폴더 저장 (환경 변수 없이)"),
                  ("spec", "모델 사양")]),
@@ -111,6 +115,7 @@ VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv", ".m4v")
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus")
 
 CMD_EXAMPLES = {
+    "inspect": [('h3video inspect "인물 사진.png" motion.mp4', "파일 검사"), ("h3video inspect motion.mp4 --json", "자동화용 JSON; 실패하면 종료 코드 1")],
     "gen": [('h3video gen "비 오는 서울 밤거리, 네온 반사" -s 8', "글로 8초"),
             ("h3video gen prompt.txt -s 40 -r 9:16 -o out/", "40초(장면 4개 이어 붙임), 세로, out/ 에도 저장"),
             ('h3video gen "아이가 웃는다" --first a.png --last b.png', "이 그림에서 시작해 저 그림으로 끝"),
@@ -227,8 +232,20 @@ def validate_job(job: Job) -> list:
     return reqs
 
 
-def preview(job: Job) -> None:
+def preview(job: Job, *, as_json=False, inbox_dir=None, endpoint=None) -> None:
     reqs = validate_job(job)
+    if as_json:
+        inputs = []
+        for role, kind, path in [('first', 'image', job.first_image), ('last', 'image', job.last_image)] + [
+                ('reference', r['type'], r['path']) for r in job.refs]:
+            if path:
+                inputs.append(dict(role=role, **describe_input(path, kind)))
+        print(json.dumps(dict(schema='h3video.plan.v1', dry_run=True, task=job.task,
+            total_seconds=job.total_seconds, scene_count=len(reqs), endpoint=endpoint,
+            inputs=inputs, inbox_dir=inbox_dir,
+            staging='local inputs are copied to the shared inbox on execution; preview URIs refer to source files' if inbox_dir else 'source paths must be readable by the generation server',
+            requests=[r.to_json() for r in reqs]), ensure_ascii=False, indent=2))
+        return
     print(f"[dry-run] {job.task}, 총 {job.total_seconds}초 → 장면 {len(reqs)}개 {[r.duration_seconds for r in reqs]}, "
           f"화면비 {job.aspect_ratio}, 시드 {job.seed}{'부터' if len(reqs) > 1 else ''}. 서버에 보내지 않았다.")
     for i, r in enumerate(reqs):
@@ -501,7 +518,9 @@ def job_from_args(a, prompt: str, refs=None, base: Path | None = None) -> Job:
             return str(base / p)
         return p
     first, last = fix(getattr(a, "first", None)), fix(getattr(a, "last", None))
-    refs = [{"type": r["type"], "path": fix(r["path"])} for r in (refs or [])]
+    first = describe_input(first, 'image')['source'] if first else None
+    last = describe_input(last, 'image')['source'] if last else None
+    refs = [{"type": r["type"], "path": describe_input(fix(r["path"]), r['type'])['source']} for r in (refs or [])]
     check_inputs([first, last] + [r["path"] for r in refs])
     return new_job(prompt, seconds=a.seconds, aspect_ratio=a.ratio, seed=a.seed, first_image=first, last_image=last,
                    refs=refs, scene_seconds=a.scene_seconds, steps=a.steps, title=a.title or "", negative=a.negative,
@@ -645,7 +664,54 @@ def cmd_config(a):
 
 
 def refs_of(a) -> list[dict]:
-    return [{"type": t, "path": p} for t in ("image", "video", "audio") for p in getattr(a, t, None) or []]
+    order = getattr(a, '_media_order', None) or [(t, p) for t in ('image', 'video', 'audio') for p in getattr(a, t, None) or []]
+    refs = []
+    for kind, path in order:
+        item = describe_input(path, None if kind == 'auto' else kind)
+        refs.append(dict(type=item['type'], path=item['source']))
+    return refs
+
+
+def cmd_inspect(a):
+    items = []
+    for path in a.files:
+        try:
+            items.append(dict(ok=True, **inspect_input(path)))
+        except (H3Error, OSError) as error:
+            items.append(dict(ok=False, source=path, error=str(error)))
+    if a.json:
+        print(json.dumps(dict(schema='h3video.inputs.v1', ok=all(x['ok'] for x in items), inputs=items), ensure_ascii=False, indent=2))
+    else:
+        for item in items:
+            if not item['ok']:
+                print('오류  ' + item['error'])
+                continue
+            print(f"{item['type']}  {item['source']}")
+            details = []
+            if item.get('bytes') is not None:
+                details.append(f"{item['bytes']:,} bytes")
+            if item.get('width'):
+                details.append(f"{item['width']}×{item['height']}")
+            if item.get('duration_seconds') is not None:
+                details.append(f"{item['duration_seconds']:.3f}초")
+            print('  ' + ' · '.join(details or ['원격 파일: 내용 미확인']))
+            if item.get('note'):
+                print('  ' + item['note'])
+        print('GPU 작업을 제출하지 않았습니다. 첫 장면은 --first, 참고 자료는 --input으로 지정하세요.')
+    if not all(x['ok'] for x in items):
+        raise SystemExit(1)
+
+
+def preview_or_run(a, job):
+    if job.refs and not any(r['type'] in ('image', 'video') for r in job.refs):
+        raise H3Error('참고 소리만으로는 생성할 수 없습니다. 이미지 또는 영상 참고 자료를 함께 지정하세요.')
+    if getattr(a, 'plan_json', False) and not a.dry_run:
+        raise H3Error('--json은 --dry-run과 함께 사용하세요. 실제 생성은 JSON 미리보기에서 시작하지 않습니다.')
+    if a.dry_run:
+        preview(job, as_json=getattr(a, 'plan_json', False), inbox_dir=a.inbox_dir,
+                endpoint=a.ref_endpoint if job.task == 'ref2va' else a.endpoint)
+    else:
+        run_jobs(a, [job], a.out)
 
 
 def cmd_gen(a):
@@ -655,20 +721,20 @@ def cmd_gen(a):
         raise H3Error("--first/--last(그 그림이 실제 첫·끝 장면)와 --image/--video/--audio(참고 자료)는 같이 쓸 수 없다. "
                       "둘은 다른 모델(fl2va / ref2va)이다")
     job = job_from_args(a, read_prompt(a), refs or None)
-    preview(job) if a.dry_run else run_jobs(a, [job], a.out)
+    preview_or_run(a, job)
 
 
 def cmd_ref(a):
-    refs = [{"type": t, "path": p} for t in ("image", "video", "audio") for p in getattr(a, t)]
+    refs = refs_of(a)
     if not refs:
-        raise H3Error("--image/--video/--audio 중 하나 이상 필요")
+        raise H3Error("--input/--image/--video/--audio 중 하나 이상 필요")
     job = job_from_args(a, read_prompt(a), refs)
-    preview(job) if a.dry_run else run_jobs(a, [job], a.out)
+    preview_or_run(a, job)
 
 
 def cmd_ir(a):
     """서버(Diffusers 엔진)가 다듬은 공식 형식 프롬프트만 본다. 생성은 하지 않는다 (장면이 여럿이면 첫 장면)."""
-    refs = [{"type": t, "path": p} for t in ("image", "video", "audio") for p in getattr(a, t)]
+    refs = refs_of(a)
     job = job_from_args(a, read_prompt(a), refs or None)
     job.scenes = plan_job(job)
     sc = job.scenes[0]
@@ -1022,16 +1088,25 @@ def add_prompt_opts(p, what: str = "프롬프트 글, 또는 프롬프트 파일
     g.add_argument("-f", "--prompt-file", metavar="FILE", help="프롬프트 파일 (- 는 표준입력)")
 
 
+class MediaInputAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, [*(getattr(namespace, self.dest, None) or []), values])
+        order = list(getattr(namespace, '_media_order', []))
+        order.append(('auto' if self.dest == 'input' else self.dest, values))
+        namespace._media_order = order
+
+
 def add_media_opts(p, first: bool = True, refs: bool = True) -> None:
     g = p.add_argument_group("그림·참고 자료")
     if first:
         g.add_argument("--first", metavar="IMG", help="첫 장면 그림 (그 그림에서 시작)")
         g.add_argument("--last", metavar="IMG", help="끝 장면 그림 (그 그림으로 끝, 한 장면일 때)")
     if refs:
-        g.add_argument("--image", action="append", default=[], metavar="IMG",
+        g.add_argument('-i', '--input', action=MediaInputAction, default=[], metavar='FILE', help='참고 파일 종류 자동 판별: 이미지·영상·소리 (파일마다 반복). 첫 장면 고정은 --first')
+        g.add_argument("--image", action=MediaInputAction, default=[], metavar="IMG",
                        help=f"참고 사진 (최대 {spec.REF_LIMITS['image']}, 여러 번) → ref2va 서버")
-        g.add_argument("--video", action="append", default=[], metavar="VIDEO", help=f"참고 영상 (최대 {spec.REF_LIMITS['video']}, 2~15초)")
-        g.add_argument("--audio", action="append", default=[], metavar="AUDIO", help=f"참고 소리 (최대 {spec.REF_LIMITS['audio']}, 2~15초)")
+        g.add_argument("--video", action=MediaInputAction, default=[], metavar="VIDEO", help=f"참고 영상 (최대 {spec.REF_LIMITS['video']}, 2~15초)")
+        g.add_argument("--audio", action=MediaInputAction, default=[], metavar="AUDIO", help=f"참고 소리 (최대 {spec.REF_LIMITS['audio']}, 2~15초)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1051,6 +1126,9 @@ def build_parser() -> argparse.ArgumentParser:
     cmd("spec", cmd_spec)
     cmd("health", cmd_health, "서버 확인: OK/실패와 할 일 (글·그림 서버가 안 되면 종료 코드 1)")
     cmd("doctor", cmd_doctor)
+    p = cmd('inspect', cmd_inspect)
+    p.add_argument('files', nargs='+', help='검사할 파일 경로 여러 개 (원격 주소는 내용을 받지 않음)')
+    p.add_argument('--json', action='store_true', help='검사 결과를 JSON으로 출력; 하나라도 실패하면 종료 코드 1')
     p = cmd("config", cmd_config)
     p.add_argument("action", nargs="?", default="show", help="show(기본) · set · unset · path")
     p.add_argument("key", nargs="?", help="endpoint · ref-endpoint · output-dir · inbox-dir")
@@ -1060,11 +1138,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--first", help="첫 그림 (있으면 첫 장면도 fl2va)")
 
     p = cmd("gen", cmd_gen)
+    p.add_argument('--json', dest='plan_json', action='store_true', help='--dry-run 결과를 단일 JSON으로 출력')
     add_prompt_opts(p)
     add_media_opts(p)
     add_video_opts(p)
 
     p = cmd("ref", cmd_ref, "참고 자료(사진·영상·소리) → 영상 (ref2va). gen --image 와 같다")
+    p.add_argument('--json', dest='plan_json', action='store_true', help='--dry-run 결과를 단일 JSON으로 출력')
     add_prompt_opts(p, "프롬프트. '1번 사진'처럼 번호로 참고 자료를 가리킨다")
     add_media_opts(p, first=False)
     add_video_opts(p)

@@ -169,6 +169,33 @@ source scripts/cluster_env.sh && h3video tui     # 클러스터 노드 tmux 안�
 
 한 화면에 서버 연결 상태, 대기 수, 작업별 진행률 바(장면 단위)와 경과 시간이 보인다. 결과 mp4 는 작업 폴더에 남는다.
 
+## 원본 이미지·영상 입력
+
+파일 종류를 자동으로 고르는 `--input`(`-i`)을 파일마다 반복합니다. 이 옵션은 **참고 자료**로 사용합니다. 실제 첫 장면을 고정할 때는 `--first`, 마지막 장면은 `--last`를 사용합니다.
+
+```bash
+# 로컬 파일 검사: 실제 크기·해상도·길이. GPU 작업을 제출하지 않음
+h3video inspect "inputs/인물 사진.png" inputs/motion.mp4
+h3video inspect inputs/motion.mp4 --json
+
+# 사진과 영상 참고. Ref2VA 서버가 준비돼 있어야 실제 생성 가능
+h3video gen "1번 사진의 인물, 1번 영상의 걷는 동작" \
+  -i "inputs/인물 사진.png" -i inputs/motion.mp4 -s 8
+
+# 첫 장면 이미지에서 출발
+h3video gen "인물이 천천히 고개를 돌린다" --first "inputs/인물 사진.png" -s 8
+
+# 생성·복사 없이 단일 JSON 계획 확인
+h3video gen "1번 영상의 동작" -i inputs/motion.mp4 --dry-run --json
+```
+
+- `--input`과 `--image/--video/--audio`를 섞어 써도 입력 순서를 보존합니다. `--first/--last`와 참고 자료를 혼합하면 생성 전에 오류를 표시합니다.
+- H100에서 CLI를 실행하면 그 서버나 연결된 공유 폴더의 경로를 줍니다. PC에서 원격 GPU 서버에 접속할 때 PC 경로가 자동 업로드되지는 않습니다. 파일을 공유 폴더로 옮기거나 웹 화면의 파일 업로드를 사용하세요.
+- `file:///경로`는 생성 서버가 읽는 경로입니다. HTTP(S)·file URI는 `inspect`에서 내용을 가져오지 않고 **미확인**으로 표시합니다.
+- `inspect`는 FFprobe가 있으면 실제 미디어 메타데이터를 읽습니다. FFprobe가 없으면 해상도·길이를 미확인으로 남깁니다. 파일 하나라도 없거나 손상됐으면 JSON 전체 `ok: false`와 종료 코드 1을 반환합니다.
+- `--dry-run --json`은 한 개의 JSON만 표준 출력으로 보냅니다. 파일을 복사하거나 GPU 작업을 제출하지 않습니다. 공유 입력 폴더가 설정돼 있으면 실제 실행 때 파일 URI가 입력 사본의 경로로 바뀔 수 있음을 계획에 표시합니다.
+- 실행 시 공유 입력 사본은 1MiB씩 읽고 임시 파일에서 완성한 뒤 공개합니다. 복사 도중 실패하거나 원본이 바뀌면 불완전한 파일을 사용하지 않습니다.
+
 ## CLI
 
 ```bash

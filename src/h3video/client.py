@@ -1,4 +1,4 @@
-"""SGLang `/v1/videos` 클라이언트 (표준 라이브러리만 사용).
+"""MiniMax-H3 `/v1/videos` 클라이언트 (Diffusers 기본·SGLang 선택, 표준 라이브러리만 사용).
 
   POST {endpoint}/v1/videos                 → {"id": ...}
   GET  {endpoint}/v1/videos/{id}            → {"status": queued|in_progress|completed|failed, "progress": 0~1, "error": ...}
@@ -12,6 +12,7 @@ import http.client
 import json
 import os
 import shutil
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -114,10 +115,32 @@ def stage_input(path: str | os.PathLike, inbox_dir: str | os.PathLike | None) ->
         inbox = Path(inbox_dir).expanduser().resolve()
         inbox.mkdir(parents=True, exist_ok=True)
         if inbox not in p.parents:
-            digest = hashlib.sha1(p.read_bytes()).hexdigest()[:12]
+            def fingerprint():
+                stat = p.stat()
+                return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+            original = fingerprint()
+            hasher = hashlib.sha1()
+            with p.open('rb') as source:
+                for block in iter(lambda: source.read(1024 * 1024), b''):
+                    hasher.update(block)
+            if fingerprint() != original:
+                raise H3Error(f'입력 파일이 검사 중 바뀌었습니다. 저장을 마친 뒤 다시 실행하세요: {p}')
+            digest = hasher.hexdigest()[:12]
             dest = inbox / f"{digest}-{p.name}"
-            if not dest.exists():
-                shutil.copy2(p, dest)
+            if not dest.is_file() or dest.stat().st_size != p.stat().st_size:
+                temporary = None
+                try:
+                    with tempfile.NamedTemporaryFile(prefix='.h3-input-', dir=inbox, delete=False) as output:
+                        temporary = Path(output.name)
+                        with p.open('rb') as source:
+                            shutil.copyfileobj(source, output, length=1024 * 1024)
+                    if fingerprint() != original:
+                        raise H3Error(f'입력 파일이 복사 중 바뀌었습니다. 저장을 마친 뒤 다시 실행하세요: {p}')
+                    shutil.copystat(p, temporary)
+                    temporary.replace(dest)
+                finally:
+                    if temporary is not None:
+                        temporary.unlink(missing_ok=True)
             p = dest
     return p.as_uri()
 
