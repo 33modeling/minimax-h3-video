@@ -23,6 +23,13 @@ export H3_ENGINE_OVERRIDE="$ENGINE"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cluster_env.sh" >/dev/null || { echo "cluster_env.sh 실패"; exit 1; }
 unset HF_HUB_OFFLINE HF_DATASETS_OFFLINE TRANSFORMERS_OFFLINE || true
 log() { printf '[provision %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+next_steps() {
+  local engine_arg=""; [[ "$H3_ENGINE" == sglang ]] && engine_arg=" --engine sglang"
+  log "완료. 기본 실행: bash scripts/up.sh${engine_arg} (GPU 자동 배정)"
+  if [[ "$REF" == 1 ]]; then
+    log "참고 자료도 사용할 때: bash scripts/up.sh${engine_arg} --ref (빈 GPU 8장을 4+4로 자동 배정)"
+  fi
+}
 mkdir -p "$H3_LOG_DIR"; PROV_LOG="$H3_LOG_DIR/provision-$(date +%Y%m%d-%H%M%S).log"
 exec > >(trap '' INT; tee -a "$PROV_LOG") 2>&1
 log "로그 파일: $PROV_LOG"
@@ -72,10 +79,10 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
       || log "경고: 가이드를 못 받았다 → 서버는 프롬프트를 다듬지 않고 그대로 쓴다 (다시 실행하면 재시도)"
   fi
   ls "$H3_GUIDE_DIR"/VIDEO_PROMPT_WRITING_GUIDE_*_en.md 2>/dev/null | sed 's/^/  가이드: /' || true
-  if [[ "$SKIP_MODEL" == 1 ]]; then log "모델 단계 스킵"; log "완료. 다음: bash scripts/up.sh$([[ $REF == 0 ]] && echo ' --fl2va-only')"; exit 0; fi
+  if [[ "$SKIP_MODEL" == 1 ]]; then log "모델 단계 스킵"; next_steps; exit 0; fi
   D="$H3_DIFFUSERS_DIR"; VARS=(fl2va); [[ "$REF" == 1 ]] && VARS+=(ref2va)
   ok_all() { local v; for v in "${VARS[@]}"; do "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$D" --variant "$v" --quiet || return 1; done; }
-  if ok_all; then log "모델 확인: $D (Diffusers 형식, ${VARS[*]} 준비됨)"; du -shL "$D" 2>/dev/null || true; log "완료. 다음: bash scripts/up.sh$([[ $REF == 0 ]] && echo ' --fl2va-only')"; exit 0; fi
+  if ok_all; then log "모델 확인: $D (Diffusers 형식, ${VARS[*]} 준비됨)"; du -shL "$D" 2>/dev/null || true; next_steps; exit 0; fi
   mkdir -p "$D"
   # 텍스트 인코더(62GB)·토크나이저·프로세서는 공유 폴더의 FL2VA(또는 Ref2VA) 것과 파일이 같다(HF 해시 일치) → 링크로 재사용
   SRC=""; for s in "$H3_MODEL_DIR"/[Ff][Ll]2[Vv][Aa] "$H3_MODEL_DIR"/[Rr][Ee][Ff]2[Vv][Aa]; do [[ -f "$s/text_encoder/config.json" ]] && { SRC="$s"; break; }; done
@@ -95,7 +102,7 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
   hf_get "${INC[@]}" --local-dir "$D" || { log "받기 실패 (위 오류). 다시 실행하면 이어서 받는다"; exit 1; }
   if ! ok_all; then for v in "${VARS[@]}"; do "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$D" --variant "$v" || true; done; log "받은 뒤에도 빠진 것이 있다 (위 목록). 다시 실행하면 이어서 받는다"; exit 1; fi
   du -shL "$D" 2>/dev/null || true
-  log "완료. 다음: bash scripts/up.sh$([[ $REF == 0 ]] && echo ' --fl2va-only')"
+  next_steps
   exit 0
 fi
 
@@ -150,4 +157,4 @@ else
   fl2va_ok || { log "다운로드 후에도 불완전: $H3_MODEL_DIR"; exit 1; }
 fi
 du -sh "$H3_MODEL_DIR" 2>/dev/null || true
-log "완료. 다음: bash scripts/up.sh --engine sglang"
+next_steps
