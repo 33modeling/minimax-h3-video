@@ -51,16 +51,19 @@ else
     [[ $busy == 0 ]] && break; sleep 1
   done
 fi
-h3_model_ok "$H3_MODEL_DIR" || h3_ask_model_dir || true    # 기본·저장·검색으로도 없으면 경로를 묻는다
-if h3_model_ok "$H3_MODEL_DIR" || grep -qs "^export H3_MODEL_DIR=\"$H3_MODEL_DIR\"" "$ROOT/.cluster_env.local.sh"; then green "✓ 모델: $H3_MODEL_DIR"
-  # (sglang) Ref2VA 폴더 확인. diffusers 는 아래에서 transformer_ref 로 확인한다
-  if [[ $REF == 1 && $H3_ENGINE == sglang ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "--ref 빼고 실행 (fl2va 만)"; fi
-else
-  fail "모델 없음: $H3_MODEL_DIR (model_index.json 이나 FL2VA 폴더를 찾지 못함)"
-  echo "   그 폴더에 들어 있는 것:"; ls -la "$H3_MODEL_DIR" 2>&1 | head -20 | sed 's/^/     /'
-  echo "   $(dirname "$H3_MODEL_DIR") 안:"; ls "$(dirname "$H3_MODEL_DIR")" 2>&1 | head -20 | sed 's/^/     /'
+if [[ "$H3_ENGINE" != diffusers ]]; then
+  h3_model_ok "$H3_MODEL_DIR" || h3_ask_model_dir || true
+  if h3_model_ok "$H3_MODEL_DIR" || grep -qs "^export H3_MODEL_DIR=\"$H3_MODEL_DIR\"" "$ROOT/.cluster_env.local.sh"; then green "✓ 모델: $H3_MODEL_DIR"
+    if [[ $REF == 1 ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "--ref 빼고 실행 (fl2va 만)"; fi
+  else
+    fail "모델 없음: $H3_MODEL_DIR (model_index.json 이나 FL2VA 폴더를 찾지 못함)"
+    echo "   그 폴더에 들어 있는 것:"; ls -la "$H3_MODEL_DIR" 2>&1 | head -20 | sed 's/^/     /'
+    echo "   $(dirname "$H3_MODEL_DIR") 안:"; ls "$(dirname "$H3_MODEL_DIR")" 2>&1 | head -20 | sed 's/^/     /'
+  fi
 fi
 if [[ "$H3_ENGINE" == diffusers ]]; then
+  # provision.sh validates/installs this tree. The optional original checkpoint
+  # can live elsewhere or be absent; missing linked components are checked here.
   for v in fl2va $([[ $REF == 1 ]] && echo ref2va); do
     if python3 "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant "$v"; then green "✓ Diffusers 형식 가중치($v): $H3_DIFFUSERS_DIR"
     else fail "Diffusers 형식 가중치($v)가 아직 없다 (위 목록)" "bash scripts/provision.sh$([[ $REF == 1 ]] && echo ' --ref')  (없는 것만 받는다, 텍스트 인코더는 FL2VA 것 재사용)"; fi

@@ -20,6 +20,16 @@ if [[ -n "$S" ]]; then echo "serve log: $S"; tr '\r' '\n' < "$S" | grep -aE "ste
   echo "error lines:"; tr '\r' '\n' < "$S" | grep -aiE "error|exception|traceback|killed|signal|exitcode|nccl|out of memory|File \"" | tail -25; fi
 sec "코드"; (cd "$ROOT" && git -c safe.directory='*' log -1 --format='%h %ad %s' --date=format:'%m-%d %H:%M' 2>/dev/null || echo "git 없음 (rsync 로 올린 코드)"); ls -l --time-style=+%m-%d_%H:%M "$ROOT/src/h3video/dserver.py" | awk '{print "dserver.py 수정 시각:", $6}'
 sec "엔진·경로"; echo "H3_ENGINE=$H3_ENGINE VENV=$VENV"; echo "DIFFUSERS_DIR=${H3_DIFFUSERS_DIR:-} GUIDE_DIR=${H3_GUIDE_DIR:-}"
+sec "설치·Python·패키지 (읽기 전용)"
+if [[ -x "$VENV/bin/python" ]]; then
+  "$VENV/bin/python" "$ROOT/scripts/check_install.py" --engine "$H3_ENGINE" 2>&1
+else
+  echo "선택된 가상환경 Python이 없다: $VENV/bin/python"
+fi
+if [[ "$H3_ENGINE" == diffusers ]]; then
+  sec "설치된 Diffusers 모델 파일 (읽기 전용)"
+  python3 "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant fl2va
+fi
 sec "서버 상태"; bash "$ROOT/scripts/status.sh" 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
 sec "GPU"; nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader 2>&1; python3 "$ROOT/scripts/h3_leftovers.py" --gpu-users 2>&1
 L=$(ls -t "$H3_LOG_DIR"/up-*.log 2>/dev/null | head -1)
