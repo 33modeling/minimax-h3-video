@@ -26,7 +26,7 @@ if [[ "$H3_ENGINE" == diffusers ]]; then   # 드라이버 CUDA 12.x 노드 (clus
 else
   [[ -f "$H3_MODEL_DIR/model_index.json" ]] || { echo "모델 없음: $H3_MODEL_DIR (provision.sh 또는 H3_MODEL_DIR 확인)"; exit 1; }
   h3_cuda_compat || exit 1   # 드라이버가 CUDA 12.x 면 CUDA 13 호환 라이브러리
-  command -v sglang >/dev/null || { echo "sglang 없음 — provision.sh 실행 또는 docker 사용"; exit 1; }
+  command -v sglang >/dev/null || { echo "sglang 없음 — bash scripts/provision.sh --engine sglang 실행"; exit 1; }
   "$VENV/bin/python" "$ROOT/scripts/check_torchvision.py" --repair
 fi
 port_busy() {

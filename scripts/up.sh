@@ -96,7 +96,7 @@ PY
   if [[ $avail_ram -ge $need_ram ]]; then green "✓ 메모리 여유 ${avail_ram}GB (컨테이너 한도 반영, 필요 약 ${need_ram}GB)"
   else yellow "· 메모리 여유 ${avail_ram}GB (컨테이너 한도 반영) < 필요 약 ${need_ram}GB — 적재 중 메모리 부족으로 꺼질 수 있다$([[ $REF == 1 ]] && echo ' (--ref 빼면 약 140GB)')"; fi
 else
-  command -v sglang >/dev/null && green "✓ sglang: $(command -v sglang)" || fail "sglang 없음" "bash scripts/provision.sh (venv: $VENV)"
+  command -v sglang >/dev/null && green "✓ sglang: $(command -v sglang)" || fail "sglang 없음" "bash scripts/provision.sh --engine sglang (venv: $VENV)"
 fi
 healthy() {  # curl 이 없는 컨테이너에서도 되게 파이썬으로 /health 또는 /v1/models
   python3 - "$1" <<'PY' 2>/dev/null
@@ -198,7 +198,7 @@ CHECK_GPU="${GPUS:-${REF_GPUS:-}}"; CHECK_GPU="${CHECK_GPU%%,*}"   # 점검은 �
 if ! CUDA_VISIBLE_DEVICES="${CHECK_GPU:-${CUDA_VISIBLE_DEVICES:-}}" python3 -c "import torch; torch.zeros(1).cuda(); print('[up] torch', torch.__version__, 'CUDA', torch.version.cuda, '→', torch.cuda.get_device_name(0)); import torchaudio" ; then
   drv="$(nvidia-smi 2>/dev/null | grep -o 'CUDA Version: [0-9.]*' | awk '{print $3}')"
   fail "torch 가 GPU 를 못 쓴다 (바로 위 원래 오류 참고). 이 노드 드라이버는 CUDA ${drv:-?} 까지" \
-       "$([[ $H3_ENGINE == diffusers ]] && echo "Diffusers venv 를 다시 맞춘다: bash scripts/provision.sh --skip-model" || echo "sglang(CUDA 13)이 이 드라이버에서 안 돈다 → H3_ENGINE=diffusers bash scripts/provision.sh 후 다시 실행")"
+       "$([[ $H3_ENGINE == diffusers ]] && echo "Diffusers venv 를 다시 맞춘다: bash scripts/provision.sh --skip-model" || echo "sglang(CUDA 13)이 이 드라이버에서 안 돈다 → bash scripts/provision.sh --engine diffusers 후 다시 실행")"
   red "== 문제가 있어 서버를 띄우지 않는다. 로그: $UP_LOG"; exit 1
 fi
 green "✓ torch GPU 사용 가능"

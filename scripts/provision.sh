@@ -138,7 +138,7 @@ elif fl2va_ok; then
 elif [[ "$DOWNLOAD" != 1 ]] && h3_ask_model_dir; then
   log "모델 경로: $H3_MODEL_DIR (.cluster_env.local.sh 에 저장)"
 elif [[ "$DOWNLOAD" != 1 ]]; then
-  log "가중치가 없다: $H3_MODEL_DIR (ls 로 확인). 새로 받으려면: bash scripts/provision.sh --download"
+  log "가중치가 없다: $H3_MODEL_DIR (ls 로 확인). 새로 받으려면: bash scripts/provision.sh --engine sglang --download"
   exit 1
 else
   log "다운로드(--download): MiniMaxAI/MiniMax-H3 -> $H3_MODEL_DIR"
