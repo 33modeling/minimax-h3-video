@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # MiniMax-H3 서빙 — 포그라운드 실행 (nohup 금지). 로그는 $H3_LOG_DIR 에 tee.
-# 엔진은 cluster_env.sh 가 드라이버를 보고 고른다: CUDA 12.x → diffusers(h3video.dserver), CUDA 13+ → sglang.
+# 기본 엔진은 Diffusers(h3video.dserver). SGLang은 up.sh --engine sglang으로 선택한다.
 # 사용: source scripts/cluster_env.sh && bash scripts/serve.sh fl2va|ref2va [--gpus 0,1,2,3] [--mode speed|memory] [-- 추가 sglang 옵션]
 #   fl2va : 텍스트→영상, 첫/끝 프레임→영상 (포트 $H3_PORT_FL2VA)
 #   ref2va: 이미지·영상·오디오 레퍼런스→영상 (포트 $H3_PORT_REF2VA)
@@ -19,10 +19,10 @@ while [[ $# -gt 0 ]]; do case "$1" in
   *) echo "알 수 없는 옵션: $1"; exit 2 ;; esac; done
 if [[ -n "$GPUS" ]]; then export CUDA_VISIBLE_DEVICES="$GPUS"; NGPU=$(tr ',' '\n' <<<"$GPUS" | grep -c .); else NGPU="$H3_NUM_GPUS"; fi
 PORT="$H3_PORT_FL2VA"; [[ "$VARIANT" == ref2va ]] && PORT="$H3_PORT_REF2VA"
-if [[ "$H3_ENGINE" == diffusers ]]; then   # 드라이버 CUDA 12.x 노드 (cluster_env.sh 가 고른다)
+if [[ "$H3_ENGINE" == diffusers ]]; then   # 기본 Diffusers 엔진
   [[ -x "$VENV/bin/python" ]] || { echo "Diffusers venv 없음: $VENV — bash scripts/provision.sh"; exit 1; }
   "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant "$VARIANT" \
-    || { echo "→ bash scripts/provision.sh$([[ $VARIANT == ref2va ]] && echo ' --ref') (없는 것만 받는다)"; exit 1; }
+    || { echo "→ bash scripts/provision.sh$([[ $VARIANT == fl2va ]] && echo ' --fl2va-only') (없는 것만 받는다)"; exit 1; }
 else
   [[ -f "$H3_MODEL_DIR/model_index.json" ]] || { echo "모델 없음: $H3_MODEL_DIR (provision.sh 또는 H3_MODEL_DIR 확인)"; exit 1; }
   h3_cuda_compat || exit 1   # 드라이버가 CUDA 12.x 면 CUDA 13 호환 라이브러리

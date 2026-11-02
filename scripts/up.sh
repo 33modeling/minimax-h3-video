@@ -3,10 +3,10 @@
 # 서버 원본 로그와 오류가 이 화면에 그대로 나온다. 준비되면 PC 접속 방법을 출력하고 계속 돈다. Ctrl+C 로 전부 끈다.
 # (오래 띄워 둘 거면 직접 연 tmux 창 안에서 실행)
 #
-#   bash scripts/up.sh                 fl2va 서버(포트 30010) — CLI(h3video gen)는 이것만 있으면 된다
-#   bash scripts/up.sh --ref           ref2va 서버도 (포트 30011)
+#   bash scripts/up.sh                 fl2va(30010) + ref2va(30011) 함께 시작 (기본 Diffusers)
+#   bash scripts/up.sh --fl2va-only    글·첫/끝 프레임만 쓸 때 fl2va만 시작 (--ref는 기존 호환용)
 #   bash scripts/up.sh --engine sglang 명시한 경우만 SGLang (기본 Diffusers)
-#     GPU: --gpus 를 안 주면 비어 있는 GPU 를 쓴다. diffusers 엔진은 빈 GPU 전부(--ref 면 반씩), sglang 은 4장씩. 다른 프로세스가 쓰는 GPU 는 피한다
+#     GPU: --gpus 를 안 주면 비어 있는 GPU 를 쓴다. diffusers 엔진은 빈 GPU를 두 서버에 반씩(--fl2va-only면 전부), sglang 은 4장씩. 다른 프로세스가 쓰는 GPU 는 피한다
 #   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7 --mode memory
 #   bash scripts/up.sh --force         이 계정의 다른 GPU 작업을 먼저 끄고 띄운다 (기본은 GPU 가 모자라거나 서버당 1장이면 목록을 보여 주고 y/N 으로 묻는다)
 #   bash scripts/up.sh --check         점검만
@@ -15,10 +15,10 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"
-GPUS=""; REF_GPUS=""; REF=0; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"; ENGINE=diffusers
+GPUS=""; REF_GPUS=""; REF=1; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"; ENGINE=diffusers
 while [[ $# -gt 0 ]]; do case "$1" in
   --engine) ENGINE="${2:-}"; [[ "$ENGINE" == diffusers || "$ENGINE" == sglang ]] || { echo "--engine diffusers 또는 --engine sglang 을 지정하세요" >&2; exit 2; }; shift 2 ;;
-  --ref) REF=1; shift ;; --check) CHECK=1; shift ;; --force|-y) FORCE=1; shift ;;
+  --ref) REF=1; shift ;; --fl2va-only) REF=0; shift ;; --check) CHECK=1; shift ;; --force|-y) FORCE=1; shift ;;
   --web|--no-web) echo "웹 UI 는 이제 따로 띄운다: 다른 창에서 bash scripts/web.sh (H3 서버와 서로 안 건드린다)"; shift ;;
   --gpus) GPUS="$2"; shift 2 ;; --ref-gpus) REF_GPUS="$2"; shift 2 ;;
   --mode) MODE_ARGS=(--mode "$2"); shift 2 ;; --cors) echo "--cors 는 웹 UI 옵션이다: bash scripts/web.sh --cors $2"; shift 2 ;;
@@ -57,7 +57,7 @@ fi
 if [[ "$H3_ENGINE" != diffusers ]]; then
   h3_model_ok "$H3_MODEL_DIR" || h3_ask_model_dir || true
   if h3_model_ok "$H3_MODEL_DIR" || grep -qs "^export H3_MODEL_DIR=\"$H3_MODEL_DIR\"" "$ROOT/.cluster_env.local.sh"; then green "✓ 모델: $H3_MODEL_DIR"
-    if [[ $REF == 1 ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "--ref 빼고 실행 (fl2va 만)"; fi
+    if [[ $REF == 1 ]] && ! compgen -G "$H3_MODEL_DIR/[Rr][Ee][Ff]2[Vv][Aa]" >/dev/null; then fail "Ref2VA 가중치 없음: $H3_MODEL_DIR/Ref2VA" "글·첫/끝 프레임만 필요하면 --fl2va-only"; fi
   else
     fail "모델 없음: $H3_MODEL_DIR (model_index.json 이나 FL2VA 폴더를 찾지 못함)"
     echo "   그 폴더에 들어 있는 것:"; ls -la "$H3_MODEL_DIR" 2>&1 | head -20 | sed 's/^/     /'
@@ -69,7 +69,7 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
   # can live elsewhere or be absent; missing linked components are checked here.
   for v in fl2va $([[ $REF == 1 ]] && echo ref2va); do
     if python3 "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant "$v"; then green "✓ Diffusers 형식 가중치($v): $H3_DIFFUSERS_DIR"
-    else fail "Diffusers 형식 가중치($v)가 아직 없다 (위 목록)" "bash scripts/provision.sh$([[ $REF == 1 ]] && echo ' --ref')  (없는 것만 받는다, 텍스트 인코더는 FL2VA 것 재사용)"; fi
+    else fail "Diffusers 형식 가중치($v)가 아직 없다 (위 목록)" "bash scripts/provision.sh$([[ $REF == 0 ]] && echo ' --fl2va-only')  (없는 것만 받는다, 텍스트 인코더는 FL2VA 것 재사용)"; fi
   done
   if [[ -s "$H3_GUIDE_DIR/VIDEO_PROMPT_WRITING_GUIDE_base_en.md" && -s "$H3_GUIDE_DIR/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md" ]]; then
     green "✓ 프롬프트 다듬기: 공식 작성 가이드 있음 (짧은 요청을 H3 공식 형식으로 다시 써서 생성)"
@@ -94,7 +94,7 @@ print(max(0, avail) // 2**30)
 PY
 )
   if [[ $avail_ram -ge $need_ram ]]; then green "✓ 메모리 여유 ${avail_ram}GB (컨테이너 한도 반영, 필요 약 ${need_ram}GB)"
-  else yellow "· 메모리 여유 ${avail_ram}GB (컨테이너 한도 반영) < 필요 약 ${need_ram}GB — 적재 중 메모리 부족으로 꺼질 수 있다$([[ $REF == 1 ]] && echo ' (--ref 빼면 약 140GB)')"; fi
+  else yellow "· 메모리 여유 ${avail_ram}GB (컨테이너 한도 반영) < 필요 약 ${need_ram}GB — 적재 중 메모리 부족으로 꺼질 수 있다$([[ $REF == 1 ]] && echo ' (--fl2va-only면 약 140GB)')"; fi
 else
   command -v sglang >/dev/null && green "✓ sglang: $(command -v sglang)" || fail "sglang 없음" "bash scripts/provision.sh --engine sglang (venv: $VENV)"
 fi
@@ -151,7 +151,7 @@ select_gpus() {   # → GPUS·REF_GPUS 를 정하고, 문제는 GERR 에 모은�
   else PER=4; fi
   for w in "${AUTO[@]}"; do
     got=(); for i in "${FREE[@]}"; do [[ " ${TAKEN[*]} " == *" $i "* ]] && continue; got+=("$i"); [[ ${#got[@]} -ge $PER ]] && break; done
-    if [[ ${#got[@]} -lt $PER ]]; then gerr "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "GPU 를 잡은 작업을 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --ref 빼기')"; continue; fi
+    if [[ ${#got[@]} -lt $PER ]]; then gerr "$w: 비어 있는 GPU 가 ${#got[@]}장뿐이다 (필요 ${PER}장)" "GPU 를 잡은 작업을 끄거나 끝나길 기다린다$([[ $REF == 1 ]] && echo ', 또는 --fl2va-only')"; continue; fi
     TAKEN+=("${got[@]}"); sel=$(IFS=,; echo "${got[*]}")
     [[ $w == fl2va ]] && GPUS=$sel; [[ $w == ref2va ]] && REF_GPUS=$sel
   done

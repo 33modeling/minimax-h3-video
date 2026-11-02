@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 프로비저닝 (멱등): venv + 엔진 + MiniMax-H3 가중치 확인.
 #   기본 diffusers 엔진: torch 2.7.1(CUDA 12.6)+diffusers 0.41 venv, Diffusers 형식 가중치 중 없는 것만 받음
-#                                (fl2va 약 72GB, --ref 면 +62GB. 텍스트 인코더 62GB 는 FL2VA 것을 링크로 재사용)
+#                                (기본 FL2VA + Ref2VA, fl2va 약 72GB + ref2va 약 62GB. 텍스트 인코더 62GB 는 FL2VA 것을 링크로 재사용)
 #   --engine sglang 을 명시한 경우에만 SGLang 엔진
 # 사용: bash scripts/provision.sh [--ref] [--fl2va-only] [--skip-model] [--download]
 # (sglang 엔진) 가중치는 기본으로 **받지 않는다**: 이미 받아 둔 곳을 찾아 확인만 한다(cluster_env.sh 가 자동으로 찾음).
@@ -9,12 +9,12 @@
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"
-FL2VA_ONLY=0 SKIP_MODEL=0 DOWNLOAD=0 REF=0 ENGINE=diffusers
+FL2VA_ONLY=0 SKIP_MODEL=0 DOWNLOAD=0 REF=1 ENGINE=diffusers
 PYTHON_BOOTSTRAP="${PYTHON_BOOTSTRAP:-python3.12}"
 while [[ $# -gt 0 ]]; do case "$1" in
   --engine) ENGINE="${2:-}"; [[ "$ENGINE" == diffusers || "$ENGINE" == sglang ]] || { echo "--engine diffusers 또는 --engine sglang 을 지정하세요" >&2; exit 2; }; shift 2 ;;
-  --fl2va-only) FL2VA_ONLY=1; shift ;; --skip-model) SKIP_MODEL=1; shift ;; --download) DOWNLOAD=1; shift ;; --ref) REF=1; shift ;;
-  --help|-h) echo "사용: bash scripts/provision.sh [--engine diffusers|sglang] [--ref] [--skip-model] [--download]"; exit 0 ;;
+  --fl2va-only) FL2VA_ONLY=1; REF=0; shift ;; --skip-model) SKIP_MODEL=1; shift ;; --download) DOWNLOAD=1; shift ;; --ref) FL2VA_ONLY=0; REF=1; shift ;;
+  --help|-h) echo "사용: bash scripts/provision.sh [--engine diffusers|sglang] [--fl2va-only|--ref] [--skip-model] [--download] (기본: FL2VA+Ref2VA)"; exit 0 ;;
   *) echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
 esac; done
 export H3_ENGINE_OVERRIDE="$ENGINE"
@@ -72,10 +72,10 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
       || log "경고: 가이드를 못 받았다 → 서버는 프롬프트를 다듬지 않고 그대로 쓴다 (다시 실행하면 재시도)"
   fi
   ls "$H3_GUIDE_DIR"/VIDEO_PROMPT_WRITING_GUIDE_*_en.md 2>/dev/null | sed 's/^/  가이드: /' || true
-  if [[ "$SKIP_MODEL" == 1 ]]; then log "모델 단계 스킵"; log "완료. 다음: bash scripts/up.sh"; exit 0; fi
+  if [[ "$SKIP_MODEL" == 1 ]]; then log "모델 단계 스킵"; log "완료. 다음: bash scripts/up.sh$([[ $REF == 0 ]] && echo ' --fl2va-only')"; exit 0; fi
   D="$H3_DIFFUSERS_DIR"; VARS=(fl2va); [[ "$REF" == 1 ]] && VARS+=(ref2va)
   ok_all() { local v; for v in "${VARS[@]}"; do "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$D" --variant "$v" --quiet || return 1; done; }
-  if ok_all; then log "모델 확인: $D (Diffusers 형식, ${VARS[*]} 준비됨)"; du -shL "$D" 2>/dev/null || true; log "완료. 다음: bash scripts/up.sh$([[ $REF == 1 ]] && echo ' --ref')"; exit 0; fi
+  if ok_all; then log "모델 확인: $D (Diffusers 형식, ${VARS[*]} 준비됨)"; du -shL "$D" 2>/dev/null || true; log "완료. 다음: bash scripts/up.sh$([[ $REF == 0 ]] && echo ' --fl2va-only')"; exit 0; fi
   mkdir -p "$D"
   # 텍스트 인코더(62GB)·토크나이저·프로세서는 공유 폴더의 FL2VA(또는 Ref2VA) 것과 파일이 같다(HF 해시 일치) → 링크로 재사용
   SRC=""; for s in "$H3_MODEL_DIR"/[Ff][Ll]2[Vv][Aa] "$H3_MODEL_DIR"/[Rr][Ee][Ff]2[Vv][Aa]; do [[ -f "$s/text_encoder/config.json" ]] && { SRC="$s"; break; }; done
@@ -95,7 +95,7 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
   hf_get "${INC[@]}" --local-dir "$D" || { log "받기 실패 (위 오류). 다시 실행하면 이어서 받는다"; exit 1; }
   if ! ok_all; then for v in "${VARS[@]}"; do "$VENV/bin/python" "$ROOT/scripts/check_diffusers_model.py" "$D" --variant "$v" || true; done; log "받은 뒤에도 빠진 것이 있다 (위 목록). 다시 실행하면 이어서 받는다"; exit 1; fi
   du -shL "$D" 2>/dev/null || true
-  log "완료. 다음: bash scripts/up.sh$([[ $REF == 1 ]] && echo ' --ref')"
+  log "완료. 다음: bash scripts/up.sh$([[ $REF == 0 ]] && echo ' --fl2va-only')"
   exit 0
 fi
 

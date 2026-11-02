@@ -1,85 +1,135 @@
 # 사용법
 
-## H100에 설치된 `h3video`는 어디에 있나요?
+## H100 설정부터 영상 생성까지
 
-**`h3video`가 없다고 나오면:** `up.sh`를 실행했던 H100의 코드 폴더에서 아래 두 줄을 입력하세요. 설치된 Python으로 코드를 직접 실행하므로 `h3video` 실행 파일이 없어도 됩니다.
+### 1. H100에서 코드 폴더 열기
+
+이 안내의 명령은 H100에 접속한 터미널에서 실행합니다. 코드 폴더는 scripts/up.sh가 있는 곳입니다. 아래 경로는 예시이므로 다른 위치에 복사했다면 그 폴더로 이동하세요.
 
 ```bash
+cd /user-volume/minimax-h3-video
+source scripts/cluster_env.sh
+```
+
+저장 위치를 바꿨다면 코드 폴더의 .cluster_env.local.sh 설정을 사용합니다. source는 그 설정을 읽고 설치된 Python 환경을 PATH에 넣습니다. 새 터미널에서도 다시 실행해야 합니다.
+
+### 2. 최초 설치 · 두 모델 준비
+
+처음 설치할 때 실행합니다. 설치가 정상 완료됐다면 이 단계는 건너뛰세요. 기본 엔진은 Diffusers이며, 최신 provision.sh는 FL2VA와 Ref2VA를 모두 준비합니다. 아래 --ref는 구버전에서도 참고 자료 모델을 포함하도록 명시합니다.
+
+```bash
+bash scripts/provision.sh --ref
+```
+
+이미 받은 파일은 재사용하고 부족한 파일을 준비합니다. Ref2VA 가중치가 없다고 나올 때도 이 명령을 사용합니다. 글·첫/끝 프레임만 쓸 때는 --fl2va-only를 선택할 수 있습니다. SGLang은 --engine sglang을 명시할 때만 선택합니다.
+
+### 3. 창 1 · 생성 서버 두 개 켜기
+
+H100 4장 기준으로 GPU 0·1은 FL2VA, GPU 2·3은 Ref2VA에 배정합니다. 선택한 GPU에서 다른 작업이 실행 중이면 먼저 사용 상태를 확인하세요. 이 터미널은 계속 켜 둡니다.
+
+```bash
+bash scripts/up.sh --ref --gpus 0,1 --ref-gpus 2,3
+```
+
+최신 up.sh는 옵션 없이 실행해도 두 서버를 시작하고 빈 GPU를 나눕니다. 위 명령은 구버전에서도 두 서버를 명시적으로 시작합니다. 기존 up.sh가 실행 중이라면 그 창에서 Ctrl+C로 종료한 뒤 실행하세요. 재실행하면 기존 H3 생성 작업이 끊깁니다.
+
+### 4. 두 준비 완료 문구 확인
+
+아래 두 줄이 모두 나와야 글·첫 프레임 생성과 이미지·영상 참고 생성을 함께 사용할 수 있습니다. 8790은 웹 UI 포트이며 생성 서버 포트와 다릅니다.
+
+```text
+✓ fl2va 준비됨 (포트 30010)
+✓ ref2va 준비됨 (포트 30011)
+```
+
+30010만 준비됐다면 참고 자료용 Ref2VA가 준비되지 않은 상태입니다. Ref2VA로 만드는 명령은 30011을 사용합니다. 포트를 .cluster_env.local.sh에서 변경했다면 실제 출력된 포트를 따릅니다.
+
+### 5. 창 2 · CLI 실행
+
+같은 H100 노드에 새 터미널을 열고 같은 코드 폴더로 이동합니다. h3video 명령이 없더라도 아래처럼 설치된 Python으로 직접 실행할 수 있습니다.
+
+```bash
+cd /user-volume/minimax-h3-video
 source scripts/cluster_env.sh
 "$VENV/bin/python" -m h3video.cli --help
 ```
 
-영상 생성도 `"$VENV/bin/python" -m h3video.cli gen "비 오는 밤거리" -s 8`처럼 실행합니다. 아래 예시의 맨 앞 `h3video`를 `"$VENV/bin/python" -m h3video.cli`로 바꾸면 됩니다. 이 방법도 `$VENV/bin/python`이 없다면 가상환경 경로와 설치 상태를 확인해야 합니다.
+아래 예시는 실행 파일 등록 여부와 관계없이 같은 Python 직접 실행 형식을 사용합니다. h3video가 정상 등록돼 있다면 그 부분을 h3video로 줄여 써도 됩니다.
 
-기본 Diffusers 설치의 실행 파일은 다음 위치입니다.
+### 6. 이미지·영상 원본 위치 확인
 
-```text
-/group-volume/minsoo3.kim/minimax-h3-video/.venv-diffusers/bin/h3video
-```
-
-코드 폴더와 실행 파일 폴더는 다릅니다. 코드 폴더는 `scripts/up.sh`와 `scripts/cluster_env.sh`가 있는 체크아웃입니다. 아래 `/user-volume/minimax-h3-video`는 코드 폴더의 예시이므로, 다른 곳에 복사했다면 그 폴더에서 실행하세요. 모두 **H100에 접속한 터미널**에서 입력합니다.
+파일은 H100 노드에서 읽을 수 있는 경로에 둡니다. 다른 컴퓨터의 파일 경로만 적으면 전송되지 않습니다. H3_INBOX_DIR는 권장 보관 장소이며 다른 읽기 가능한 경로도 가능합니다.
 
 ```bash
-cd /user-volume/minimax-h3-video
-source scripts/cluster_env.sh
-printf '실행 파일: %s\n입력 폴더: %s\n결과 폴더: %s\n' "$VENV/bin/h3video" "$H3_INBOX_DIR" "$H3_OUTPUT_DIR"
-"$VENV/bin/h3video" --help
+printf 'Python: %s\nCLI: %s\n입력: %s\n결과: %s\n' "$VENV/bin/python" "$VENV/bin/h3video" "$H3_INBOX_DIR" "$H3_OUTPUT_DIR"
 ```
 
-`source`가 설치된 가상환경의 `bin`을 PATH에 넣습니다. 이후 같은 터미널에서는 `h3video`라고 짧게 써도 됩니다. 새 터미널에서는 코드 폴더로 이동해 `source scripts/cluster_env.sh`를 다시 실행하세요. `.cluster_env.local.sh`에서 `STORAGE_ROOT`나 `H3_DIFFUSERS_VENV`를 바꿨다면 위에 출력되는 경로가 실제 설정입니다.
+아래 입력 예시는 H3_INBOX_DIR에 1.png와 sample.mp4를 이미 복사한 경우입니다. 실제 파일명으로 바꾸세요. 공백·한글이 있는 경로는 따옴표로 묶습니다.
 
-| 구분 | 기본 위치 |
-|---|---|
-| 실행 파일 | `$VENV/bin/h3video` → `/group-volume/minsoo3.kim/minimax-h3-video/.venv-diffusers/bin/h3video` |
-| 이미지·영상 입력 | `$H3_INBOX_DIR` → `/group-volume/minsoo3.kim/minimax-h3-video/inbox` |
-| 생성 결과·작업 기록 | `$H3_OUTPUT_DIR` → `/group-volume/minsoo3.kim/minimax-h3-video/outputs` |
-| 코드·설정 | `scripts/up.sh`가 있는 폴더, 예: `/user-volume/minimax-h3-video` |
+### 7. 글로 영상 생성
 
-입력 파일은 **H100 노드에서 읽을 수 있는 경로**에 있어야 합니다. 다른 컴퓨터의 경로만 적으면 전송되지 않습니다. `inbox`는 권장 보관 장소이며 다른 읽기 가능한 경로도 사용할 수 있습니다. 아래는 `inbox`에 `1.png`와 `sample.mp4`를 이미 복사한 경우입니다.
+FL2VA 서버(기본 30010)로 요청합니다. 글만 사용하는 첫 실행 예시입니다.
 
 ```bash
-# 파일 확인: 생성 요청을 보내지 않음
-h3video inspect "$H3_INBOX_DIR/1.png" "$H3_INBOX_DIR/sample.mp4"
+"$VENV/bin/python" -m h3video.cli gen "비 오는 밤거리" \
+  -s 8 -o "$H3_OUTPUT_DIR/rain.mp4"
+```
 
-# 요청 미리 보기: GPU 작업을 제출하지 않음
-h3video gen "1번 영상의 동작을 참고해 1번 사진의 인물이 걷는다" \
-  -i "$H3_INBOX_DIR/1.png" -i "$H3_INBOX_DIR/sample.mp4" \
+완료되면 결과 파일 경로가 출력됩니다. -s는 영상 길이(초), -o는 완성본을 추가로 복사할 경로입니다. 장면·프롬프트·작업 상태도 H3_OUTPUT_DIR 아래에 보관합니다.
+
+### 8. 사진·영상 참고 생성
+
+Ref2VA 서버(기본 30011)를 사용합니다. 먼저 실제 파일을 검사하고 요청 미리 보기를 확인한 다음 생성합니다.
+
+```bash
+"$VENV/bin/python" -m h3video.cli inspect \
+  "$H3_INBOX_DIR/1.png" "$H3_INBOX_DIR/sample.mp4"
+
+"$VENV/bin/python" -m h3video.cli gen \
+  "1번 영상의 동작을 참고해 1번 사진의 인물이 걷는다" \
+  --image "$H3_INBOX_DIR/1.png" --video "$H3_INBOX_DIR/sample.mp4" \
   -s 8 -o "$H3_OUTPUT_DIR/reference.mp4" --dry-run --json
 ```
 
-실제 생성은 같은 명령에서 `--dry-run --json`을 빼고 실행합니다. 참고 자료를 쓰는 이 예시는 Ref2VA 서버가 준비돼 있어야 합니다. 첫 프레임용 사진은 `-i` 대신 `--first`로 넣습니다. `h3video`를 쓰기 위해 `up.sh`를 다시 실행할 필요는 없습니다.
+inspect는 입력 검사이며 --dry-run --json은 작업을 제출하지 않는 요청 미리 보기입니다. 실제 생성은 마지막 명령의 --dry-run --json을 빼고 실행하세요. --image는 참고 사진, --video는 참고 영상입니다. 첫 화면으로 고정할 사진은 --first를 사용하며 참고 자료 옵션과 함께 쓰지 않습니다. 원본 영상의 얼굴을 픽셀 단위로 합성하는 기능은 아닙니다.
 
-**`command not found` 또는 파일 없음:** 먼저 위의 `source`를 실행하고 `ls -l "$VENV/bin/h3video"`로 확인하세요. `$VENV/bin/python`은 있는데 CLI 실행 파일만 없다면 코드 폴더에서 `"$VENV/bin/python" -m pip install --no-deps -e .`로 실행 명령만 등록할 수 있습니다. 이 명령은 모델을 받거나 PyTorch·CUDA 패키지를 다시 설치하지 않습니다. `$VENV/bin/python`도 없다면 `.cluster_env.local.sh`의 경로와 기존 `provision.sh` 설치 완료 여부부터 확인하세요.
+### 9. 웹 UI · 선택
 
-
-## 순서
-
-**창 1 — H3 서버** (계속 켜 둔다)
+CLI 대신 브라우저 화면을 쓸 때만 H100의 별도 터미널에서 실행합니다. 생성 서버가 있는 창 1은 그대로 둡니다.
 
 ```bash
 cd /user-volume/minimax-h3-video
-bash scripts/up.sh            # 참고 자료(--image/--video/--audio)도 쓰면 --ref
-```
-
-`✓ fl2va 준비됨` 이 나오면 된다. 이 계정의 다른 작업이 GPU 를 쓰고 있으면 목록을 보여 주고 끌지 묻는다(y/N). 묻지 않고 끄려면 `--force`.
-
-**창 2 — 영상 만들기**
-
-```bash
-cd /user-volume/minimax-h3-video && source scripts/cluster_env.sh
-h3video gen prompt.txt -s 10
-```
-
-끝나면 `결과 파일:` 아래에 mp4 경로가 나온다(`--open` 이면 바로 재생). 기다리는 동안 한 줄에 경과 시간·장면 i/n·단계가 나오고, Ctrl+C 로 멈추면 이어 하는 명령을 알려 준다.
-
-**창 3 — 웹 UI** (필요할 때만)
-
-```bash
 bash scripts/web.sh
 ```
 
-**끄기**: 창 1·창 3 에서 Ctrl+C. 다른 창에서는 `bash scripts/down.sh`(H3 서버), `bash scripts/web.sh --stop`(웹 UI).
-H3 서버와 웹 UI 는 서로 안 건드린다. 만드는 중에는 창 1 의 `up.sh` 를 다시 실행하지 않는다(서버를 새로 띄워 작업이 끊긴다).
+기본 웹 UI 포트는 8790입니다. 다른 컴퓨터의 브라우저에서 H100으로 접속한다면 기존에 사용하던 접속 주소나 터널을 사용하세요. 127.0.0.1은 명령·브라우저를 실행한 장치 자신이므로 다른 컴퓨터를 가리키지 않습니다.
+
+### 10. 응답 없음 · 종료·재사용
+
+이미 켠 서버에 연결되지 않을 때는 H3를 띄운 같은 노드에서 상태부터 확인합니다. 서버가 응답하지 않는다는 메시지만으로 재시작하지 마세요.
+
+```bash
+bash scripts/status.sh
+
+# 현재 CLI가 쓰는 두 생성 서버 주소 확인
+"$VENV/bin/python" -m h3video.cli config
+```
+
+30010만 준비되면 Ref2VA가 빠진 것이고, 두 서버가 준비됐는데도 실패하면 CLI를 실행한 노드와 endpoint/ref-endpoint 값을 비교합니다. 종료는 창 1에서 Ctrl+C, 웹 UI는 해당 창에서 Ctrl+C입니다. 다음 날에는 창 1의 서버 실행과 창 2의 source부터 반복하며 모델 설치를 다시 할 필요는 없습니다.
+
+### 설치·입력·결과 경로
+
+| 구분 | 기본 위치 |
+|---|---|
+| 코드·스크립트 | `scripts/up.sh`가 있는 폴더, 예: `/user-volume/minimax-h3-video` |
+| 설치된 Python | `$VENV/bin/python` → `/group-volume/minsoo3.kim/minimax-h3-video/.venv-diffusers/bin/python` |
+| CLI 실행 파일 | `$VENV/bin/h3video` → `/group-volume/minsoo3.kim/minimax-h3-video/.venv-diffusers/bin/h3video` |
+| 원본 입력 권장 위치 | `$H3_INBOX_DIR` → `/group-volume/minsoo3.kim/minimax-h3-video/inbox` |
+| 결과·작업 기록 | `$H3_OUTPUT_DIR` → `/group-volume/minsoo3.kim/minimax-h3-video/outputs` |
+
+`.cluster_env.local.sh`에서 저장 위치를 바꿨다면 위 기본값 대신 6단계에 출력되는 경로를 사용합니다.
+
+**Python은 있는데 h3video 실행 파일만 없을 때:** 코드 폴더에서 `"$VENV/bin/python" -m pip install --no-deps -e .`로 실행 명령만 등록할 수 있습니다. 모델이나 PyTorch·CUDA 패키지를 다시 설치하지 않습니다. `$VENV/bin/python`도 없으면 `.cluster_env.local.sh`의 경로와 `provision.sh` 설치 완료 여부를 확인하세요.
 
 ## 처음이면
 
@@ -112,7 +162,7 @@ h3video gen prompt.txt --image a.png --video m.mp4 --audio v.wav   # 사진·영
 ```
 
 - `--first`/`--last`: 그 그림이 영상의 실제 첫·끝 장면이 된다.
-- `--image`/`--video`/`--audio`: 얼굴·옷·화풍·움직임·목소리를 참고한다. 창 1 을 `up.sh --ref` 로 띄웠을 때만. `--first`/`--last` 와 같이 못 쓴다.
+- `--image`/`--video`/`--audio`: 얼굴·옷·화풍·움직임·목소리를 참고한다. 기본 up.sh가 시작하는 Ref2VA 서버를 사용한다. `--first`/`--last` 와 같이 못 쓴다.
 - 참고 자료는 사진 9·영상 3·소리 3(합계 12)까지. 소리만 넣을 수는 없다. 넣은 순서대로 1번·2번이고, 프롬프트에 "1번 사진" "1번 영상" 처럼 쓴다(`<Picture 1>` `<Video 1>` 표기도 된다).
 
 ## 얼굴·그림체 바꾸기
@@ -273,7 +323,7 @@ h3video fetch <video_id> -o a.mp4     # 서버에 남은 완성본 받기 (참�
 | 보이는 것 | 할 일 |
 |---|---|
 | `서버가 응답하지 않는다` / `Connection refused` | 창 1 이 꺼졌다 → `bash scripts/up.sh` |
-| 참고 자료 요청이 안 된다 | 창 1 을 `bash scripts/up.sh --ref` 로 |
+| 참고 자료 요청이 안 된다 | `bash scripts/status.sh`로 ref2va 준비 여부 확인. 이전 코드라면 창 1을 `bash scripts/up.sh --ref --gpus 0,1 --ref-gpus 2,3`로 다시 시작 |
 | 프롬프트를 안 따른다 | `h3video ir` 로 바뀐 결과를 보고 고쳐서 `--raw` |
 | `GPU 메모리 부족(OOM)` | 메시지대로 `-s` 줄이기 또는 `--size 576` |
 | GPU 가 다른 작업에 잡혀 있다 | 창 1 의 질문에 y, 또는 `bash scripts/up.sh --force` |

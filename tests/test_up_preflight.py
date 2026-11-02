@@ -15,7 +15,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 class StartupPreflightTest(unittest.TestCase):
-    def fixture(self, *, raw=False, converted=True, incomplete=False, engine='diffusers', reference=False, engine_option=True, driver='12.2'):
+    def fixture(self, *, raw=False, converted=True, incomplete=False, engine='diffusers', reference=True, engine_option=True, driver='12.2'):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -104,12 +104,47 @@ class StartupPreflightTest(unittest.TestCase):
         return project, env, root
 
     def check(self, **kwargs):
+        fl2va_only=kwargs.pop('fl2va_only', False)
         project, env, root = self.fixture(**kwargs)
-        flags=(['--engine',kwargs.get('engine','diffusers')] if kwargs.get('engine_option',True) else [])+(['--ref'] if kwargs.get('reference') else [])
+        flags=(['--engine',kwargs.get('engine','diffusers')] if kwargs.get('engine_option',True) else [])+(['--ref'] if kwargs.get('reference') else [])+(['--fl2va-only'] if fl2va_only else [])
         result = subprocess.run(['bash',str(project/'scripts/up.sh'),'--check',*flags],cwd=project,env=env,input='',capture_output=True,text=True,timeout=20)
         self.assertNotIn('== fl2va 시작', result.stdout)
         self.assertNotIn('unbound variable', result.stderr)
         return result, root
+
+    def test_default_startup_checks_both_variants_and_splits_four_gpus(self):
+        result, root = self.check(engine_option=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Diffusers 형식 가중치(fl2va)', result.stdout)
+        self.assertIn('Diffusers 형식 가중치(ref2va)', result.stdout)
+        self.assertIn('fl2va GPU 0,1', result.stdout)
+        self.assertIn('ref2va GPU 2,3', result.stdout)
+
+    def test_default_startup_blocks_missing_reference_weights(self):
+        result, root = self.check(reference=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Diffusers 형식 가중치(ref2va)가 아직 없다', result.stdout)
+
+    def test_explicit_fl2va_only_accepts_base_weights_and_all_four_gpus(self):
+        result, root = self.check(reference=False, fl2va_only=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('fl2va GPU 0,1,2,3', result.stdout)
+        self.assertNotIn('Diffusers 형식 가중치(ref2va)', result.stdout)
+
+    def test_provision_default_prepares_both_variants(self):
+        project, env, root = self.fixture()
+        result=subprocess.run(['bash',str(project/'scripts/provision.sh')],env=env,capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('fl2va ref2va 준비됨',result.stdout)
+        trace=(root/'trace.log').read_text()
+        self.assertIn("'ref2va'",trace)
+
+    def test_provision_explicit_base_only_does_not_require_reference_weights(self):
+        project, env, root = self.fixture(reference=False)
+        result=subprocess.run(['bash',str(project/'scripts/provision.sh'),'--fl2va-only'],env=env,capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('fl2va 준비됨',result.stdout)
+        self.assertNotIn("'ref2va'",(root/'trace.log').read_text())
 
     def test_complete_converted_model_does_not_require_an_original_checkpoint(self):
         result, root = self.check(raw=False, converted=True)
