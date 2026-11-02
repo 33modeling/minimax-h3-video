@@ -159,7 +159,7 @@ class H3Client:
             with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
                 payload = r.read()
         except urllib.error.HTTPError as e:
-            error = H3Error(f"{method} {path} -> HTTP {e.code}: {e.read()[:500].decode(errors='replace')}")
+            error = H3Error(f"{method} {path} -> HTTP {e.code}: {e.read(500).decode(errors='replace')}")
             error.http_status = e.code
             raise error from e
         except urllib.error.URLError as e:
@@ -246,13 +246,45 @@ class H3Client:
             time.sleep(poll)
 
     def download(self, video_id: str, out_path: str | os.PathLike) -> Path:
-        out = Path(out_path)
+        """Stream to a sibling temporary file; failed downloads preserve existing output."""
+        out = Path(out_path).expanduser()
         out.parent.mkdir(parents=True, exist_ok=True)
-        data = self.content(video_id)
-        if len(data) < 1000:
-            raise H3Error(f"다운로드 내용이 너무 작다 ({len(data)} bytes): {data[:200]!r}")
-        out.write_bytes(data)
-        return out
+        path = f'/v1/videos/{video_id}/content'
+        request = urllib.request.Request(self.endpoint + path, headers={'Accept': 'video/mp4'})
+        try:
+            response = urllib.request.urlopen(request, timeout=self.timeout)
+        except urllib.error.HTTPError as error:
+            failure = H3Error(f'GET {path} -> HTTP {error.code}: {error.read(500).decode(errors="replace")}')
+            failure.http_status = error.code
+            raise failure from error
+        except (OSError, http.client.HTTPException) as error:
+            raise H3Error(f'GET {path} 연결 실패 ({self.endpoint}): {error}') from error
+        temporary = None
+        try:
+            with response, tempfile.NamedTemporaryFile(dir=out.parent, prefix='.h3-download-', delete=False) as stream:
+                temporary = Path(stream.name)
+                expected = response.headers.get('Content-Length')
+                copied = 0
+                while True:
+                    try:
+                        chunk = response.read(1024 * 1024)
+                    except (OSError, http.client.HTTPException) as error:
+                        raise H3Error(f'GET {path} 다운로드 연결이 끊겼다: {error}') from error
+                    if not chunk:
+                        break
+                    stream.write(chunk)
+                    copied += len(chunk)
+                if copied < 1000:
+                    raise H3Error(f'다운로드 내용이 너무 작다 ({copied} bytes)')
+                if expected and expected.isdigit() and copied != int(expected):
+                    raise H3Error(f'다운로드가 끝나지 않았다: {copied}/{expected} bytes')
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, out)
+            return out
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def generate(self, req: VideoRequest, out_path: str | os.PathLike, poll: float = 3.0,
                  timeout: float = 3600.0, on_progress: Callable[[dict], None] | None = None) -> Path:

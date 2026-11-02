@@ -1,0 +1,146 @@
+{
+  "date": "2026-11-03",
+  "sourceBase": "3760b5191c7baa75ba91751827c440df8d52a956",
+  "scope": "CLI workflow audit; code/control-flow tests, not H100 inference measurements",
+  "findings": [
+    {
+      "case": "invalid-batch-size",
+      "before": {
+        "case": "invalid-batch-size",
+        "exit": 0,
+        "stdout": "[dry-run] t2va, 총 8초 → 장면 1개 [8], 화면비 16:9, 시드 0. 서버에 보내지 않았다.\n--- 장면 1: t2va 8초\n{\n  \"task\": \"t2va\",\n  \"prompt\": \"example\",\n  \"conditions\": [],\n  \"target\": {\n    \"short_edge\": 123,\n    \"aspect_ratio\": \"16:9\",\n    \"duration_seconds\": 8\n  },\n  \"seed\": 0\n}\n",
+        "networkAttempts": 0
+      },
+      "after": {
+        "case": "invalid-batch-size",
+        "exit": 1,
+        "stdout": "",
+        "networkAttempts": 0
+      },
+      "status": "fixed"
+    },
+    {
+      "case": "audio-only-batch",
+      "before": {
+        "case": "audio-only-batch",
+        "exit": 0,
+        "stdout": "[dry-run] ref2va, 총 8초 → 장면 1개 [8], 화면비 16:9, 시드 0. 서버에 보내지 않았다.\n--- 장면 1: ref2va 8초\n{\n  \"task\": \"ref2va\",\n  \"prompt\": \"example\",\n  \"conditions\": [\n    {\n      \"type\": \"audio\",\n      \"uri\": \"https://fixture.test/voice.wav\",\n      \"role\": \"reference\"\n    }\n  ],\n  \"target\": {\n    \"short_edge\": 768,\n    \"aspect_ratio\": \"16:9\",\n    \"duration_seconds\": 8\n  },\n  \"seed\": 0\n}\n",
+        "networkAttempts": 0
+      },
+      "after": {
+        "case": "audio-only-batch",
+        "exit": 1,
+        "stdout": "",
+        "networkAttempts": 0
+      },
+      "status": "fixed"
+    },
+    {
+      "case": "mixed-batch-modes",
+      "before": {
+        "case": "mixed-batch-modes",
+        "exit": 0,
+        "stdout": "[dry-run] ref2va, 총 8초 → 장면 1개 [8], 화면비 16:9, 시드 0. 서버에 보내지 않았다.\n--- 장면 1: ref2va 8초\n{\n  \"task\": \"ref2va\",\n  \"prompt\": \"example\",\n  \"conditions\": [\n    {\n      \"type\": \"image\",\n      \"uri\": \"https://fixture.test/ref.png\",\n      \"role\": \"reference\"\n    }\n  ],\n  \"target\": {\n    \"short_edge\": 768,\n    \"aspect_ratio\": \"16:9\",\n    \"duration_seconds\": 8\n  },\n  \"seed\": 0\n}\n",
+        "networkAttempts": 0
+      },
+      "after": {
+        "case": "mixed-batch-modes",
+        "exit": 1,
+        "stdout": "",
+        "networkAttempts": 0
+      },
+      "status": "fixed"
+    },
+    {
+      "case": "zero-steps",
+      "before": {
+        "case": "zero-steps",
+        "exit": 0,
+        "stdout": "[dry-run] t2va, 총 8초 → 장면 1개 [8], 화면비 16:9, 시드 0. 서버에 보내지 않았다.\n--- 장면 1: t2va 8초\n{\n  \"task\": \"t2va\",\n  \"prompt\": \"example\",\n  \"conditions\": [],\n  \"target\": {\n    \"short_edge\": 768,\n    \"aspect_ratio\": \"16:9\",\n    \"duration_seconds\": 8\n  },\n  \"seed\": 0\n}\n",
+        "networkAttempts": 0
+      },
+      "after": {
+        "case": "zero-steps",
+        "exit": 2,
+        "stdout": "",
+        "networkAttempts": 0
+      },
+      "status": "fixed"
+    },
+    {
+      "case": "ir-dry-run",
+      "before": {
+        "case": "ir-dry-run",
+        "exit": 1,
+        "stdout": "",
+        "networkAttempts": 1
+      },
+      "after": {
+        "case": "ir-dry-run",
+        "exit": 0,
+        "stdout": "[dry-run] t2va, 총 8초 → 장면 1개 [8], 화면비 16:9, 시드 0. 서버에 보내지 않았다.\n--- 장면 1: t2va 8초\n{\n  \"task\": \"t2va\",\n  \"prompt\": \"example\",\n  \"conditions\": [],\n  \"target\": {\n    \"short_edge\": 768,\n    \"aspect_ratio\": \"16:9\",\n    \"duration_seconds\": 8\n  },\n  \"seed\": 0\n}\n",
+        "networkAttempts": 0
+      },
+      "status": "fixed"
+    },
+    {
+      "case": "empty-jobs-json",
+      "before": {
+        "case": "empty-jobs-json",
+        "exit": 0,
+        "stdout": "작업이 없다 (/tmp/tmpqdmdh3jl/missing)\n",
+        "networkAttempts": 0
+      },
+      "after": {
+        "case": "empty-jobs-json",
+        "exit": 0,
+        "stdout": "[]\n",
+        "networkAttempts": 0
+      },
+      "status": "fixed"
+    }
+  ],
+  "added": [
+    "resume saved jobs with completed-file/seed/remote-id preservation and exclusive process lock",
+    "wait for an existing remote video with bounded timeout and optional download",
+    "cancel a remote video while distinguishing unsupported APIs",
+    "single JSON dry-run plans for batch and story input",
+    "status/task filters and valid empty JSON for jobs",
+    "reference-required health/doctor checks",
+    "bounded atomic video downloads and non-overwriting directory exports"
+  ],
+  "verification": {
+    "newWorkflowTests": "tests/test_cli_workflows.py",
+    "existingRegressionRunner": "tests/run_cli_regressions.py",
+    "networkBoundary": "tests/inmemory_http.py uses actual request handlers without binding/listening",
+    "realHTTPWireIntegration": "not measured",
+    "actualH100Inference": "not measured",
+    "WindowsLockBranch": "implemented, not exercised on this Linux host",
+    "passedTestCounts": {
+      "workflows": 32,
+      "test_up_preflight.py": 25,
+      "test_startup_resources.py": 10,
+      "test_help_static.py": 2,
+      "existing_regressions": 82
+    },
+    "totalPassedTests": 151,
+    "excludedSubprocessHttpCases": [
+      {
+        "test": "test_cli.CliTest.test_ctrl_c_marks_job_and_prints_fetch_hint",
+        "reason": "Requires an actual child HTTP endpoint; interrupted metadata is covered separately"
+      },
+      {
+        "test": "test_cli.CliTest.test_stdin_prompt",
+        "reason": "Child process cannot share an in-memory parent transport; stdin dry-run is covered separately"
+      },
+      {
+        "test": "test_cli_ux.CtrlCTest.test_ctrl_c_on_json_says_how_to_resume",
+        "reason": "Child process does not share the in-memory HTTP registry"
+      },
+      {
+        "test": "test_qa_web_cli.CliFixesTest.test_ctrl_c_points_at_the_stopped_job",
+        "reason": "Child process does not share the in-memory HTTP registry"
+      }
+    ]
+  }
+}

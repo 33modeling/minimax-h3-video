@@ -1,10 +1,13 @@
-"""CLI: h3video gen | json | batch | ref | ir | plan | jobs | show | fetch | status | health | doctor | config | spec | web | tui | shorts
+"""CLI: h3video gen | json | batch | ref | ir | plan | resume | wait | cancel | jobs | show | fetch | status | health | doctor | config | spec | web | tui | shorts
 
 명령 없이 써도 알아서 고른다: h3video "프롬프트" → gen, h3video 이야기.json 그림/ → json, h3video 사진.png "프롬프트" → gen --first.
 """
 from __future__ import annotations
 
 import argparse
+import copy
+import math
+import shlex
 import difflib
 import json
 import os
@@ -33,7 +36,9 @@ SERVER_DOWN = (
     "  · 서버 없이 요청만 확인: --dry-run   · 한 번에 점검: h3video doctor"
 )
 # 작업(pending·running·…)과 장면(queued·in_progress·…) 상태를 한국어로
-STATUS_KO = {"pending": "대기", "running": "진행", "completed": "완료", "failed": "실패", "queued": "서버 대기열", "in_progress": "진행"}
+TERMINAL_STATES = ("completed", "failed", "paused", "cancelled")
+CLI_SIZES = (512, 576, 640, 704, 768)
+STATUS_KO = {"paused": "일시중지", "cancelled": "취소", "pending": "대기", "running": "진행", "completed": "완료", "failed": "실패", "queued": "서버 대기열", "in_progress": "진행"}
 EXAMPLES = [
     ('h3video inspect "인물 사진.png" motion.mp4', "입력 종류·해상도·길이 확인 (서버 불필요)"),
     ('h3video gen "1번 사진 인물, 1번 영상 동작" -i person.png -i motion.mp4 --dry-run --json', "자동 판별·JSON 미리보기"),
@@ -87,6 +92,9 @@ COMMAND_GROUPS = [
                ("plan", "길이 → 장면 나누기 미리 보기")]),
     ("지난 작업", [("jobs", "지난 작업 목록 (최근 순)"),
                  ("show", "작업 자세히 (id, id 앞부분, last)"),
+                 ("resume", "중단한 작업 재개: 완료한 장면·시드·진행 중인 원격 ID 보존"),
+                 ("wait", "원격 영상이 끝날 때까지 기다리기; -o로 받기"),
+                 ("cancel", "원격 영상 취소 요청; 서버의 실제 응답 표시"),
                  ("fetch", "서버에서 완성된 영상 받기 (video_id)"),
                  ("status", "서버의 영상 상태 (video_id)")]),
     ("서버·설정", [("inspect", "입력 파일 종류·크기·해상도·길이 검사 (GPU·서버 요청 없음)"),
@@ -135,7 +143,12 @@ CMD_EXAMPLES = {
              ("h3video json --resume last", "실패한·안 된 장면만 다시 하고 이어 붙이기"),
              ("명령 없이도: h3video 토토.json pages/", "")],
     "plan": [("h3video plan 45", "45초 → 장면 몇 개로 나뉘는지")],
-    "jobs": [("h3video jobs --limit 5", ""), ("h3video jobs --json", "")],
+    "resume": [("h3video resume last", "끝난 장면은 보존하고 나머지만 재개"),
+               ("h3video resume last --size 512", "미완료 장면만 작은 크기로 재개"),
+               ("h3video resume last --dry-run --json", "변경·제출 없이 재개 계획 확인")],
+    "wait": [("h3video wait video_0001 --ref --timeout 600 -o result.mp4", "기존 원격 요청을 기다린 뒤 받기")],
+    "cancel": [("h3video cancel video_0001 --ref", "참고 자료 서버에 취소 요청")],
+    "jobs": [("h3video jobs --status failed --status paused", "재개할 작업 찾기"), ("h3video jobs --task ref2va --json", "")],
     "show": [("h3video show last", "마지막 작업"), ("h3video show 20261012-1015", "id 앞부분으로")],
     "status": [("h3video status video_0001 [--ref]", "")],
     "fetch": [("h3video fetch video_0001 -o a.mp4", "참고 자료로 만든 것은 --ref")],
@@ -194,9 +207,9 @@ def read_prompt(a) -> str:
     if a.prompt_file == "-" or a.prompt == "-":
         text = sys.stdin.read()
     elif a.prompt_file:
-        text = Path(a.prompt_file).expanduser().read_text(encoding="utf-8")
+        text = Path(a.prompt_file).expanduser().read_text(encoding="utf-8-sig")
     elif a.prompt and "\n" not in a.prompt and len(a.prompt) < 4096 and Path(a.prompt).expanduser().is_file():
-        text = Path(a.prompt).expanduser().read_text(encoding="utf-8")   # 파일 이름을 주면 그 내용 (-f 없이)
+        text = Path(a.prompt).expanduser().read_text(encoding="utf-8-sig")   # 파일 이름을 주면 그 내용 (-f 없이)
         print(f"[프롬프트] 파일 {a.prompt} 을 읽었다 ({len(text)}자)", file=sys.stderr)
     elif a.prompt and looks_like_file(a.prompt):   # 파일 이름처럼 생겼는데 없다 → 오타일 것: 그 글자로 영상을 만들지 않는다
         raise H3Error(f"프롬프트 파일이 없다: {a.prompt}" + similar_files(a.prompt))
@@ -220,37 +233,68 @@ def check_inputs(paths) -> None:
             raise H3Error(f"입력 파일 없음: {p}")
 
 
-def validate_job(job: Job) -> list:
-    """모든 장면의 요청을 미리 만들어 검사 (파일은 복사하지 않음). 첫 장면부터 GPU 를 쓰기 전에 잘못을 잡는다."""
-    job.scenes = plan_job(job)
+def validate_job(job: Job, *, preserve_scenes=False) -> list:
+    """Validate every request before submission; saved partitions survive resume."""
+    if job.refs and (job.first_image or job.last_image):
+        raise H3Error('--first/--last와 참고 자료는 같이 쓸 수 없습니다. 서로 다른 생성 모드입니다.')
+    if job.refs and not any(r['type'] in ('image', 'video', 'video_audio') for r in job.refs):
+        raise H3Error('참고 소리만으로는 생성할 수 없습니다. 이미지 또는 영상 참고 자료를 함께 지정하세요.')
+    if job.short_edge not in CLI_SIZES:
+        # Web recovery also supports 448px; existing saved jobs remain resumable.
+        if not preserve_scenes or job.short_edge != 448:
+            raise H3Error('size는 512·576·640·704·768 중 하나여야 합니다.')
+    if not preserve_scenes and not spec.SCENE_MIN <= job.scene_seconds <= spec.DURATION_MAX:
+        raise H3Error('scene-seconds는 5~15초여야 합니다.')
+    if job.steps is not None and job.steps <= 0:
+        raise H3Error('steps는 1 이상의 정수여야 합니다.')
+    if not preserve_scenes or not job.scenes:
+        job.scenes = plan_job(job)
     reqs = []
     for sc in job.scenes:
-        prev = "<이전 장면 마지막 프레임>" if sc.index > 0 else None
-        req = build_request(job, sc, prev, lambda p: p if str(p).startswith(("http", "file://", "<")) else Path(p).expanduser().resolve().as_uri())
+        prev = '<이전 장면 마지막 프레임>' if sc.index > 0 else None
+        req = build_request(job, sc, prev, lambda path: path if str(path).startswith(('http', 'file://', '<')) else Path(path).expanduser().resolve().as_uri())
         req.validate()
         reqs.append(req)
     return reqs
 
 
+def plan_data(job: Job, *, inbox_dir=None, endpoint=None, preserve_scenes=False) -> dict:
+    reqs = validate_job(job, preserve_scenes=preserve_scenes)
+    inputs = []
+    for role, kind, path in [('first', 'image', job.first_image), ('last', 'image', job.last_image)] + [
+            ('reference', r['type'], r['path']) for r in job.refs]:
+        if path:
+            inputs.append(dict(role=role, **describe_input(path, kind)))
+    return dict(schema='h3video.plan.v1', dry_run=True, task=job.task,
+        total_seconds=job.total_seconds, scene_count=len(reqs), endpoint=endpoint,
+        inputs=inputs, inbox_dir=inbox_dir,
+        staging='local inputs are copied to the shared inbox on execution; preview URIs refer to source files' if inbox_dir else 'source paths must be readable by the generation server',
+        requests=[r.to_json() for r in reqs])
+
+
 def preview(job: Job, *, as_json=False, inbox_dir=None, endpoint=None) -> None:
-    reqs = validate_job(job)
+    data = plan_data(job, inbox_dir=inbox_dir, endpoint=endpoint)
     if as_json:
-        inputs = []
-        for role, kind, path in [('first', 'image', job.first_image), ('last', 'image', job.last_image)] + [
-                ('reference', r['type'], r['path']) for r in job.refs]:
-            if path:
-                inputs.append(dict(role=role, **describe_input(path, kind)))
-        print(json.dumps(dict(schema='h3video.plan.v1', dry_run=True, task=job.task,
-            total_seconds=job.total_seconds, scene_count=len(reqs), endpoint=endpoint,
-            inputs=inputs, inbox_dir=inbox_dir,
-            staging='local inputs are copied to the shared inbox on execution; preview URIs refer to source files' if inbox_dir else 'source paths must be readable by the generation server',
-            requests=[r.to_json() for r in reqs]), ensure_ascii=False, indent=2))
+        print(json.dumps(data, ensure_ascii=False, indent=2))
         return
-    print(f"[dry-run] {job.task}, 총 {job.total_seconds}초 → 장면 {len(reqs)}개 {[r.duration_seconds for r in reqs]}, "
+    reqs = data['requests']
+    print(f"[dry-run] {job.task}, 총 {job.total_seconds}초 → 장면 {len(reqs)}개 {[r['target']['duration_seconds'] for r in reqs]}, "
           f"화면비 {job.aspect_ratio}, 시드 {job.seed}{'부터' if len(reqs) > 1 else ''}. 서버에 보내지 않았다.")
-    for i, r in enumerate(reqs):
-        print(f"--- 장면 {i + 1}: {r.task} {r.duration_seconds}초")
-        print(json.dumps(r.to_json(), ensure_ascii=False, indent=2))
+    for i, req in enumerate(reqs):
+        print(f"--- 장면 {i + 1}: {req['task']} {req['target']['duration_seconds']}초")
+        print(json.dumps(req, ensure_ascii=False, indent=2))
+
+
+def preview_many(a, jobs):
+    if getattr(a, 'plan_json', False):
+        payloads = [plan_data(job, inbox_dir=a.inbox_dir, endpoint=a.ref_endpoint if job.task == 'ref2va' else a.endpoint) for job in jobs]
+        print(json.dumps(dict(schema='h3video.batch-plan.v1', dry_run=True, job_count=len(jobs), jobs=payloads), ensure_ascii=False, indent=2))
+    else:
+        # Validate all jobs before printing a partial plan.
+        for job in jobs:
+            validate_job(job)
+        for job in jobs:
+            preview(job)
 
 
 def server_down(kind: str, ep: str) -> str:
@@ -272,7 +316,7 @@ def server_error(e: H3Error, video_id: str = "", ref: bool = False) -> H3Error:
     flag = " --ref" if ref else ""
     if "HTTP 404" in s and video_id:
         return H3Error(f"서버에 그런 영상이 없다: {video_id}. id 를 확인하고(h3video show last), 참고 자료로 만든 것이면 --ref 를 붙인다."
-                       f" 서버를 다시 켰으면 지난 영상은 사라진다{tail}")
+                       f" 서버 주소와 작업 기록을 확인하세요: h3video show last{tail}")
     if "HTTP 409" in s and video_id:
         return H3Error(f"아직 다 만들지 않았다: {video_id}. 진행은 h3video status {video_id}{flag} 로 보고, 끝난 뒤 다시 받는다{tail}")
     if "HTTP 404" in s and "/v1/prompts/rewrite" in s:
@@ -281,20 +325,26 @@ def server_error(e: H3Error, video_id: str = "", ref: bool = False) -> H3Error:
     return e
 
 
-def copy_out(final: str, out: str | None, many: bool = False, job_id: str = "") -> str:
+def copy_out(final: str, out: str | None, many: bool = False, job_id: str = '') -> str:
     if not out:
         return final
-    dest = Path(out).expanduser()
-    if many or out.endswith(("/", os.sep)) or dest.is_dir():
+    source, dest = Path(final).expanduser(), Path(out).expanduser()
+    directory = many or out.endswith(('/', os.sep)) or dest.is_dir()
+    if directory:
         dest.mkdir(parents=True, exist_ok=True)
-        dest = dest / Path(final).name
-        if dest.exists():  # 폴더에 모을 때는 덮어쓰지 않는다 (batch 의 같은 제목, 지난 결과)
-            dest = dest.with_name(f"{dest.stem}-{job_id[-6:] or int(time.time())}{dest.suffix}")
+        dest = dest / source.name
+        stem, suffix, counter = dest.stem, dest.suffix, 0
+        tag = job_id[-6:] or str(time.time_ns())
+        while dest.exists():
+            counter += 1
+            dest = dest.with_name(f'{stem}-{tag}' + (f'-{counter}' if counter > 1 else '') + suffix)
     else:
         if not dest.suffix:
-            dest = dest.with_suffix(".mp4")
+            dest = dest.with_suffix('.mp4')
         dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(final, dest)
+        if dest.resolve() == source.resolve():
+            return str(dest)
+    shutil.copy2(source, dest)
     return str(dest)
 
 
@@ -318,7 +368,7 @@ def compact_status(jb: Job) -> str:
     """한 줄 진행 표시용: '장면 2/4 · 생성 45%'."""
     if jb.status == "pending":
         return "준비 중"
-    if jb.status in ("completed", "failed"):
+    if jb.status in TERMINAL_STATES:
         return STATUS_KO[jb.status]
     n = len(jb.scenes)
     cur = next((s for s in jb.scenes if s.status != "completed"), None)
@@ -403,9 +453,9 @@ def open_paths(paths: list[str]) -> None:
     print(f"여는 중: {target}", file=sys.stderr)
 
 
-def run_jobs(a, jobs: list[Job], out: str | None = None) -> None:
+def run_jobs(a, jobs: list[Job], out: str | None = None, *, resume_saved=False) -> None:
     """진행 상황은 stderr, 결과 mp4 경로만 stdout (out=$(h3video gen ...) 로 받을 수 있게)."""
-    store, t0 = execute_jobs(a, jobs)
+    store, t0 = execute_jobs(a, jobs, resume_saved=resume_saved)
     failed, paths = 0, []
     for job in jobs:
         jb = store.get(job.id)
@@ -424,22 +474,25 @@ def run_jobs(a, jobs: list[Job], out: str | None = None) -> None:
     if getattr(a, "open", False):
         open_paths(paths)
     if failed:
-        print(f"다시 하기: 같은 명령을 다시 실행 · 기록: h3video show {jobs[-1].id}", file=sys.stderr)
+        print(f"이어 하기: {resume_command(jobs[-1].id, a.output_dir)} · 기록: h3video show {jobs[-1].id}", file=sys.stderr)
         sys.exit(1)
 
 
-def execute_jobs(a, jobs: list[Job], on_tick=None, resume: str | None = None) -> tuple[JobStore, float]:
+def execute_jobs(a, jobs: list[Job], on_tick=None, resume: str | None = None, *, resume_saved=False) -> tuple[JobStore, float]:
     """작업들을 서버에 보내고 다 끝날 때까지 진행 상황을 stderr 에 쓴다. (기록, 시작 시각)을 돌려준다.
     터미널이면 한 줄(경과·단계·장면 i/n)을 계속 고쳐 쓰고, 아니면 바뀔 때만 시각과 함께 한 줄씩 쓴다."""
     for job in jobs:
-        validate_job(job)
-    needs_ref = any(j.task == "ref2va" for j in jobs)
-    preflight(a, needs_ref)
-    if any(j.task != "ref2va" for j in jobs) and needs_ref:
+        validate_job(job, preserve_scenes=resume_saved)
+    unfinished = [job for job in jobs if any(not (scene.status == 'completed' and scene.output and Path(scene.output).is_file()) for scene in job.scenes)]
+    if any(job.task == 'ref2va' for job in unfinished):
+        preflight(a, True)
+    if any(job.task != 'ref2va' for job in unfinished):
         preflight(a, False)
     store = JobStore(Path(a.output_dir))
     w = Worker(store, H3Client(a.endpoint), H3Client(a.ref_endpoint), inbox_dir=a.inbox_dir, poll=a.poll)
     for job in jobs:   # 서버 GPU 에 한 번에 안 들어가는 길이는 장면으로 나눠 이어 붙인다 (OOM 전에)
+        if resume_saved:
+            continue
         before = len(job.scenes)
         m = fit_to_server(job, w.ref_client if job.task == "ref2va" else w.client)
         if m:
@@ -448,7 +501,18 @@ def execute_jobs(a, jobs: list[Job], on_tick=None, resume: str | None = None) ->
                 print(f"  이 서버 GPU 에서 한 장면은 최대 {m}초 → {job.total_seconds}초를 장면 {len(job.scenes)}개"
                       f" {[s.duration for s in job.scenes]}로 만들어 이어 붙인다", file=sys.stderr)
     for job in jobs:
-        w.enqueue(job)
+        if resume_saved:
+            current = store.get(job.id)
+            if not current or current.status in ('pending', 'running'):
+                raise H3Error('아직 처리 중인 작업입니다. 기존 CLI가 끝난 뒤 재개하세요.')
+            history = store.root / job.id / 'history' / str(time.time_ns())
+            history.mkdir(parents=True)
+            (history / 'job.json').write_text(json.dumps(current.to_json(), ensure_ascii=False, indent=2), encoding='utf-8')
+            if getattr(a, 'size', None) is not None and a.size < current.short_edge:
+                w.configure_recovery(job.id, a.size)
+            w.resume(job.id)
+        else:
+            w.enqueue(job)
         print(f"job {job.id} 등록: {job.total_seconds}초, {job.aspect_ratio}, 시드 {job.seed}" + (f", {job.title}" if job.title else ""), file=sys.stderr)
     w.start()
     prog = Progress()
@@ -459,7 +523,7 @@ def execute_jobs(a, jobs: list[Job], on_tick=None, resume: str | None = None) ->
             pending, live = 0, None
             for k, job in enumerate(jobs):
                 jb = store.get(job.id)
-                if jb.status not in ("completed", "failed"):
+                if jb.status not in TERMINAL_STATES:
                     pending += 1
                     if live is None and jb.status == "running":
                         live = (k, jb)
@@ -468,7 +532,7 @@ def execute_jobs(a, jobs: list[Job], on_tick=None, resume: str | None = None) ->
                     tag = f"{job.id[-6:]} " if len(jobs) > 1 else ""
                     if not prog.tty:
                         print(f"  [{time.strftime('%H:%M:%S')}] {tag}{line}  (경과 {fmt_secs(time.time() - t0)})", file=sys.stderr, flush=True)
-                    elif jb.status in ("completed", "failed"):
+                    elif jb.status in TERMINAL_STATES:
                         prog.log(f"  {'✓' if jb.status == 'completed' else '✗'} {tag}{STATUS_KO[jb.status]}  (경과 {fmt_secs(time.time() - t0)})")
                     last[job.id] = line
             if prog.tty and pending:
@@ -482,6 +546,9 @@ def execute_jobs(a, jobs: list[Job], on_tick=None, resume: str | None = None) ->
                 break
     except KeyboardInterrupt:
         prog.close()
+        for job in jobs:
+            if store.get(job.id).status not in TERMINAL_STATES:
+                w.pause(job.id)
         interrupted(store, jobs, resume)
         sys.exit(130)
     prog.close()
@@ -501,14 +568,14 @@ def interrupted(store: JobStore, jobs: list[Job], resume: str | None = None) -> 
                 where = (f"작업 {k + 1}/{len(jobs)}" + (f"({jb.title})" if jb.title else "") + " ") if len(jobs) > 1 else ""
                 print(f"  서버에서는 {where}장면 {sc.index + 1}({sc.video_id})이 계속 만들어질 수 있다. 끝난 뒤 받기: "
                       f"h3video fetch {sc.video_id}{ref} -o scene.mp4", file=sys.stderr)
-        if jb.status not in ("completed", "failed"):
+        if jb.status not in TERMINAL_STATES:
             jb.status, jb.error, jb.finished = "failed", "사용자가 중단함 (Ctrl+C)", time.time()
             store.save(jb)
             stopped.append(jb.id)
     if resume:
         print(f"  이어서 하기 (끝난 장면은 두고 나머지만): {resume}", file=sys.stderr)
-    elif not on_server:
-        print("  다시 하려면 같은 명령을 다시 실행한다", file=sys.stderr)
+    else:
+        print('  이어서 하기: ' + resume_command(jobs[0].id, str(store.root)), file=sys.stderr)
     print(f"  기록 보기: h3video show {(stopped or [jobs[0].id])[0]}", file=sys.stderr)
 
 
@@ -522,10 +589,12 @@ def job_from_args(a, prompt: str, refs=None, base: Path | None = None) -> Job:
     last = describe_input(last, 'image')['source'] if last else None
     refs = [{"type": r["type"], "path": describe_input(fix(r["path"]), r['type'])['source']} for r in (refs or [])]
     check_inputs([first, last] + [r["path"] for r in refs])
-    return new_job(prompt, seconds=a.seconds, aspect_ratio=a.ratio, seed=a.seed, first_image=first, last_image=last,
+    job = new_job(prompt, seconds=a.seconds, aspect_ratio=a.ratio, seed=a.seed, first_image=first, last_image=last,
                    refs=refs, scene_seconds=a.scene_seconds, steps=a.steps, title=a.title or "", negative=a.negative,
                    task="ref2va" if refs else None, raw=getattr(a, "raw", False),
                    short_edge=getattr(a, "size", spec.SHORT_EDGE_DEFAULT))
+    validate_job(job)
+    return job
 
 
 # ---------- commands ----------
@@ -534,6 +603,10 @@ def cmd_spec(a):
 
 
 def cmd_plan(a):
+    if a.seconds < spec.DURATION_MIN:
+        raise H3Error(f'최소 {spec.DURATION_MIN}초')
+    if not spec.SCENE_MIN <= a.scene_seconds <= spec.DURATION_MAX:
+        raise H3Error('scene-seconds는 5~15초여야 합니다.')
     scenes = spec.plan_scenes(a.seconds, a.scene_seconds)
     print(f"{a.seconds}초 → 장면 {len(scenes)}개: {scenes} (첫 장면 {'fl2va' if a.first else 't2va'}, 이후 fl2va 체인)")
 
@@ -566,8 +639,8 @@ def server_report(a, kind: str) -> bool:
 
 def cmd_health(a):
     ok_main = server_report(a, "fl2va")
-    server_report(a, "ref2va")
-    if not ok_main:
+    ok_ref = server_report(a, "ref2va")
+    if not (ok_ref if getattr(a, 'ref', False) else ok_main):
         sys.exit(1)
 
 
@@ -576,12 +649,13 @@ def cmd_doctor(a):
     bad = 0
     print("서버")
     ok_main = server_report(a, "fl2va")
-    bad += not ok_main
+    bad += not ok_main and not getattr(a, 'ref', False)
     if ok_main:
         m = H3Client(a.endpoint).max_seconds("16:9", spec.SHORT_EDGE_DEFAULT, 1, timeout=5)
         print(f"      한 장면 최대 {m}초 (16:9·768 기준, 더 길면 나눠 이어 붙인다)" if m else
               f"      한 장면 최대: 서버가 알려 주지 않는다 (옛 서버) → {spec.DURATION_MAX}초 기준으로 나눈다")
-    server_report(a, "ref2va")
+    ok_ref = server_report(a, "ref2va")
+    bad += bool(getattr(a, 'ref', False) and not ok_ref)
     print("\n이 컴퓨터")
     out = Path(a.output_dir).expanduser()
     try:
@@ -736,6 +810,12 @@ def cmd_ir(a):
     """서버(Diffusers 엔진)가 다듬은 공식 형식 프롬프트만 본다. 생성은 하지 않는다 (장면이 여럿이면 첫 장면)."""
     refs = refs_of(a)
     job = job_from_args(a, read_prompt(a), refs or None)
+    if a.dry_run:
+        preview(job, as_json=getattr(a, 'plan_json', False), inbox_dir=a.inbox_dir,
+                endpoint=a.ref_endpoint if job.task == 'ref2va' else a.endpoint)
+        return
+    if getattr(a, 'plan_json', False):
+        raise H3Error('--json은 --dry-run과 함께 사용하세요.')
     job.scenes = plan_job(job)
     sc = job.scenes[0]
     req = build_request(job, sc, None, lambda path: stage_input(path, a.inbox_dir))
@@ -745,7 +825,7 @@ def cmd_ir(a):
     try:
         res = H3Client(ep).rewrite(req)
     except H3Error as e:
-        raise server_error(e) from None
+        raise server_error(e, ref=req.task == 'ref2va') from None
     print(res["prompt"])
     print(f"[ir] {time.time() - t0:.0f}초. 이대로 만들려면 같은 옵션으로 gen/ref (서버가 같은 시드로 다시 다듬는다), "
           f"고쳐서 쓰려면 파일로 저장해 gen 파일 --raw", file=sys.stderr)
@@ -758,7 +838,7 @@ BATCH_KEYS = {"seconds", "ratio", "seed", "title", "first", "last", "negative", 
 def parse_batch(text: str) -> list[tuple[dict, str]]:
     """블록은 '---' 줄로 나눈다. 블록 맨 위의 'key: value' 줄은 그 영상의 옵션, 나머지는 프롬프트. '#' 로 시작하는 줄은 주석."""
     items = []
-    for block in re.split(r"^\s*---\s*$", text, flags=re.M):
+    for block in re.split(r"^\s*---\s*$", text.removeprefix("\ufeff"), flags=re.M):
         opts: dict = {}
         lines, header = [], True
         for line in block.splitlines():
@@ -805,8 +885,6 @@ def cmd_batch(a):
                     v = seed_arg(v)
                 elif attr in ("ir", "raw"):
                     v = v.lower() in ("1", "y", "yes", "true", "on", "예")
-                elif attr == "size" and v not in (512, 576, 640, 704, 768):
-                    raise H3Error(f"size 는 512·576·640·704·768 중 하나: {v}")
                 elif attr == "ratio" and v not in spec.ASPECT_RATIOS:
                     raise H3Error(f"ratio 는 {spec.ASPECT_RATIOS} 중 하나: {v}")
                 setattr(b, attr, v)
@@ -817,9 +895,10 @@ def cmd_batch(a):
         except (H3Error, ValueError, argparse.ArgumentTypeError) as e:
             raise H3Error(f"{a.file} 의 {i}번째 블록: {e}") from None
     print(f"{len(jobs)}개 작업", file=sys.stderr)
+    if getattr(a, 'plan_json', False) and not a.dry_run:
+        raise H3Error('--json은 --dry-run과 함께 사용하세요.')
     if a.dry_run:
-        for job in jobs:
-            preview(job)
+        preview_many(a, jobs)
         return
     run_jobs(a, jobs, a.out)
 
@@ -828,6 +907,8 @@ def cmd_json(a):
     """JSON 하나 + 그림들 → 장면마다 영상 → 쪽 순서대로 이어 붙인 영상 하나. 장면 수·길이는 JSON 에서 정한다."""
     from . import story as ST
     from . import storyrun as SR
+    if getattr(a, 'plan_json', False) and not a.dry_run:
+        raise H3Error('--json은 --dry-run과 함께 사용하세요.')
     root = Path(a.output_dir)
     if a.resume:
         d = SR.find_story_dir(root, a.resume)
@@ -856,9 +937,10 @@ def cmd_json(a):
     if only and not only <= {c["id"] for c in state["clips"]}:
         raise H3Error(f"없는 장면: {', '.join(sorted(only - {c['id'] for c in state['clips']}))} (목록: --list)")
     jobs = SR.jobs_for(state, only)
+    if getattr(a, 'plan_json', False) and not a.dry_run:
+        raise H3Error('--json은 --dry-run과 함께 사용하세요.')
     if a.dry_run:
-        for job in jobs:
-            preview(job)
+        preview_many(a, jobs)
         return
     if not jobs:
         print("다시 만들 장면이 없다", file=sys.stderr)
@@ -896,28 +978,138 @@ def cmd_json(a):
     sys.exit(1)
 
 
+def positive_float(value):
+    try:
+        number = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError('0보다 큰 유한한 숫자가 필요합니다.') from None
+    if not math.isfinite(number) or number <= 0:
+        raise argparse.ArgumentTypeError('0보다 큰 유한한 숫자가 필요합니다.')
+    return number
+
+
+def nonnegative_int(value):
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError('0 이상의 정수가 필요합니다.') from None
+    if number < 0:
+        raise argparse.ArgumentTypeError('0 이상의 정수가 필요합니다.')
+    return number
+
+
+def positive_int(value):
+    number = nonnegative_int(value)
+    if number == 0:
+        raise argparse.ArgumentTypeError('1 이상의 정수가 필요합니다.')
+    return number
+
+
+def resume_command(key, output_dir):
+    return 'h3video resume ' + shlex.quote(key) + ' --output-dir ' + shlex.quote(output_dir)
+
+
+def cmd_resume(a):
+    root = Path(a.output_dir)
+    store = JobStore(root, read_only=True)
+    job = store.find(a.job)
+    if not job:
+        raise H3Error(f'작업을 찾지 못했다: {a.job} (목록: h3video jobs)')
+    if job.status in ('pending', 'running'):
+        raise H3Error('아직 처리 중인 작업입니다. 기존 CLI가 끝난 뒤 재개하세요.')
+    if getattr(a, 'plan_json', False) and not a.dry_run:
+        raise H3Error('--json은 --dry-run과 함께 사용하세요.')
+    if a.size is not None and a.size > job.short_edge:
+        raise H3Error('재개 크기는 기존 크기보다 크게 설정할 수 없습니다. 새 작업으로 생성하세요.')
+    resizing = a.size is not None and a.size < job.short_edge
+    if a.dry_run:
+        planned = copy.deepcopy(job)
+        if a.size is not None:
+            planned.short_edge = min(planned.short_edge, a.size)
+        requests = validate_job(planned, preserve_scenes=True)
+        scenes = [dict(index=sc.index + 1, status=sc.status, video_id=sc.video_id,
+                   action='reuse-file' if sc.status == 'completed' and sc.output and Path(sc.output).is_file() else
+                          ('check-remote-before-resize' if resizing else 'reattach') if sc.video_id and sc.status not in ('failed', 'cancelled') else 'submit',
+                   request=req.to_json()) for sc, req in zip(planned.scenes, requests)]
+        payload = dict(schema='h3video.resume-plan.v1', dry_run=True, job_id=job.id, short_edge=planned.short_edge,
+                       completed_scenes=sum(sc['action']=='reuse-file' for sc in scenes), scenes=scenes,
+                       recovery_may_cancel_active_request=resizing)
+        if getattr(a, 'plan_json', False):
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"[dry-run] {job.id}: 완료 파일 {payload['completed_scenes']}개 보존, 크기 {planned.short_edge}. 저장·제출하지 않았습니다.")
+            for sc in scenes:
+                print(f"  장면 {sc['index']}: {sc['action']}" + (f" ({sc['video_id']})" if sc['video_id'] else ''))
+        return
+    with store.claim(job.id):
+        # Re-read after acquiring the process lock, so a concurrent resume cannot duplicate it.
+        job = JobStore(root, read_only=True).find(job.id)
+        if job.status in ('pending', 'running'):
+            raise H3Error('아직 처리 중인 작업입니다. 기존 CLI가 끝난 뒤 재개하세요.')
+        if job.status == 'completed' and job.output and Path(job.output).is_file():
+            path = copy_out(job.output, a.out, job_id=job.id)
+            print(path)
+            if a.open:
+                open_paths([path])
+            return
+        run_jobs(a, [job], a.out, resume_saved=True)
+
+
+def cmd_wait(a):
+    client = H3Client(a.ref_endpoint if a.ref else a.endpoint)
+    last = None
+    def progress(state):
+        nonlocal last
+        line = (state.get('status'), state.get('stage'), state.get('progress'))
+        if line != last:
+            print(f"{a.video_id}: {state.get('stage') or STATUS_KO.get(state.get('status'), state.get('status'))}", file=sys.stderr)
+            last = line
+    try:
+        state = client.wait(a.video_id, poll=a.poll, timeout=a.timeout, on_progress=progress)
+        if a.out:
+            print(client.download(a.video_id, Path(a.out).expanduser()))
+        else:
+            print(json.dumps(state, ensure_ascii=False, indent=2))
+    except H3Error as error:
+        raise server_error(error, a.video_id, a.ref) from None
+
+
+def cmd_cancel(a):
+    try:
+        client = H3Client(a.ref_endpoint if a.ref else a.endpoint)
+        current = client.status(a.video_id)
+        result = current if current.get('status') in ('completed', 'failed', 'cancelled') else client.cancel(a.video_id)
+    except H3Error as error:
+        raise server_error(error, a.video_id, a.ref) from None
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result.get('status') == 'unsupported':
+        raise H3Error('연결한 서버는 취소 API를 지원하지 않습니다. 원격 작업은 계속될 수 있습니다.')
+
+
 def cmd_jobs(a):
-    if not Path(a.output_dir).is_dir():
-        print(f"작업이 없다 ({a.output_dir})")
-        return
-    rows = JobStore(Path(a.output_dir)).list()[: a.limit]
+    data = JobStore(Path(a.output_dir), read_only=True).list() if Path(a.output_dir).is_dir() else []
+    if getattr(a, 'status', None):
+        data = [job for job in data if job['status'] in a.status]
+    if getattr(a, 'task', None):
+        data = [job for job in data if job['task'] == a.task]
+    data = data[:a.limit]
     if a.json:
-        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        print(json.dumps(data, ensure_ascii=False, indent=2))
         return
-    if not rows:
-        print(f"작업이 없다 ({a.output_dir})")
-    for j in rows:
-        when = time.strftime("%m-%d %H:%M", time.localtime(j["created"]))
-        name = j["title"] or j["prompt"].replace("\n", " ")[:40]
-        print(f"{j['id']}  {when}  {STATUS_KO.get(j['status'], j['status'])}  {j['total_seconds']:>3}초  {j['task']:<6}  {name}")
-        if j.get("output"):
-            print(f"    → {j['output']}")
-        if j.get("error"):
-            print(f"    ! {j['error'][:160]}")
+    if not data:
+        print(f'작업이 없다 ({a.output_dir})')
+    for job in data:
+        when = time.strftime('%m-%d %H:%M', time.localtime(job['created']))
+        name = job['title'] or job['prompt'].replace('\n', ' ')[:40]
+        print(f"{job['id']}  {when}  {STATUS_KO.get(job['status'], job['status'])}  {job['total_seconds']:>3}초  {job['task']:<6}  {name}")
+        if job.get('output'):
+            print(f"    → {job['output']}")
+        if job.get('error'):
+            print(f"    ! {job['error'][:160]}")
 
 
 def cmd_show(a):
-    store = JobStore(Path(a.output_dir)) if Path(a.output_dir).is_dir() else None
+    store = JobStore(Path(a.output_dir), read_only=True) if Path(a.output_dir).is_dir() else None
     jb = store.find(a.job) if store else None
     if not jb:
         raise H3Error(f"작업을 찾지 못했다: {a.job} (목록: h3video jobs)")
@@ -1055,7 +1247,7 @@ def add_global(p, top: bool) -> None:
     p.add_argument("--ref-endpoint", default=d("ref-endpoint"), help="참고 자료(ref2va) 서버 (H3_REF_ENDPOINT)" if top else S)
     p.add_argument("--output-dir", default=d("output-dir"), help="결과 폴더 (H3_OUTPUT_DIR)" if top else S)
     p.add_argument("--inbox-dir", default=d("inbox-dir"), help="서버가 file:// 로 읽는 공유 폴더 (H3_INBOX_DIR)" if top else S)
-    p.add_argument("--poll", type=float, default=3.0 if top else S, help="상태 확인 간격(초)" if top else S)
+    p.add_argument("--poll", type=positive_float, default=3.0 if top else S, help="상태 확인 간격(초)" if top else S)
 
 
 def add_video_opts(p) -> None:
@@ -1063,7 +1255,7 @@ def add_video_opts(p) -> None:
     g.add_argument("-s", "--seconds", type=int, default=8, metavar="SEC", help=f"총 길이(초, 최소 {spec.DURATION_MIN}, 기본 8). 서버 한도보다 길면 장면으로 나눠 이어 붙인다")
     g.add_argument("-r", "--ratio", default="16:9", choices=spec.ASPECT_RATIOS, metavar="RATIO",
                    help="화면비: " + ", ".join(spec.ASPECT_RATIOS) + " (기본 16:9, auto 는 첫 그림 비율)")
-    g.add_argument("--size", type=int, default=spec.SHORT_EDGE_DEFAULT, choices=[512, 576, 640, 704, 768], metavar="PX",
+    g.add_argument("--size", type=int, default=spec.SHORT_EDGE_DEFAULT, choices=CLI_SIZES, metavar="PX",
                    help="짧은 변 512·576·640·704·768 (기본 768 = 1344×768). 576 이면 메모리·시간이 약 40%% 준다")
     g.add_argument("--scene-seconds", type=int, default=10, metavar="SEC", help="이어 붙일 때 장면 하나 길이 (5~15, 기본 10)")
     g = p.add_argument_group("결과")
@@ -1073,7 +1265,7 @@ def add_video_opts(p) -> None:
     g.add_argument("--dry-run", action="store_true", help="서버에 보내지 않고 장면 나누기와 요청 JSON 만 보기")
     g = p.add_argument_group("더 자세히")
     g.add_argument("--seed", type=seed_arg, default=0, metavar="N", help="정수 또는 random (기본 0: 같은 프롬프트면 같은 결과)")
-    g.add_argument("--steps", type=int, metavar="N", help="디노이징 스텝 (기본: 서버 기본값 50, 30 이면 빠르고 거칠다)")
+    g.add_argument("--steps", type=positive_int, metavar="N", help="디노이징 스텝 (기본: 서버 기본값 50, 30 이면 빠르고 거칠다)")
     g.add_argument("-n", "--negative", metavar="TEXT", help="넣지 않을 것 (네거티브 프롬프트)")
     g.add_argument("--raw", action="store_true",
                    help="서버의 프롬프트 다듬기를 끄고 쓴 그대로 보낸다 (Diffusers 엔진은 기본으로 공식 형식으로 다듬는다)")
@@ -1124,8 +1316,10 @@ def build_parser() -> argparse.ArgumentParser:
         return p
 
     cmd("spec", cmd_spec)
-    cmd("health", cmd_health, "서버 확인: OK/실패와 할 일 (글·그림 서버가 안 되면 종료 코드 1)")
-    cmd("doctor", cmd_doctor)
+    p = cmd("health", cmd_health, "서버 확인: 기본은 FL2VA, --ref면 Ref2VA가 필수")
+    p.add_argument('--ref', action='store_true', help='참고 자료 서버를 필수로 확인')
+    p = cmd("doctor", cmd_doctor)
+    p.add_argument('--ref', action='store_true', help='참고 자료 서버를 필수로 점검')
     p = cmd('inspect', cmd_inspect)
     p.add_argument('files', nargs='+', help='검사할 파일 경로 여러 개 (원격 주소는 내용을 받지 않음)')
     p.add_argument('--json', action='store_true', help='검사 결과를 JSON으로 출력; 하나라도 실패하면 종료 코드 1')
@@ -1150,12 +1344,14 @@ def build_parser() -> argparse.ArgumentParser:
     add_video_opts(p)
 
     p = cmd("ir", cmd_ir, "다듬은 프롬프트만 보기 (Diffusers 엔진: 짧은 요청 → H3 공식 형식, 생성 안 함)")
+    p.add_argument('--json', dest='plan_json', action='store_true', help='--dry-run 계획을 단일 JSON으로 출력')
     add_prompt_opts(p, "프롬프트. 생략하면 -f 파일이나 표준입력")
     add_media_opts(p)
     add_video_opts(p)
 
     p = cmd("batch", cmd_batch, "파일의 여러 프롬프트를 차례로 (--- 줄로 구분, 블록 맨 위 'seconds: 10' 같은 줄은 그 영상 옵션)")
     p.add_argument("file", help="프롬프트 파일 (- 는 표준입력)")
+    p.add_argument('--json', dest='plan_json', action='store_true', help='--dry-run 계획을 단일 JSON으로 출력')
     add_video_opts(p)
 
     p = cmd("json", cmd_json, "JSON 하나 + 그림들로 한 번에: 장면마다 영상을 만들어 이어 붙인다 (장면 수·길이는 JSON 에서, -s 불필요)")
@@ -1171,18 +1367,36 @@ def build_parser() -> argparse.ArgumentParser:
                    "이름이 나오는 장면 프롬프트에 외모·성격·말투·목소리를 붙인다 (기본: JSON 안의 인물 설정)")
     g = p.add_argument_group("화면·결과")
     g.add_argument("-r", "--ratio", choices=spec.ASPECT_RATIOS, metavar="RATIO", help="화면비 (기본: JSON 판형, 없으면 그림 비율 auto)")
-    g.add_argument("--size", type=int, default=spec.SHORT_EDGE_DEFAULT, choices=[512, 576, 640, 704, 768], metavar="PX", help="짧은 변 (기본 768)")
+    g.add_argument("--size", type=int, default=spec.SHORT_EDGE_DEFAULT, choices=CLI_SIZES, metavar="PX", help="짧은 변 (기본 768)")
     g.add_argument("-o", "--out", help="이어 붙인 영상을 여기로도 복사")
     g.add_argument("--open", action="store_true", help="끝나면 이어 붙인 영상을 기본 플레이어로 연다 (xdg-open)")
     g.add_argument("--dry-run", action="store_true", help="서버에 보내지 않고 요청만 출력")
+    g.add_argument('--json', dest='plan_json', action='store_true', help='--dry-run 계획을 단일 JSON으로 출력')
     g = p.add_argument_group("더 자세히")
     g.add_argument("--seed", type=seed_arg, default=0, help="첫 장면 시드 (장면마다 1씩 더함, random 이면 무작위)")
-    g.add_argument("--steps", type=int, help="디노이징 스텝 (기본: 서버 기본값)")
+    g.add_argument("--steps", type=positive_int, help="디노이징 스텝 (기본: 서버 기본값)")
     g.add_argument("-n", "--negative", help="넣지 않을 것")
     g.add_argument("--raw", action="store_true", help="서버의 프롬프트 다듬기 끄기")
 
+    p = cmd('resume', cmd_resume)
+    p.add_argument('job', nargs='?', default='last', help='재개할 작업 ID, 앞부분 또는 last')
+    p.add_argument('--size', type=int, choices=CLI_SIZES, default=None, help='미완료 장면의 크기만 줄여 재개')
+    p.add_argument('--dry-run', action='store_true', help='저장·요청 없이 재개 계획 확인')
+    p.add_argument('--json', dest='plan_json', action='store_true', help='--dry-run 계획을 JSON으로 출력')
+    p.add_argument('-o', '--out', help='완성본을 여기로도 복사')
+    p.add_argument('--open', action='store_true', help='완료한 결과 열기')
+    p = cmd('wait', cmd_wait)
+    p.add_argument('video_id')
+    p.add_argument('--ref', action='store_true', help='Ref2VA 서버의 기존 요청 기다리기')
+    p.add_argument('--timeout', type=positive_float, default=3600, help='대기 한도 초; 초과해도 원격 작업을 취소하지 않음')
+    p.add_argument('-o', '--out', help='완료 후 저장할 영상 경로')
+    p = cmd('cancel', cmd_cancel)
+    p.add_argument('video_id')
+    p.add_argument('--ref', action='store_true', help='Ref2VA 서버에 취소 요청')
     p = cmd("jobs", cmd_jobs)
-    p.add_argument("--limit", type=int, default=20, help="몇 개까지 (기본 20)"); p.add_argument("--json", action="store_true", help="JSON 으로")
+    p.add_argument('--status', action='append', choices=['pending', 'running', 'completed', 'failed', 'paused', 'cancelled'], help='표시할 상태; 여러 번 지정 가능')
+    p.add_argument('--task', choices=list(spec.TASKS), help='생성 모드로 필터')
+    p.add_argument("--limit", type=nonnegative_int, default=20, help="몇 개까지 (기본 20)"); p.add_argument("--json", action="store_true", help="JSON 으로")
     p = cmd("show", cmd_show)
     p.add_argument("job", nargs="?", default="last", help="작업 id, id 앞부분, last(기본)"); p.add_argument("--json", action="store_true", help="JSON 으로")
     p = cmd("status", cmd_status)
@@ -1309,6 +1523,9 @@ def main(argv=None):
     if not getattr(a, "fn", None):
         print(quickstart())
         return
+    a.output_dir = str(Path(a.output_dir).expanduser())
+    if a.inbox_dir:
+        a.inbox_dir = str(Path(a.inbox_dir).expanduser())
     # 어떤 공통 옵션을 직접 줬는지 (doctor·config 가 '어디서 온 값'을 보여 준다)
     a._given = {k for k, v in C.KEYS.items() if any(t == v[3] or t.startswith(v[3] + "=") for t in argv)}
     try:

@@ -169,6 +169,55 @@ bash scripts/status.sh
 
 기본 실행은 30010만 준비합니다. --ref로 실행했는데 30011이 준비되지 않았다면 Ref2VA 로그를 확인하세요. 두 서버가 준비됐는데도 실패하면 CLI를 실행한 노드와 endpoint/ref-endpoint 값을 비교합니다. 종료는 창 1에서 Ctrl+C, 웹 UI는 해당 창에서 Ctrl+C입니다. 다음 날에는 창 1의 서버 실행과 창 2의 source부터 반복하며 모델 설치를 다시 할 필요는 없습니다.
 
+## CLI 작업 관리 · 재개·대기·취소
+
+기존 설치 폴더에서 git pull --ff-only origin main으로 업데이트한 뒤 사용합니다. 모델을 다시 설치할 필요는 없습니다. h3video 실행 파일이 없다면 같은 환경에서 `"$VENV/bin/python" -m h3video.cli` 뒤에 아래 하위 명령을 붙이면 됩니다.
+
+### 완료한 장면을 보존하고 재개
+
+```bash
+h3video jobs --status failed --status paused
+h3video show last
+h3video resume last --dry-run --json
+h3video resume last
+```
+
+resume은 로컬 작업 ID·앞부분·last를 받습니다. 기존과 같은 결과 폴더를 사용하세요. 다른 폴더였다면 --output-dir "/내 영상/outputs"를 붙입니다. 완료한 장면 파일·시드·장면 분할은 보존하며, 아직 실행 중인 원격 영상 ID가 있으면 같은 요청에 다시 연결합니다. 실패가 확인된 장면만 새로 제출합니다. 다른 CLI가 같은 작업을 재개 중이거나 기존 처리 프로세스가 살아 있으면 중복 실행을 거절합니다. 재개 전 작업 기록은 작업 폴더의 history에 남깁니다.
+
+```bash
+h3video resume last --size 512
+```
+
+기존보다 작은 크기로 아직 완료되지 않은 장면만 재개합니다. 서버에서 이미 완료한 영상은 기존 결과를 재사용할 수 있습니다. 진행 중인 요청의 설정을 바꾸려면 서버의 취소 지원이 필요하며, 취소를 지원하지 않으면 재개 설정을 바꾸지 않고 중단합니다. 이미 완료한 장면을 새 크기로 다시 생성하지 않습니다. --dry-run은 파일·기록을 바꾸거나 취소·생성 요청을 보내지 않습니다.
+
+### 기존 원격 영상 기다리기·받기
+
+```bash
+h3video wait video_0001 --ref --timeout 600 -o reference.mp4
+```
+
+wait·cancel·status·fetch에는 show에서 확인한 장면의 원격 video_id를 넣습니다. 로컬 job ID와 다릅니다. 참고 자료 서버의 영상이면 --ref를 붙이고, 글·첫 프레임 서버라면 생략합니다. wait는 새 영상을 제출하지 않습니다. 대기 한도를 넘겨도 원격 영상을 취소하지 않으며, 같은 ID로 다시 wait하거나 완료 후 fetch할 수 있습니다. -o를 생략하면 완료 상태 JSON을 출력합니다.
+
+```bash
+h3video cancel video_0001 --ref
+```
+
+원격 영상 하나에 취소를 요청합니다. cancelling은 취소 처리 중, cancelled는 취소 완료입니다. 이미 completed라면 완료 상태를 그대로 보여 줍니다. 취소 API를 지원하지 않는 서버에서는 종료 코드 1과 안내를 내보내며, 원격 작업은 계속될 수 있습니다. 다른 배치 작업까지 모두 취소하는 명령은 아닙니다.
+
+### 배치·JSON 요청을 제출 전에 확인
+
+```bash
+h3video batch prompts.txt --dry-run --json
+h3video json story.json --dry-run --json
+h3video ir prompt.txt --dry-run --json
+h3video jobs --task ref2va --status failed --json
+h3video doctor --ref
+```
+
+batch·json의 --dry-run --json은 모든 작업의 요청을 단일 JSON으로 출력합니다. ir의 --dry-run도 프롬프트 다듬기를 요청하지 않습니다. 잘못된 해상도·스텝·참고 자료 조합은 첫 작업을 제출하기 전에 거절합니다. jobs는 상태·모드로 거른 다음 --limit을 적용하고, 기록이 없으면 --json에서 빈 배열을 출력합니다. doctor·health의 --ref는 참고 자료 서버를 필수로 점검합니다.
+
+영상 다운로드는 메모리에 전체 영상을 올리지 않고 임시 파일로 받습니다. 응답이 끊기거나 크기가 맞지 않으면 기존 결과 파일을 보존합니다. 폴더로 내보낼 때 같은 이름이 여러 번 생겨도 이전 내보내기를 덮어쓰지 않습니다.
+
 ### 설치·입력·결과 경로
 
 | 구분 | 기본 위치 |

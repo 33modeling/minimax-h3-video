@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -96,9 +97,11 @@ class Job:
 
 
 class JobStore:
-    def __init__(self, root: Path = OUTPUT_DIR):
+    def __init__(self, root: Path = OUTPUT_DIR, *, read_only=False):
         self.root = Path(root)
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.read_only = read_only
+        if not read_only:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.jobs: dict[str, Job] = {}
         self.lock = threading.Lock()
         self._load()
@@ -123,18 +126,47 @@ class JobStore:
                 job.error = f"처리하던 프로세스(pid {job.pid})가 끝나 중단됨" + (
                     f". 서버에서 만들던 장면은 h3video fetch {left[-1].video_id}{' --ref' if left[-1].task == 'ref2va' else ''} 로 받을 수 있다"
                     if left else "")
-                try:
-                    self.save(job)
-                except OSError:
-                    pass
+                if not self.read_only:
+                    try:
+                        self.save(job)
+                    except OSError:
+                        pass
 
     def save(self, job: Job):
+        if self.read_only:
+            raise H3Error('읽기 전용 작업 기록에는 저장할 수 없습니다.')
         # 임시 파일에 쓰고 바꿔치기: 쓰는 도중 프로세스가 죽어도 job.json 이 반쪽으로 깨지지 않는다.
         p = self._path(job.id)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_name(f".job.{os.getpid()}.{threading.get_ident()}.tmp")
         tmp.write_text(json.dumps(job.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, p)
+
+    @contextmanager
+    def claim(self, job_id: str):
+        """Hold a process lock for a CLI resume; never alter the job's outputs."""
+        path = self._path(job_id).with_name('.cli-resume.lock')
+        with path.open('a+b') as lock:
+            try:
+                if os.name == 'nt':
+                    import msvcrt
+                    if path.stat().st_size == 0:
+                        lock.write(b'0'); lock.flush()
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                raise H3Error('다른 CLI에서 이 작업을 재개하고 있습니다.') from error
+            try:
+                yield
+            finally:
+                if os.name == 'nt':
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
 
     def add(self, job: Job):
         with self.lock:
@@ -321,7 +353,7 @@ class Worker(threading.Thread):
             job.remote_stop = 'unavailable'
 
     def configure_recovery(self, job_id: str, short_edge: int):
-        if short_edge not in (0, 448, 576, 768):
+        if short_edge not in (0, 448, 512, 576, 640, 704, 768):
             raise H3Error('재개 해상도를 선택하세요.')
         job = self.store.get(job_id)
         if not job:
