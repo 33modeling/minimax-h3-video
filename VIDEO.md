@@ -1,5 +1,48 @@
 # 사용법
 
+## H100에 설치된 `h3video`는 어디에 있나요?
+
+기본 Diffusers 설치의 실행 파일은 다음 위치입니다.
+
+```text
+/group-volume/minsoo3.kim/minimax-h3-video/.venv-diffusers/bin/h3video
+```
+
+코드 폴더와 실행 파일 폴더는 다릅니다. 코드 폴더는 `scripts/up.sh`와 `scripts/cluster_env.sh`가 있는 체크아웃입니다. 아래 `/user-volume/minimax-h3-video`는 코드 폴더의 예시이므로, 다른 곳에 복사했다면 그 폴더에서 실행하세요. 모두 **H100에 접속한 터미널**에서 입력합니다.
+
+```bash
+cd /user-volume/minimax-h3-video
+source scripts/cluster_env.sh
+printf '실행 파일: %s\n입력 폴더: %s\n결과 폴더: %s\n' "$VENV/bin/h3video" "$H3_INBOX_DIR" "$H3_OUTPUT_DIR"
+"$VENV/bin/h3video" --help
+```
+
+`source`가 설치된 가상환경의 `bin`을 PATH에 넣습니다. 이후 같은 터미널에서는 `h3video`라고 짧게 써도 됩니다. 새 터미널에서는 코드 폴더로 이동해 `source scripts/cluster_env.sh`를 다시 실행하세요. `.cluster_env.local.sh`에서 `STORAGE_ROOT`나 `H3_DIFFUSERS_VENV`를 바꿨다면 위에 출력되는 경로가 실제 설정입니다.
+
+| 구분 | 기본 위치 |
+|---|---|
+| 실행 파일 | `$VENV/bin/h3video` → `/group-volume/minsoo3.kim/minimax-h3-video/.venv-diffusers/bin/h3video` |
+| 이미지·영상 입력 | `$H3_INBOX_DIR` → `/group-volume/minsoo3.kim/minimax-h3-video/inbox` |
+| 생성 결과·작업 기록 | `$H3_OUTPUT_DIR` → `/group-volume/minsoo3.kim/minimax-h3-video/outputs` |
+| 코드·설정 | `scripts/up.sh`가 있는 폴더, 예: `/user-volume/minimax-h3-video` |
+
+입력 파일은 **H100 노드에서 읽을 수 있는 경로**에 있어야 합니다. 다른 컴퓨터의 경로만 적으면 전송되지 않습니다. `inbox`는 권장 보관 장소이며 다른 읽기 가능한 경로도 사용할 수 있습니다. 아래는 `inbox`에 `1.png`와 `sample.mp4`를 이미 복사한 경우입니다.
+
+```bash
+# 파일 확인: 생성 요청을 보내지 않음
+h3video inspect "$H3_INBOX_DIR/1.png" "$H3_INBOX_DIR/sample.mp4"
+
+# 요청 미리 보기: GPU 작업을 제출하지 않음
+h3video gen "1번 영상의 동작을 참고해 1번 사진의 인물이 걷는다" \
+  -i "$H3_INBOX_DIR/1.png" -i "$H3_INBOX_DIR/sample.mp4" \
+  -s 8 -o "$H3_OUTPUT_DIR/reference.mp4" --dry-run --json
+```
+
+실제 생성은 같은 명령에서 `--dry-run --json`을 빼고 실행합니다. 참고 자료를 쓰는 이 예시는 Ref2VA 서버가 준비돼 있어야 합니다. 첫 프레임용 사진은 `-i` 대신 `--first`로 넣습니다. `h3video`를 쓰기 위해 `up.sh`를 다시 실행할 필요는 없습니다.
+
+**`command not found` 또는 파일 없음:** 먼저 위의 `source`를 실행하고 `ls -l "$VENV/bin/h3video"`로 확인하세요. `$VENV/bin/python`은 있는데 CLI 실행 파일만 없다면 코드 폴더에서 `"$VENV/bin/python" -m pip install --no-deps -e .`로 실행 명령만 등록할 수 있습니다. 이 명령은 모델을 받거나 PyTorch·CUDA 패키지를 다시 설치하지 않습니다. `$VENV/bin/python`도 없다면 `.cluster_env.local.sh`의 경로와 기존 `provision.sh` 설치 완료 여부부터 확인하세요.
+
+
 ## 순서
 
 **창 1 — H3 서버** (계속 켜 둔다)
