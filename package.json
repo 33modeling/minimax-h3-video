@@ -14,7 +14,9 @@
     "test:activity": "PYTHONPATH=src python3 -m unittest discover -s tests -p test_activity.py -v && node tests/e2e/activity.mjs",
     "test:storyboard": "node tests/e2e/storyboard_print.mjs",
     "test:editor-bughunt": "node tests/e2e/editor_bughunt.mjs",
-    "test:ai-keys": "node --test tests/ai-keys.test.mjs && node tests/e2e/ai_keys.mjs"
+    "test:ai-keys": "node --test tests/ai-keys.test.mjs && node tests/e2e/ai_keys.mjs",
+    "test:features": "node tests/e2e/features.mjs",
+    "test:guide": "node tests/e2e/help_guide.mjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

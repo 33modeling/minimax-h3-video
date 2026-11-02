@@ -1,0 +1,35 @@
+import {CATEGORIES, FEATURES, RETOUCH_EXAMPLES, getFeature} from './features.js';
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+export function mountFeatureHub({host,startRetouch,openFeature,onMode,onAux}) {
+  if(!host)return;
+  host.innerHTML=`<header class="hf-heading"><div><p>영상 작업 시작</p><h2>무엇을 바꾸고 싶으세요?</h2><span>파일을 올려 교정하거나, 아래에서 필요한 기능을 고르세요.</span></div><a href="./studio/h3-cli.html">기능별 사용법</a></header>
+  <form class="hf-retouch" id="quick-retouch"><div class="hf-retouch-intro"><b>영상 넣고 프롬프트로 교정</b><p>영상 선택 → 수정할 내용 입력 → 교정 시작</p><label class="hf-file">1. 영상 파일 선택<input name="video" type="file" accept="video/*,.mp4,.mov,.webm,.mkv" required></label><p data-file-name>MP4 · MOV · WebM 등 영상 파일</p><video controls playsinline preload="metadata" data-quick-preview hidden></video></div>
+  <div class="hf-retouch-fields"><label>2. 어떻게 고칠까요?<textarea name="prompt" rows="4" required maxlength="10000" placeholder="예: 인물과 글자는 유지하고, 어두운 부분을 밝게 하고 압축 노이즈를 줄여 줘."></textarea></label><div class="hf-examples" aria-label="교정 프롬프트 예시">${RETOUCH_EXAMPLES.map(([label],i)=>`<button type="button" data-example="${i}">${esc(label)}</button>`).join('')}</div>
+  <details class="hf-options"><summary>보정·출력 설정 <span data-output-summary>Qwen 기본 · 2배 확대</span></summary><div><label>보정 엔진<select name="engine"><option value="qwen-realesrgan">Qwen 기본 보정</option><option value="qwen-turbo-realesrgan">Qwen Turbo</option><option value="qwen-quantized-realesrgan">Qwen UC GGUF</option></select></label><label>출력 배율<select name="scale"><option value="2">원본 가로·세로의 2배</option><option value="4">원본 가로·세로의 4배</option></select></label><label>영상 종류<select name="model"><option value="photo">실사</option><option value="illustration">그림·일반 영상</option><option value="anime">애니메이션</option></select></label></div></details>
+  <p class="hf-note">현재 교정은 프레임을 보정한 뒤 AI로 2배 또는 4배 확대합니다. 원본과 소리는 보관됩니다. 이미지 편집 서버와 확대 도구가 연결돼 있어야 합니다.</p><button class="hf-primary" type="submit" data-start-retouch>3. 프롬프트 교정 시작</button><p class="hf-feedback" role="status" aria-live="polite" data-quick-status></p></div></form>
+  <div class="hf-find"><label for="feature-search">기능 찾기</label><input id="feature-search" type="search" placeholder="예: 자막, 영상 자르기, 음악, 프롬프트, PDF"><span role="status" data-feature-count></span></div>
+  <div class="hf-categories" aria-label="기능 분류"><button type="button" data-category="all" aria-pressed="false">전체</button>${CATEGORIES.map(([id,title])=>`<button type="button" data-category="${id}" aria-pressed="${id==='edit'}">${title}</button>`).join('')}</div><div class="hf-grid">${FEATURES.map(f=>`<article class="hf-feature" data-feature-card="${f.id}"><h3>${f.title}</h3><p>${f.summary}</p><div><button type="button" data-open-feature="${f.id}">기능 열기</button><a href="./studio/h3-cli.html#feature-${f.id}">사용법</a></div></article>`).join('')}</div><p data-feature-empty hidden>찾는 기능이 없습니다. 검색어를 줄이거나 전체를 선택하세요.</p>`;
+  const form=host.querySelector('form'),fileInput=form.elements.video,prompt=form.elements.prompt,status=host.querySelector('[data-quick-status]');
+  const search=host.querySelector('#feature-search'),preview=host.querySelector('[data-quick-preview]');
+  let category='edit',previewURL=null,busy=false;
+  function filter(){const terms=search.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);let count=0;for(const card of host.querySelectorAll('[data-feature-card]')){const f=getFeature(card.dataset.featureCard);card.hidden=!(category==='all'||f.category===category)||!terms.every(t=>[f.title,f.summary,f.input,...f.steps].join(' ').toLocaleLowerCase().includes(t));if(!card.hidden)count++;}host.querySelector('[data-feature-count]').textContent=`${count}개 기능`;host.querySelector('[data-feature-empty]').hidden=!!count;}
+  search.addEventListener('input',()=>{if(search.value.trim())category='all';paintCategories();filter();});
+  function paintCategories(){for(const b of host.querySelectorAll('[data-category]'))b.setAttribute('aria-pressed',String(b.dataset.category===category));}
+  function focusRetouch(){form.scrollIntoView({block:'start',behavior:'smooth'});(fileInput.files?.length?prompt:fileInput).focus();}
+  async function launch(id,{navigationOnly=false}={}){
+    const f=getFeature(id);if(!f)return;
+    if(f.id==='retouch'){focusRetouch();return;}
+    if(f.mode){onMode(f.mode);return;}
+    if(['motion','prompts'].includes(f.action)){await onAux(f.action);return;}
+    await openFeature(f,{create:!navigationOnly});
+  }
+  host.addEventListener('click',event=>{const categoryButton=event.target.closest('[data-category]');if(categoryButton){category=categoryButton.dataset.category;paintCategories();filter();return;}const example=event.target.closest('[data-example]');if(example){prompt.value=RETOUCH_EXAMPLES[Number(example.dataset.example)][1];prompt.focus();return;}const button=event.target.closest('[data-open-feature]');if(button)void launch(button.dataset.openFeature).catch(error=>{status.textContent=error.message;status.dataset.error='true';status.scrollIntoView({block:'center'});});});
+  fileInput.addEventListener('change',()=>{if(previewURL)URL.revokeObjectURL(previewURL);previewURL=null;const file=fileInput.files?.[0];host.querySelector('[data-file-name]').textContent=file?`${file.name} · ${(file.size/1024/1024).toFixed(1)}MB`:'MP4 · MOV · WebM 등 영상 파일';preview.hidden=!file;if(file){previewURL=URL.createObjectURL(file);preview.src=previewURL;}else {preview.removeAttribute('src');preview.load();}status.textContent='';delete status.dataset.error;});
+  form.addEventListener('change',()=>{host.querySelector('[data-output-summary]').textContent=`${form.elements.engine.selectedOptions[0].textContent} · ${form.elements.scale.value}배 확대`;});
+  form.addEventListener('submit',async event=>{event.preventDefault();if(busy)return;const file=fileInput.files?.[0],text=prompt.value.trim();if(!file||!text){status.textContent='영상 파일과 교정 요청을 모두 입력해 주세요.';(!file?fileInput:prompt).focus();return;}busy=true;delete status.dataset.error;form.querySelectorAll('button,input,textarea,select').forEach(el=>el.disabled=true);status.textContent='영상을 새 편집 프로젝트에 올리고 있습니다. 원본과 기존 프로젝트는 보존합니다.';try{await startRetouch(file,text,{engine:form.elements.engine.value,scale:Number(form.elements.scale.value),model:form.elements.model.value});status.textContent='교정을 시작했습니다. 아래 편집실에서 진행 상태를 확인하고 중지·이어 하기·원본 비교를 할 수 있습니다.';}catch(error){status.textContent=error.message+' 파일과 입력한 요청은 이 화면에 유지됩니다.';status.dataset.error='true';}finally{busy=false;form.querySelectorAll('button,input,textarea,select').forEach(el=>el.disabled=false);}});
+  window.addEventListener('pagehide',()=>{if(previewURL)URL.revokeObjectURL(previewURL);});
+  function fromURL(){const id=new URLSearchParams(location.search).get('feature');if(getFeature(id))void launch(id,{navigationOnly:true}).catch(error=>{status.textContent=error.message;status.dataset.error='true';});}
+  filter();fromURL();
+  return {launch,focusRetouch};
+}

@@ -261,7 +261,7 @@ details.ai-box{margin-top:14px;border-top:1px solid var(--line);padding-top:10px
 @media (pointer:coarse){.ai-opt{min-height:44px}}
 
 .h3-guide-menu{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 15px;border-radius:9px;background:var(--acc);color:var(--bg);font-size:14px;font-weight:700;text-decoration:none;border:1px solid var(--acc);margin-left:auto}.h3-guide-menu span{font-size:12px;font-weight:500}.h3-guide-menu:hover{filter:brightness(1.08)}.h3-guide-menu:focus-visible{outline:3px solid var(--acc);outline-offset:3px}@media(max-width:700px){.h3-guide-menu{width:100%;justify-content:space-between;margin-left:0;order:1}.servers{order:2;width:100%;margin-left:0}}
-</style><link rel="stylesheet" href="./studio/workspace.css"><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"></head><body>
+</style><link rel="stylesheet" href="./studio/workspace.css"><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"><link rel="stylesheet" href="./studio/feature-hub.css"></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></symbol>
@@ -282,7 +282,7 @@ details.ai-box{margin-top:14px;border-top:1px solid var(--line);padding-top:10px
 </svg>
 <header class="top"><div class="top-in">
   <div class="brand"><span class="logo"><svg><use href="#i-play"/></svg></span><div><h1>H3 Video Studio</h1><div class="sub">글·그림으로 소리까지 있는 영상 만들기</div></div></div>
-  <a class="h3-guide-menu" href="./studio/h3-cli.html">설치·사용설명서 <span>H100 4장 · CLI ↗</span></a>
+  <a class="h3-guide-menu" href="./studio/h3-cli.html">기능별 사용법 <span>영상 교정 · 자막 · 출력 · 설치</span></a>
   <div class="servers">
     <button type="button" class="pill" id="pill-fl" title=""><span class="dot"></span><span>글·그림 서버 확인 중</span></button>
     <button type="button" class="pill" id="pill-ref" title=""><span class="dot"></span><span>참고 자료 서버 확인 중</span></button>
@@ -297,6 +297,7 @@ details.ai-box{margin-top:14px;border-top:1px solid var(--line);padding-top:10px
   <div class="help" id="conn-msg"></div>
 </div></div>
 
+<section id="videoTaskHub" class="hf-hub" aria-label="영상 기능별 시작"></section>
 <section class="video-start"><div><p>VIDEO STUDIO</p><h2>영상 작업실</h2><span>장면 생성부터 보정, 자막과 최종 영상까지.</span></div><div class="video-start-actions"><button class="btn main" id="openVideoStudio" type="button" disabled>영상 편집실 열기 ↗</button><button class="btn main" id="openMotionStudio" type="button" disabled>모션 · 타임라인 편집</button></div></section>
 <div class="banners" id="banners"></div>
 <section id="videoWorkbench" class="vw" hidden aria-label="영상 편집실"></section>
@@ -1659,12 +1660,15 @@ Promise.all([import('./studio/server-control.js'),import('./studio/project-recov
  return createVideoRecovery({getBase:()=>BASE||location.origin,kind:group,id,save:async()=>{const pending=[];window.dispatchEvent(new CustomEvent('h3:save-project',{detail:{id,waitUntil:promise=>pending.push(promise)}}));await Promise.all(pending);}});
 },onConnected:async()=>{await loadSpec();await checkHealth();await poll();window.dispatchEvent(new Event('h3:refresh-project'));}})).catch(error=>toast(error.message));
 import('./studio/ai-keys.js').then(({mountAiMethod})=>{AI=mountAiMethod($('#ai-method'),{getMode:()=>mode,onChange:promptHelp});$('#ai-box').hidden=false;promptHelp();}).catch(()=>{$('#ai-box').hidden=true;});
-import('./studio/motion.js').then(({mountMotionStudio})=>mountMotionStudio({api,full,toast})).catch(error=>toast('모션 편집기를 불러오지 못했습니다: '+error.message));
+const motionReady=import('./studio/motion.js').then(({mountMotionStudio})=>mountMotionStudio({api,full,toast})).catch(error=>toast('모션 편집기를 불러오지 못했습니다: '+error.message));
 import('./studio/workspace.js').then(({mountWorkspace})=>{nativeWorkspace=mountWorkspace(document.getElementById('videoOverview'),{kind:'video',onAction:nativeWorkspaceAction});updateNativeOverview();}).catch(error=>toast('작업 현황을 불러오지 못했습니다: '+error.message));
 window.addEventListener('h3:workspace-recovery',event=>openVideoRecovery('studio/projects',event.detail.id));
 const promptHost=document.createElement('div');promptHost.id='promptLibrary';document.querySelector('main.layout')?.before(promptHost);
-import('./studio/prompt-library.js').then(({mountPromptLibrary,draftProject,mountDirections})=>{const controls=document.createElement('div');document.getElementById('recovery-prompt').closest('label').after(controls);mountDirections(controls,document.getElementById('recovery-prompt'));return mountPromptLibrary(promptHost,{theme:'auto',applyLabel:'영상 콘티로 불러오기',onApply:async draft=>{setMode('story');addFiles('json',[new File([JSON.stringify(draftProject(draft))],'prompt-storyboard.json',{type:'application/json'})]);toast('장면 초안을 불러왔습니다. 장면을 확인한 뒤 영상 만들기를 누르세요.');}});}).catch(error=>toast('템플릿을 불러오지 못했습니다: '+error.message));
-import('./studio/editor.js').then(({mountVideoStudio})=>mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null})).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));
+const promptsReady=import('./studio/prompt-library.js').then(({mountPromptLibrary,draftProject,mountDirections})=>{const controls=document.createElement('div');document.getElementById('recovery-prompt').closest('label').after(controls);mountDirections(controls,document.getElementById('recovery-prompt'));return mountPromptLibrary(promptHost,{theme:'auto',applyLabel:'영상 콘티로 불러오기',onApply:async draft=>{setMode('story');addFiles('json',[new File([JSON.stringify(draftProject(draft))],'prompt-storyboard.json',{type:'application/json'})]);toast('장면 초안을 불러왔습니다. 장면을 확인한 뒤 영상 만들기를 누르세요.');}});}).catch(error=>toast('템플릿을 불러오지 못했습니다: '+error.message));
+Promise.all([import('./studio/editor.js'),import('./studio/feature-hub.js')]).then(([{mountVideoStudio},{mountFeatureHub}])=>{
+ const editor=mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null});
+ mountFeatureHub({host:document.getElementById('videoTaskHub'),startRetouch:editor.startRetouch,openFeature:editor.openFeature,onMode:next=>{setMode(next);document.querySelector('.maker').scrollIntoView({block:'start',behavior:'smooth'});document.getElementById('prompt')?.focus();},onAux:async kind=>{if(kind==='motion'){await motionReady;document.getElementById('openMotionStudio').click();}else {await promptsReady;document.getElementById('promptLibrary').scrollIntoView({block:'start',behavior:'smooth'});}}});
+}).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));
 multiRefresh();
 if(window.opener)window.opener.postMessage({type:'video-maker-ready'},'*');
 </script></body></html>
