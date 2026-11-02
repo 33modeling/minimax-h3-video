@@ -112,7 +112,7 @@ try{
   await page.locator('[data-live-select]').selectOption('jobs:ui-paused');await page.locator('[data-live-action=recovery]').click();await page.locator('.video-resume-dialog[open]').waitFor();await scan('resume-dialog','.video-resume-dialog[open]');await page.keyboard.press('Escape');
   await page.locator('#serverControls>details').evaluate(e=>e.open=true);await scan('server-connection','#serverControls');
   sampleFeed=[];
-  await page.goto(origin+prefix+'studio/h3-cli',{waitUntil:'domcontentloaded'});await page.locator('#guide-search').waitFor();await scan('guide','.h3-hero');
+  await page.goto(origin+prefix+'studio/h3-cli',{waitUntil:'domcontentloaded'});await page.locator('#web-guide').evaluate(e=>e.open=true);await page.locator('#guide-search').waitFor();await scan('guide','.h3-hero');
   await page.locator('#guide-search').fill('--ref-gpus');await scan('guide-search','#gpu-layout');
   results.push({width,theme,scans,errors,contrast,featureLinks:width===390?22:0,negativeReferenceError:true,keyboardTabs:true,externalTimeline:'fixture; upstream editor not measured'});await context.close();
  }

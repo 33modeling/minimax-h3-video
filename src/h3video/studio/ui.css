@@ -113,3 +113,5 @@ html{scroll-padding-top:calc(var(--studio-header-height) + 16px)}
 .live-job-title{display:block;font-size:13px;line-height:1.6;margin-bottom:3px;overflow-wrap:anywhere}
 
 #liveJobControls>label{flex:0 0 min(320px,calc(100vw - 24px));width:min(320px,calc(100vw - 24px));max-width:100%}
+
+.cli-recipes article{padding:24px 0;border-top:1px solid var(--line);scroll-margin-top:24px}.cli-recipes h3{font-size:18px;line-height:1.7;margin:0 0 12px}.cli-recipes p{font-size:15px;line-height:1.9}.cli-recipes section{scroll-margin-top:24px}.cli-recipes table code{white-space:normal}

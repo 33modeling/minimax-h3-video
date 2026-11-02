@@ -61,10 +61,10 @@ try {
    try{return route.fulfill({body:await readFile(file),contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(file)]||'application/octet-stream'});}catch{return route.fulfill({status:404,body:'missing'});}
   });
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.stack||e.message));
-  await page.goto(origin+prefix+'studio/h3-cli');await page.screenshot({path:out+'/'+profile+'-guide-start.png'});await page.locator('[data-guide-category="all"]').click();
+  await page.goto(origin+prefix+'studio/h3-cli');await page.screenshot({path:out+'/'+profile+'-guide-start.png'});await page.locator('#web-guide').evaluate(e=>e.open=true);await page.locator('[data-guide-category="all"]').click();
   assert.equal(await page.locator('[data-guide-feature]:visible').count(),22);
   assert.equal(await page.locator('.h3-section[data-category]').count(),22);
-  assert.equal(await page.locator('#installation .h3-section').count(),16);
+  assert.equal(await page.locator('#installation .h3-section').count(),15);
   for(const f of FEATURES){const section=page.locator('#feature-'+f.id);assert.equal(await section.locator('ol li').count(),f.steps.length);assert.match(await section.textContent(),/준비할 것.*사용 조건.*완료하면/s);assert.equal(await section.locator('a.hf-use').getAttribute('href'),'../?feature='+f.id);}
   await page.fill('#guide-search','없는기능__');assert(await page.locator('#guide-empty').isVisible());
   await page.fill('#guide-search','--ref-gpus');assert(await page.locator('#gpu-layout').isVisible());assert(await page.locator('#installation').evaluate(e=>e.open));
