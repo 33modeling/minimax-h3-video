@@ -104,6 +104,8 @@ class Engine:
         if not model_path.is_dir():
             raise ValueError(f'기존 로컬 영상 모델 폴더를 찾지 못했습니다: {model_path}. 자동 다운로드는 하지 않습니다.')
         model_dir = str(model_path)
+        if variant == "ref2va" and len(devices) < 4:
+            raise ValueError("Ref2VA에 최소 GPU 4장이 필요합니다. 2장 구성은 중단했습니다. H100 8장에서는 FL2VA 4장 + Ref2VA 4장, 4장 노드에서는 --ref-only를 사용하세요.")
         self.reload_options = dict(model_dir=model_dir, variant=variant, devices=list(devices), dtype=dtype, attn=attn)
         import torch
         from diffusers import ComponentsManager, ModularPipeline

@@ -15,14 +15,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 class StartupPreflightTest(unittest.TestCase):
-    def fixture(self, *, raw=False, converted=True, incomplete=False, engine='diffusers', reference=True, engine_option=True, driver='12.2'):
+    def fixture(self, *, raw=False, converted=True, incomplete=False, engine='diffusers', reference=True, engine_option=True, driver='12.2', gpu_count=8, ram_gib=1024):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
         project = root / 'checkout'
         scripts = project / 'scripts'
         scripts.mkdir(parents=True)
-        for name in ['up.sh','provision.sh','cluster_env.sh','check_diffusers_model.py']:
+        for name in ['up.sh','provision.sh','cluster_env.sh','check_diffusers_model.py','check_startup_resources.py']:
             shutil.copy2(ROOT / 'scripts' / name, scripts / name)
         group = root / 'group'
         storage = group / 'another-user' / 'h3'
@@ -53,7 +53,7 @@ class StartupPreflightTest(unittest.TestCase):
             args = sys.argv[1:]
             with Path(os.environ['PREFLIGHT_TRACE']).open('a') as f:
                 f.write(repr(args) + '\\n')
-            if args and args[0].endswith('check_diffusers_model.py'):
+            if args and args[0].endswith(('check_diffusers_model.py', 'check_startup_resources.py')):
                 sys.exit(subprocess.call([os.environ['REAL_PYTHON'], *args]))
             if args and args[0].endswith('h3_leftovers.py'):
                 if any(x.startswith('--kill') for x in args):
@@ -70,7 +70,7 @@ class StartupPreflightTest(unittest.TestCase):
                     # Report port free without creating or binding a socket.
                     sys.exit(1)
                 if 'MemAvailable' in code:
-                    print(1024)
+                    print(os.environ.get('MOCK_RAM_GIB', '1024'))
                     sys.exit(0)
             raise AssertionError('Unexpected Python operation: ' + repr(args))
         '''))
@@ -86,7 +86,7 @@ class StartupPreflightTest(unittest.TestCase):
         fake_smi.write_text(textwrap.dedent('''\
             #!/bin/sh
             case "$*" in
-              *--query-gpu*) printf '0, 0, 81920\\n1, 0, 81920\\n2, 0, 81920\\n3, 0, 81920\\n' ;;
+              *--query-gpu*) i=0; while [ "$i" -lt "$MOCK_GPU_COUNT" ]; do printf '%s, 0, 81920\\n' "$i"; i=$((i + 1)); done ;;
               *) printf 'NVIDIA-SMI fixture; CUDA Version: %s\\n' "$MOCK_DRIVER" ;;
             esac
         '''))
@@ -100,25 +100,51 @@ class StartupPreflightTest(unittest.TestCase):
         }
         (project / '.cluster_env.local.sh').write_text(''.join(f'export {k}={str(v)!r}\n' for k,v in config.items()))
         env = {k:v for k,v in os.environ.items() if not k.startswith(('H3_','HF_','TRANSFORMERS_','STORAGE_ROOT','WORK_ROOT','MODELS_DIR','GROUP_VOLUME_ROOT','VENV'))}
-        env.update(REAL_PYTHON=sys.executable,PREFLIGHT_TRACE=str(root/'trace.log'),MOCK_DRIVER=driver)
+        env.update(REAL_PYTHON=sys.executable,PREFLIGHT_TRACE=str(root/'trace.log'),MOCK_DRIVER=driver,MOCK_GPU_COUNT=str(gpu_count),MOCK_RAM_GIB=str(ram_gib))
         return project, env, root
 
     def check(self, **kwargs):
         fl2va_only=kwargs.pop('fl2va_only', False)
+        ref_only=kwargs.pop('ref_only', False)
+        extra=kwargs.pop('extra', [])
         project, env, root = self.fixture(**kwargs)
-        flags=(['--engine',kwargs.get('engine','diffusers')] if kwargs.get('engine_option',True) else [])+(['--ref'] if kwargs.get('reference') else [])+(['--fl2va-only'] if fl2va_only else [])
+        flags=(['--engine',kwargs.get('engine','diffusers')] if kwargs.get('engine_option',True) else [])+(['--ref'] if kwargs.get('reference') else [])+(['--fl2va-only'] if fl2va_only else [])+(['--ref-only'] if ref_only else [])+extra
         result = subprocess.run(['bash',str(project/'scripts/up.sh'),'--check',*flags],cwd=project,env=env,input='',capture_output=True,text=True,timeout=20)
         self.assertNotIn('== fl2va 시작', result.stdout)
         self.assertNotIn('unbound variable', result.stderr)
         return result, root
 
-    def test_default_startup_checks_both_variants_and_splits_four_gpus(self):
+    def test_default_startup_checks_both_variants_and_assigns_four_each(self):
         result, root = self.check(engine_option=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Diffusers 형식 가중치(fl2va)', result.stdout)
         self.assertIn('Diffusers 형식 가중치(ref2va)', result.stdout)
-        self.assertIn('fl2va GPU 0,1', result.stdout)
-        self.assertIn('ref2va GPU 2,3', result.stdout)
+        self.assertIn('fl2va GPU 0,1,2,3', result.stdout)
+        self.assertIn('ref2va GPU 4,5,6,7', result.stdout)
+
+    def test_four_gpu_dual_mode_is_rejected_before_any_cleanup(self):
+        result, root = self.check(gpu_count=4)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('2+2 자동 분할은 중단', result.stdout)
+        self.assertNotIn('h3_leftovers.py', (root/'trace.log').read_text())
+
+    def test_explicit_two_plus_two_is_rejected_even_on_an_eight_gpu_node(self):
+        result, root = self.check(extra=['--gpus','0,1','--ref-gpus','2,3'])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('최소 4장', result.stdout)
+        self.assertNotIn('h3_leftovers.py', (root/'trace.log').read_text())
+
+    def test_insufficient_cpu_ram_aborts_before_cleanup(self):
+        result, root = self.check(ram_gib=200)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('CPU RAM 여유 200GiB', result.stdout)
+        self.assertNotIn('h3_leftovers.py', (root/'trace.log').read_text())
+
+    def test_reference_only_uses_one_four_gpu_node(self):
+        result, root = self.check(gpu_count=4, ref_only=True, extra=['--ref-gpus','0,1,2,3'])
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('ref2va GPU 0,1,2,3',result.stdout)
+        self.assertNotIn('Diffusers 형식 가중치(fl2va)',result.stdout)
 
     def test_default_startup_blocks_missing_reference_weights(self):
         result, root = self.check(reference=False)
@@ -126,7 +152,7 @@ class StartupPreflightTest(unittest.TestCase):
         self.assertIn('Diffusers 형식 가중치(ref2va)가 아직 없다', result.stdout)
 
     def test_explicit_fl2va_only_accepts_base_weights_and_all_four_gpus(self):
-        result, root = self.check(reference=False, fl2va_only=True)
+        result, root = self.check(reference=False, fl2va_only=True, gpu_count=4)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('fl2va GPU 0,1,2,3', result.stdout)
         self.assertNotIn('Diffusers 형식 가중치(ref2va)', result.stdout)

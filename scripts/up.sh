@@ -7,22 +7,23 @@
 #   bash scripts/up.sh --fl2va-only    글·첫/끝 프레임만 쓸 때 fl2va만 시작 (--ref는 기존 호환용)
 #   bash scripts/up.sh --engine sglang 명시한 경우만 SGLang (기본 Diffusers)
 #     GPU: --gpus 를 안 주면 비어 있는 GPU 를 쓴다. diffusers 엔진은 빈 GPU를 두 서버에 반씩(--fl2va-only면 전부), sglang 은 4장씩. 다른 프로세스가 쓰는 GPU 는 피한다
-#   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7 --mode memory
+#   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7   # H100 80GB 8장, 서버당 4장
 #   bash scripts/up.sh --force         이 계정의 다른 GPU 작업을 먼저 끄고 띄운다 (기본은 GPU 가 모자라거나 서버당 1장이면 목록을 보여 주고 y/N 으로 묻는다)
+#   bash scripts/up.sh --ref-only --ref-gpus 0,1,2,3   # 별도 4장 노드에서 참고 서버만
 #   bash scripts/up.sh --check         점검만
 # 끄기: 이 화면에서 Ctrl+C (다른 창에서는 bash scripts/down.sh)
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"
-GPUS=""; REF_GPUS=""; REF=1; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"; ENGINE=diffusers
+GPUS=""; REF_GPUS=""; FL=1; REF=1; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"; ENGINE=diffusers
 while [[ $# -gt 0 ]]; do case "$1" in
   --engine) ENGINE="${2:-}"; [[ "$ENGINE" == diffusers || "$ENGINE" == sglang ]] || { echo "--engine diffusers 또는 --engine sglang 을 지정하세요" >&2; exit 2; }; shift 2 ;;
-  --ref) REF=1; shift ;; --fl2va-only) REF=0; shift ;; --check) CHECK=1; shift ;; --force|-y) FORCE=1; shift ;;
+  --ref) REF=1; shift ;; --fl2va-only) FL=1; REF=0; shift ;; --ref-only) FL=0; REF=1; shift ;; --check) CHECK=1; shift ;; --force|-y) FORCE=1; shift ;;
   --web|--no-web) echo "웹 UI 는 이제 따로 띄운다: 다른 창에서 bash scripts/web.sh (H3 서버와 서로 안 건드린다)"; shift ;;
   --gpus) GPUS="$2"; shift 2 ;; --ref-gpus) REF_GPUS="$2"; shift 2 ;;
   --mode) MODE_ARGS=(--mode "$2"); shift 2 ;; --cors) echo "--cors 는 웹 UI 옵션이다: bash scripts/web.sh --cors $2"; shift 2 ;;
-  -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "알 수 없는 옵션: $1 (--help)"; exit 2 ;; esac; done
 
 red() { printf '\033[31m%s\033[0m\n' "$*"; }; green() { printf '\033[32m%s\033[0m\n' "$*"; }; yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
@@ -40,6 +41,31 @@ echo "[up] 로그 파일: $UP_LOG"
 
 # 2) 점검
 echo "[up] 엔진: $H3_ENGINE (드라이버 CUDA $(h3_driver_cuda || true))"
+avail_ram=$(python3 - <<'PY' 2>/dev/null || echo 0
+avail = next(int(l.split()[1]) * 1024 for l in open("/proc/meminfo") if l.startswith("MemAvailable"))
+for lim_f, use_f in (("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+                     ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes")):
+    try:
+        lim = open(lim_f).read().strip()
+    except OSError:
+        continue
+    if lim != "max" and int(lim) < 1 << 60:
+        avail = min(avail, int(lim) - int(open(use_f).read()))
+    break
+print(max(0, avail) // 2**30)
+PY
+)
+resource_mode=both; [[ $REF == 0 ]] && resource_mode=fl2va; [[ $FL == 0 ]] && resource_mode=ref2va
+resource_ram=0; [[ $H3_ENGINE == diffusers ]] && resource_ram=$((140 * (FL + REF)))
+resource_args=(); [[ ${H3_DSERVER_CP:-1} == 0 && $H3_ENGINE == diffusers ]] && resource_args+=(--cp-disabled)
+if ! python3 "$ROOT/scripts/check_startup_resources.py" \
+  --gpu-rows "$(nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null)" \
+  --mode "$resource_mode" --gpus "$GPUS" --ref-gpus "$REF_GPUS" \
+  --available-ram-gib "$avail_ram" --minimum-ram-gib "$resource_ram" \
+  --device-override "${H3_DSERVER_DEVICES:-}" "${resource_args[@]}"; then
+  red "== 시작 취소: 실행 중인 서버·다른 GPU 작업을 종료하지 않았습니다."
+  exit 1
+fi
 # 전에 띄운 H3 서버·워커가 GPU 를 잡고 남아 있으면 먼저 내린다 (내 계정이 이 레포로 띄운 것만, 다른 작업은 그대로)
 # 다시 띄우면 전에 띄운 H3 서버 묶음(서버·워커·torchrun·serve.sh·웹 UI)을 전부 내리고 시작한다
 if [[ $CHECK == 1 ]]; then
@@ -67,7 +93,7 @@ fi
 if [[ "$H3_ENGINE" == diffusers ]]; then
   # provision.sh validates/installs this tree. The optional original checkpoint
   # can live elsewhere or be absent; missing linked components are checked here.
-  for v in fl2va $([[ $REF == 1 ]] && echo ref2va); do
+  for v in $([[ $FL == 1 ]] && echo fl2va) $([[ $REF == 1 ]] && echo ref2va); do
     if python3 "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant "$v"; then green "✓ Diffusers 형식 가중치($v): $H3_DIFFUSERS_DIR"
     else fail "Diffusers 형식 가중치($v)가 아직 없다 (위 목록)" "bash scripts/provision.sh$([[ $REF == 0 ]] && echo ' --fl2va-only')  (없는 것만 받는다, 텍스트 인코더는 FL2VA 것 재사용)"; fi
   done
@@ -77,24 +103,8 @@ if [[ "$H3_ENGINE" == diffusers ]]; then
   if "$VENV/bin/python" -c "from diffusers import MiniMaxH3ModularPipeline" 2>/dev/null; then green "✓ diffusers: $VENV"
   else fail "Diffusers venv 없음 또는 불완전: $VENV" "bash scripts/provision.sh"; fi
   # 컴포넌트를 CPU 메모리에 두고 GPU 로 옮겨 쓴다: 서버 하나에 약 140GB (텍스트 인코더 62 + 영상 모델 62 + VAE 10)
-  need_ram=$((140 * $([[ $REF == 1 ]] && echo 2 || echo 1)))
-  # 컨테이너(쿠버네티스 파드)는 /proc/meminfo 가 노드 전체를 보여 주므로 cgroup 한도도 본다
-  avail_ram=$(python3 - <<'PY' 2>/dev/null || echo 0
-avail = next(int(l.split()[1]) * 1024 for l in open("/proc/meminfo") if l.startswith("MemAvailable"))
-for lim_f, use_f in (("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
-                     ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes")):
-    try:
-        lim = open(lim_f).read().strip()
-    except OSError:
-        continue
-    if lim != "max" and int(lim) < 1 << 60:
-        avail = min(avail, int(lim) - int(open(use_f).read()))
-    break
-print(max(0, avail) // 2**30)
-PY
-)
-  if [[ $avail_ram -ge $need_ram ]]; then green "✓ 메모리 여유 ${avail_ram}GB (컨테이너 한도 반영, 필요 약 ${need_ram}GB)"
-  else yellow "· 메모리 여유 ${avail_ram}GB (컨테이너 한도 반영) < 필요 약 ${need_ram}GB — 적재 중 메모리 부족으로 꺼질 수 있다$([[ $REF == 1 ]] && echo ' (--fl2va-only면 약 140GB)')"; fi
+  green "✓ CPU RAM 여유 ${avail_ram}GiB (시작 검사 기준 ${resource_ram}GiB)"
+
 else
   command -v sglang >/dev/null && green "✓ sglang: $(command -v sglang)" || fail "sglang 없음" "bash scripts/provision.sh --engine sglang (venv: $VENV)"
 fi
@@ -111,7 +121,7 @@ PY
 }
 in_use() { h3_port_busy "$1"; }   # ss 없이도 (실제 바인딩으로) 확인
 declare -A PORT=([fl2va]=$H3_PORT_FL2VA [ref2va]=$H3_PORT_REF2VA [web]=${H3_WEB_PORT:-8790})
-TODO=(fl2va); [[ $REF == 1 ]] && TODO+=(ref2va); [[ $WEB == 1 ]] && TODO+=(web)
+TODO=(); [[ $FL == 1 ]] && TODO+=(fl2va); [[ $REF == 1 ]] && TODO+=(ref2va); [[ $WEB == 1 ]] && TODO+=(web)
 START=()
 for w in "${TODO[@]}"; do
   p=${PORT[$w]}
@@ -146,7 +156,7 @@ select_gpus() {   # → GPUS·REF_GPUS 를 정하고, 문제는 GERR 에 모은�
   # 안 준 것은 비어 있는 GPU 에서: diffusers 는 남은 빈 GPU 를 서버 수로 나눠 전부(서버당 최대 8장), sglang 은 4장씩
   AUTO=(); for w in "${START[@]}"; do [[ $w == fl2va && -z "$GPUS" ]] && AUTO+=(fl2va); [[ $w == ref2va && -z "$REF_GPUS" ]] && AUTO+=(ref2va); done
   left=0; for i in "${FREE[@]}"; do [[ " ${TAKEN[*]} " == *" $i "* ]] || left=$((left + 1)); done
-  if [[ "$H3_ENGINE" == diffusers ]]; then PER=$(( ${#AUTO[@]} > 0 ? left / ${#AUTO[@]} : 0 )); [[ $PER -gt 8 ]] && PER=8; [[ $PER -lt 1 ]] && PER=1
+  if [[ "$H3_ENGINE" == diffusers ]]; then PER=$(( ${#AUTO[@]} > 0 ? left / ${#AUTO[@]} : 0 )); [[ $PER -gt 8 ]] && PER=8; [[ $PER -lt 1 ]] && PER=1; [[ $REF == 1 && $PER -lt 4 ]] && PER=4
     [[ "${H3_DSERVER_CP:-1}" == 0 && $PER -gt 2 ]] && PER=2   # 여러 장 방식을 끄면 서버당 2장
   else PER=4; fi
   for w in "${AUTO[@]}"; do
