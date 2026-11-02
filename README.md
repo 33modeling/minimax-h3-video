@@ -2,6 +2,15 @@
 
 ## H100에 설치된 `h3video`는 어디에 있나요?
 
+**`h3video`가 없다고 나오면:** `up.sh`를 실행했던 H100의 코드 폴더에서 아래 두 줄을 입력하세요. 설치된 Python으로 코드를 직접 실행하므로 `h3video` 실행 파일이 없어도 됩니다.
+
+```bash
+source scripts/cluster_env.sh
+"$VENV/bin/python" -m h3video.cli --help
+```
+
+영상 생성도 `"$VENV/bin/python" -m h3video.cli gen "비 오는 밤거리" -s 8`처럼 실행합니다. 아래 예시의 맨 앞 `h3video`를 `"$VENV/bin/python" -m h3video.cli`로 바꾸면 됩니다. 이 방법도 `$VENV/bin/python`이 없다면 가상환경 경로와 설치 상태를 확인해야 합니다.
+
 기본 Diffusers 설치의 실행 파일은 다음 위치입니다.
 
 ```text
