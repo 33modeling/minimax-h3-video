@@ -1,6 +1,6 @@
 const sections=[...document.querySelectorAll('.h3-section')],search=document.querySelector('#guide-search');
 const cards=[...document.querySelectorAll('[data-guide-feature]')],count=document.querySelector('#guide-count');
-let category='edit';
+let category='all';
 function filter(){
   const terms=search.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   let features=0,technical=0;

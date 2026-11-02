@@ -1,0 +1,115 @@
+:root{--on-acc:#fff;--studio-header-height:82px}
+@media(prefers-color-scheme:dark){:root{--on-acc:#101522}}
+html{scroll-padding-top:calc(var(--studio-header-height) + 16px)}
+.h3-studio :is(button,.btn,select,input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),summary),.h3-guide button{min-height:44px}
+.h3-studio :is(button,.btn),.h3-guide button{min-width:44px}
+.h3-studio :is(button,a,input,textarea,select,summary):focus-visible{outline:3px solid var(--acc);outline-offset:3px}
+.h3-studio :is(.primary,.btn.main,.vw-primary,.h3-guide-menu),.hf-hub .hf-primary{color:var(--on-acc)}
+.h3-studio :is(button,a){touch-action:manipulation}
+.h3-studio :is(p,small,label,summary,button){overflow-wrap:anywhere}
+.h3-studio :is(.help,.vw-note,.vw label,.vw-eyebrow,.hf-note){font-size:13px}
+.h3-studio .top{top:0;z-index:150}
+.h3-studio .top-in{max-width:1440px;padding:12px 24px;gap:10px 18px}
+.h3-studio .brand .sub{display:none}
+.studio-nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+.studio-nav a,.studio-nav button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:9px 12px;border:0;border-radius:8px;background:transparent;color:var(--ink);font-family:inherit;font-size:14px;font-weight:600;line-height:1.5;text-decoration:none;white-space:nowrap}
+.studio-nav a:hover,.studio-nav button:hover{background:var(--soft);color:var(--acc)}
+.h3-studio .h3-guide-menu{margin:0;min-height:44px;padding:9px 14px}
+.h3-studio .h3-guide-menu span{display:none}
+.studio-connection{position:relative;font-size:13px}
+.studio-connection>summary{font-weight:600;white-space:nowrap}
+.studio-connection .servers{position:absolute;right:0;top:calc(100% + 8px);width:min(360px,calc(100vw - 32px));padding:14px;display:flex;flex-wrap:wrap;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 30px #0002}
+.studio-connection .pill{white-space:normal;flex:1 1 100%;text-align:left;justify-content:flex-start}
+.h3-studio .maker-activity{position:relative;z-index:1;background:var(--soft);color:var(--ink);border-color:var(--line);padding:10px 24px}
+.h3-studio .maker-activity[data-state=idle]{padding:6px 24px;background:var(--soft)}
+.h3-studio .maker-activity .ma-heading strong{font-size:13px;color:var(--ink)}
+.h3-studio .maker-activity .ma-heading span{color:var(--mut)}
+.h3-studio .maker-activity .ma-heading button{min-height:44px;min-width:44px;background:var(--card);color:var(--ink);border-color:var(--line)}
+.h3-studio .maker-activity .ma-job{background:var(--card);color:var(--ink);border-color:var(--line)}
+.h3-studio .maker-activity .ma-job b{color:var(--acc)}
+.h3-studio .maker-activity[data-state=offline]{background:var(--warn-soft);color:var(--warn)}
+.h3-studio .hf-hub{margin-top:28px}
+.h3-studio :is(#quick-retouch,#videoWorkbench,#motionWorkbench,#new-video,#video-results,#feature-catalog,#promptLibrary){scroll-margin-top:calc(var(--studio-header-height) + 18px)}
+.hf-catalog{margin:24px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px 0}
+.hf-catalog>summary{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:12px 0;font-size:16px;font-weight:700;color:var(--ink)}
+.hf-catalog>summary span{font-size:13px;font-weight:400;color:var(--mut)}
+.hf-catalog .hf-find{margin-top:12px}
+.hf-catalog .hf-feature>div{flex-wrap:wrap;gap:8px 14px}
+.hf-catalog .hf-feature a{display:inline-flex;align-items:center;min-height:44px;padding:8px 0}
+.h3-studio .video-start{padding:24px;border-top:1px solid var(--line);margin-top:12px}
+.h3-studio .video-start h2{font-size:24px}
+.studio-section-heading{font-size:22px;line-height:1.5;margin:0 0 18px;letter-spacing:-.5px}
+.h3-studio .maker{padding-top:20px}
+.h3-studio .feed-head h2{font-size:22px}
+.h3-studio .vw-toolbar{display:flex;align-items:center;gap:8px}
+.h3-studio .vw-toolbar>input{flex:1 1 70%;font-size:16px}
+.h3-studio .vw-toolbar>[data-action=save]{flex:0 0 auto;min-width:80px;background:var(--acc);color:var(--on-acc)}
+.vw-project-tools{width:100%;border-top:1px solid var(--line);padding-top:6px}
+.vw-project-tools>summary{padding:10px 0;color:var(--ink);font-size:14px;font-weight:600}
+.vw-project-tools>.vw-actions{padding:8px 0 12px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.vw-task-actions{width:100%;display:flex;gap:8px;flex-wrap:wrap}
+.vw-task-actions button{flex:1 1 180px}
+.h3-studio .vw-task-actions [data-action=pause]{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+.h3-studio .vw-task-actions [data-action=resume]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.h3-studio .vw-task-actions button:disabled{cursor:default}
+.h3-studio .vw-surface{border-radius:14px}
+.h3-studio .vw-status progress:not([value]),.h3-studio .vw-status progress[value="0"]{opacity:.45}
+.h3-studio .vw-tabs button{font-size:14px;min-height:48px}
+.h3-studio .vw-versions label.vw-check{min-height:44px}
+.h3-studio .vw-shot-controls button{min-width:44px}
+.h3-studio .vw-table-wrap{border:1px solid var(--line);border-radius:10px;margin-top:16px}
+.h3-studio .vw-table th{font-size:13px;background:var(--soft)}
+.h3-studio .vw-table td{vertical-align:top}
+.h3-studio .vw-table textarea{font-size:14px;line-height:1.6}
+.h3-studio .vr-dialog,.h3-studio .vw-review-dialog{background:var(--card);color:var(--ink);border-color:var(--line);font:15px/1.7 system-ui,-apple-system,"Noto Sans KR",sans-serif}
+.h3-studio .vr-dialog :is(button,input,select,textarea),.h3-studio .vw-review-dialog button{background:var(--card);color:var(--ink);border-color:var(--line)}
+.h3-studio .vr-dialog .vw-primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.h3-studio .vr-dialog :is(.vw-section,.vr-overlays fieldset){background:var(--soft);border-color:var(--line)}
+.h3-studio .vr-dialog .vw-note{color:var(--mut)}
+.h3-studio .vr-dialog :is(.vr-shots [aria-pressed=true],.vr-history [aria-current=true]){background:var(--acc-soft);border-color:var(--acc)}
+.h3-studio .vr-upload{position:relative;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;min-height:44px}
+.h3-studio .vr-upload input{display:block;position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.h3-studio .vr-upload:focus-within{outline:3px solid var(--acc);outline-offset:3px}
+.h3-studio [data-ref-error]:empty{display:none}
+.h3-studio [data-ref-error]{padding:12px;background:var(--bad-soft);color:var(--bad);border-radius:8px}
+.h3-studio .batch-field label{line-height:1.5}
+.h3-studio .batch-shots label{min-height:44px}
+.h3-studio .batch-comparison th,.h3-studio .batch-comparison td{border-color:var(--line)}
+.h3-studio .maker-server-control{background:var(--card);color:var(--ink);border-color:var(--line)}
+.h3-studio .maker-server-control :is(button,input,select){background:var(--card);color:var(--ink);border-color:var(--line)}
+.h3-studio .maker-server-control [data-recover-generation]{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.h3-studio .maker-server-control [data-recovery-state]{background:var(--soft)}
+.h3-studio .toast{z-index:200;max-height:35dvh;overflow:auto;line-height:1.7}
+.h3-studio .hf-workbench .hf-actions:has([data-hf=pause]){position:static;background:#17232d;border:1px solid #40525e;border-radius:10px;padding:12px}
+.h3-studio .hf-workbench :is(button,.hf-button){min-height:44px;min-width:44px}
+.h3-studio .hf-project-bar>label:nth-child(2){flex:1 1 150px;min-width:130px}
+.h3-studio .hf-project-bar>button{flex:1 1 110px}
+.h3-studio .hf-workbench .hf-note{color:#b8cbd7}
+.h3-guide .h3-top a{display:inline-flex;align-items:center;min-height:44px}
+.h3-guide .h3-copy{min-width:60px;min-height:44px}
+.h3-guide .hf-guide-start>a{color:var(--on-acc)}
+@media(max-width:1000px){.studio-nav{order:3;flex-basis:100%;justify-content:flex-start;border-top:1px solid var(--line);padding-top:6px}.h3-studio .h3-guide-menu{margin-left:auto}.vw-project-tools>.vw-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){
+ .h3-studio .top-in{padding:8px 12px;gap:6px 10px}.h3-studio .brand h1{font-size:15px}.h3-studio .logo{display:none}
+ .h3-studio .h3-guide-menu{font-size:13px;padding:8px 10px;width:auto;order:0}.studio-connection{margin:0;font-size:12px}
+ .studio-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;padding-top:4px}.studio-nav a,.studio-nav button{padding:8px 2px;font-size:13px}
+ .h3-studio .studio-connection .servers{order:0;width:min(340px,calc(100vw - 24px));overflow:visible;flex-wrap:wrap;margin:0}
+ .h3-studio .maker-activity,.h3-studio .maker-activity[data-state=idle]{padding:6px 12px}.h3-studio .maker-activity .ma-heading span{font-size:12px;flex-basis:100%}
+ .h3-studio .hf-hub{margin-top:20px}.hf-heading h2{font-size:23px}.hf-heading span{font-size:14px}
+ .hf-catalog>summary span{flex-basis:100%;padding-left:14px}
+ .h3-studio .video-start{padding:20px 14px}.h3-studio .vw-toolbar{display:flex}.h3-studio .vw-toolbar>input{flex-basis:100%;font-size:16px}
+ .h3-studio .vw-toolbar>[data-action=save]{flex-basis:100%}.vw-task-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .vw-project-tools>.vw-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.vw-project-tools .vw-actions :is(button,label){font-size:13px;padding:10px 8px}
+ .h3-studio .vw-tabs{gap:6px}.h3-studio .vw-tabs button{flex:1 1 100%;text-align:left;justify-content:flex-start}
+ .h3-studio .vw label{font-size:13px}.h3-studio .vw-note{font-size:13px}
+ .h3-studio .hf-project-bar>label:nth-child(2){flex-basis:100%;width:100%;min-width:0}.h3-studio .hf-header h2{font-size:24px}
+ .h3-studio .vr-dialog .vr-head h2{font-size:22px}.h3-studio .batch-field{grid-template-columns:minmax(0,1fr);gap:6px;padding:10px 0;border-bottom:1px solid var(--line)}
+ .h3-guide .h3-main{padding-top:28px}.h3-guide .h3-hero h1{letter-spacing:-1px}.h3-guide .h3-top{padding:12px 16px}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}.h3-studio *{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+.h3-guide .h3-content pre{padding-top:64px}.h3-guide .h3-copy{font-size:13px}
+
+.live-job-title{display:block;font-size:13px;line-height:1.6;margin-bottom:3px;overflow-wrap:anywhere}
+
+#liveJobControls>label{flex:0 0 min(320px,calc(100vw - 24px));width:min(320px,calc(100vw - 24px));max-width:100%}

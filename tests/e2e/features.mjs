@@ -90,7 +90,7 @@ try {
   assert.equal(JSON.stringify(projects.get(fixture.uploaded.id)),original,'Existing project unchanged');
   assert.equal(projects.get(createdId).clips[0].variants.length,1,'Original variant remains');
   await page.locator('[data-start-retouch]').click();await page.locator('[data-quick-status][data-error=true]').waitFor();assert.equal(createCalls,1);assert.equal(upscales,2,'Busy work must not be submitted twice');
-  await page.fill('#feature-search','자막');assert(await page.locator('[data-feature-card="captions"]').isVisible());await page.locator('[data-open-feature="captions"]').click();await page.waitForFunction(()=>document.querySelector('#videoWorkbench [data-action="tab"][data-tab="sound"]')?.classList.contains('active'));
+  await page.locator('#feature-catalog>summary').click();await page.fill('#feature-search','자막');assert(await page.locator('[data-feature-card="captions"]').isVisible());await page.locator('[data-open-feature="captions"]').click();await page.waitForFunction(()=>document.querySelector('#videoWorkbench [data-action="tab"][data-tab="sound"]')?.classList.contains('active'));
   assert.deepEqual(errors,[]);
   results.push({profile,features:22,installationSections:16,widths:[1440,820,390,320],dark:true,uploadToPromptRequest:true,createCalls,uploads,upscales,originalPreserved:true,retryReusesProject:true,noURLSideEffects:true,transport:'browser routes; real backend project/view schema and real1sfixture; no GPU/model invocation',errors});
   await context.close();

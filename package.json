@@ -16,7 +16,8 @@
     "test:editor-bughunt": "node tests/e2e/editor_bughunt.mjs",
     "test:ai-keys": "node --test tests/ai-keys.test.mjs && node tests/e2e/ai_keys.mjs",
     "test:features": "node tests/e2e/features.mjs",
-    "test:guide": "node tests/e2e/help_guide.mjs"
+    "test:guide": "node tests/e2e/help_guide.mjs",
+    "test:ui-audit": "node tests/e2e/ui_audit.mjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"
