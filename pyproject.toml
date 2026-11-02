@@ -23,4 +23,4 @@ where = ["src", "shortform"]
 include = ["h3video*", "shorts*"]
 
 [tool.setuptools.package-data]
-h3video = ["ui.html", "studio/*.js", "studio/*.css"]
+h3video = ["ui.html", "studio/*.js", "studio/*.css", "studio/*.html"]

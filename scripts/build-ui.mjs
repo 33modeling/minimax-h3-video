@@ -1,10 +1,14 @@
 import {existsSync} from 'node:fs';
+import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import { mkdir, copyFile, writeFile, cp } from 'node:fs/promises';
 const output=new URL('../dist-ui/',import.meta.url);
 await mkdir(output,{recursive:true});
 await copyFile(new URL('../src/h3video/ui.html',import.meta.url),new URL('index.html',output));
-const sharedControl=new URL('../../storybook-maker/web/studio/server-control.js',import.meta.url);
-if(existsSync(sharedControl))await copyFile(sharedControl,new URL('../src/h3video/studio/server-control.js',import.meta.url));
-for(const name of ['workspace.js','workspace.css','activity.js'])await copyFile(new URL('../../storybook-maker/web/studio/'+name,import.meta.url),new URL('../src/h3video/studio/'+name,import.meta.url));
 await cp(new URL('../src/h3video/studio/',import.meta.url),new URL('studio/',output),{recursive:true});
-await writeFile(new URL('build.json',output),JSON.stringify({profile:process.env.GAME_PROFILE||'pages',source:'h3video/ui.html'}));
+const sharedControl=new URL('../../storybook-maker/web/studio/server-control.js',import.meta.url);
+if(existsSync(sharedControl))await copyFile(sharedControl,new URL('studio/server-control.js',output));
+for(const name of ['workspace.js','workspace.css','activity.js'])await copyFile(new URL('../../storybook-maker/web/studio/'+name,import.meta.url),new URL('studio/'+name,output));
+const files={};for(const name of ['index.html','studio/h3-cli.html','studio/h3-guide.css','studio/h3-guide.js'])files[name]=createHash('sha256').update(await readFile(new URL(name,output))).digest('hex');
+await writeFile(new URL('build.json',output),JSON.stringify({profile:process.env.GAME_PROFILE||'pages',source:'h3video/ui.html',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:new URL('../',import.meta.url),encoding:'utf8'}).trim(),files})+'\n');

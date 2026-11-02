@@ -1,5 +1,8 @@
 # minimax-h3-video
 
+상단 **설치·사용설명서 · H100 4장 · CLI**에서 로컬 4장 설치·GPU 배치·생성·편집·재개·오류 대응을 확인한다. 정본은 `src/h3video/studio/h3-cli.html`이며 기존 `/studio/` 정적 경로에서 서버 재시작 없이 파일을 제공할 수 있다. 공개 경로는 `/video-maker/studio/h3-cli.html`이다.
+
+
 ## Hyperframes 모션 영상 편집
 
 기존 영상 maker의 **Hyperframes · 모션·타임라인 영상**에서 HTML·GSAP 모션과
