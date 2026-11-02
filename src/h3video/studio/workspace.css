@@ -11,3 +11,4 @@
 @media(max-width:560px){.mw-board{padding:18px;border-radius:15px;margin-bottom:20px}}
 
 .mw-heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}.mw-heading-actions>button{font-size:12px;min-height:38px;padding:6px 11px}@container maker-overview (max-width:600px){.mw-heading-actions{width:100%;justify-content:space-between}}
+@media (pointer:coarse){.mw-board button,.mw-board .mw-filter button{min-height:44px!important}.mw-board .mw-filter button{min-width:44px}}
