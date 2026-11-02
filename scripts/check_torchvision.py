@@ -36,6 +36,20 @@ print(json.dumps({'version': torch.__version__, 'cuda': torch.version.cuda,
                  'hip': torch.version.hip}))
 """
 
+DIFFUSERS_STACK = (
+    "torch==2.7.1+cu126",
+    "torchvision==0.22.1+cu126",
+    "torchaudio==2.7.1+cu126",
+)
+
+def install_diffusers_stack():
+    if sys.prefix == sys.base_prefix:
+        raise RuntimeError("Refusing to modify system Python; run this in the project venv")
+    with (Path(sys.prefix) / ".torchvision-repair.lock").open("a") as lease:
+        fcntl.flock(lease, fcntl.LOCK_EX)
+        pip_command("install", "--only-binary=:all:", "--index-url",
+                    "https://download.pytorch.org/whl/cu126", *DIFFUSERS_STACK)
+
 
 def run_probe(gpu):
     # A fresh process is essential after a failed torchvision import.
@@ -186,10 +200,18 @@ def repair_wheel(info):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repair", action="store_true")
+    parser.add_argument("--install-diffusers-stack", action="store_true",
+                        help="Install the project's exact CUDA 12.6 torch/vision/audio builds")
     parser.add_argument(
         "--cpu-only", action="store_true", help="Skip GPU checks during provisioning"
     )
     args = parser.parse_args(argv)
+    if args.install_diffusers_stack:
+        try:
+            install_diffusers_stack()
+        except (RuntimeError, OSError, subprocess.CalledProcessError) as exc:
+            print(f"[torchvision] Diffusers CUDA stack install failed: {exc}", file=sys.stderr)
+            return 1
     gpu = not args.cpu_only
     result = run_probe(gpu)
     if result.returncode == 0:

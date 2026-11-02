@@ -6,13 +6,15 @@
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=/dev/null
-source "$ROOT/scripts/cluster_env.sh" >/dev/null || { echo "cluster_env.sh 실패"; exit 1; }
-PORT="${H3_WEB_PORT:-8790}"; CORS="${H3_CORS_ORIGIN-https://33modeling.pages.dev}"; STOP=0
+PORT="${H3_WEB_PORT:-8790}"; CORS="${H3_CORS_ORIGIN-https://33modeling.pages.dev}"; STOP=0; ENGINE=diffusers
 while [[ $# -gt 0 ]]; do case "$1" in
+  --engine) ENGINE="${2:-}"; [[ "$ENGINE" == diffusers || "$ENGINE" == sglang ]] || { echo "--engine diffusers 또는 sglang 필요" >&2; exit 2; }; shift 2 ;;
   --cors) CORS="$2"; shift 2 ;; --port) PORT="$2"; shift 2 ;; --stop) STOP=1; shift ;;
-  -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-  *) echo "알 수 없는 옵션: $1 (--help)"; exit 2 ;; esac; done
+  -h|--help) echo "사용: bash scripts/web.sh [--engine diffusers|sglang] [--port 8790] [--cors URL] [--stop]"; exit 0 ;;
+  *) echo "알 수 없는 옵션: $1 (--help)"; exit 2 ;;
+esac; done
+export H3_ENGINE_OVERRIDE="$ENGINE"
+source "$ROOT/scripts/cluster_env.sh" >/dev/null || { echo "cluster_env.sh 실패"; exit 1; }
 # 전에 띄운 웹 UI 만 내린다 (H3 서버는 건드리지 않는다)
 python3 "$ROOT/scripts/h3_leftovers.py" --kill --web-only | grep -v "남은 웹 UI 프로세스 없음"
 [[ $STOP == 1 ]] && { echo "[web] 웹 UI 를 껐다 (H3 서버는 그대로)"; exit 0; }

@@ -3,6 +3,12 @@
 상단 **설치·사용설명서 · H100 4장 · CLI**에서 로컬 4장 설치·GPU 배치·생성·편집·재개·오류 대응을 확인한다. 정본은 `src/h3video/studio/h3-cli.html`이며 기존 `/studio/` 정적 경로에서 서버 재시작 없이 파일을 제공할 수 있다. 공개 경로는 `/video-maker/studio/h3-cli.html`이다.
 
 
+## 엔진·CUDA 패키지
+
+`provision.sh`·`up.sh`·`web.sh`의 기본 엔진은 **Diffusers**다. SGLang은 각 명령에 `--engine sglang`을 명시할 때만 선택한다. 드라이버 버전으로 자동 전환하지 않는다.
+
+Diffusers는 torch 2.7.1+cu126·torchvision 0.22.1+cu126·torchaudio 2.7.1+cu126을 같은 공식 CUDA 12.6 저장소에서 설치하고 CPU NMS까지 확인한다. 기존 설치의 CUDA 주버전 불일치는 `bash scripts/fix_torchvision.sh`, 패키지 전체 정합성은 `bash scripts/provision.sh --skip-model`로 복구한다.
+
 ## Hyperframes 모션 영상 편집
 
 기존 영상 maker의 **Hyperframes · 모션·타임라인 영상**에서 HTML·GSAP 모션과
@@ -48,7 +54,7 @@ OCR로 원본 글꼴 이름이나 굵기를 확정할 수 없어 출력 기본�
 
 웹과 편집 도구만 사용자 서비스로 배포하려면 `python3 scripts/install-web-service.py`를 실행합니다. 기존 8790 포트와 CLI에 저장한 생성 서버 설정을 사용하며 GPU 생성 서버는 시작하지 않습니다. 중지는 `systemctl --user stop h3video-web.service`입니다.
 
-MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 SGLang 으로 서빙하고, 프롬프트만 넣으면 오디오 포함 영상을 만들어 주는 도구.
+MiniMax-H3(Hailuo 3.0) 오픈 가중치를 H100 클러스터에서 기본 Diffusers로 서빙하고, 프롬프트만 넣으면 오디오 포함 영상을 만들어 주는 도구.
 로컬호스트 웹 UI 로 진행 상황을 보고 결과를 바로 재생한다. 클라이언트는 표준 라이브러리만 쓴다(의존성 0).
 
 - **영상 만들기: [VIDEO.md](VIDEO.md)** — 명령·프롬프트(아무 형식이나, 서버가 공식 형식으로 바꿈)·옵션·결과 위치

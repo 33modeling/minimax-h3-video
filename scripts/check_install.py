@@ -19,7 +19,7 @@ def inventory(engine):
             dist=metadata.distribution(name);version=dist.version
             row={'name':name,'installed':version,'location':str(dist.locate_file(''))}
             if name in pins:
-                row.update(expected=pins[name],matches_pin=version.split('+',1)[0]==pins[name])
+                row.update(expected=pins[name],matches_pin=(version==pins[name] if '+' in pins[name] else version.split('+',1)[0]==pins[name]))
             requirement=dist.metadata.get('Requires-Python')
             if requirement:row['requires_python']=requirement
         except metadata.PackageNotFoundError:

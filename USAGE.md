@@ -12,6 +12,14 @@
 
 H3 서버와 웹 UI 는 따로 띄우고 끈다. 하나를 다시 띄우거나 꺼도 다른 하나는 그대로다. CLI(`h3video gen`)만 쓰면 웹 UI 는 필요 없다. `serve.sh` 는 `up.sh` 가 안에서 쓰는 것이라 직접 쓰지 않는다.
 
+## 엔진 선택
+
+기본: `bash scripts/provision.sh`, `bash scripts/up.sh` — Diffusers.
+
+SGLang을 원하는 경우에만 `bash scripts/provision.sh --engine sglang`, `bash scripts/up.sh --engine sglang`을 사용한다. 웹 UI도 `bash scripts/web.sh --engine sglang`으로 환경을 맞춘다. 이전 셸·설정 파일의 `H3_ENGINE=sglang` 값은 기본 실행을 바꾸지 않는다.
+
+CUDA 주버전 불일치가 나면 `bash scripts/fix_torchvision.sh`로 기존 torch에 맞는 torchvision을 복구한다. Diffusers 스택 전체를 맞추려면 `bash scripts/provision.sh --skip-model`을 사용한다. 이 경로는 모델을 다시 받지 않으며 CPU NMS를 검사한 뒤 완료한다.
+
 ## 1. 처음 한 번: provision.sh
 
 ```bash
@@ -20,8 +28,8 @@ bash scripts/provision.sh --ref      # ref2va(참고 자료)용까지
 bash scripts/provision.sh --skip-model   # 패키지·가이드만 다시
 ```
 
-- 노드 드라이버를 보고 엔진을 고른다. 지금 노드(드라이버 CUDA 12.2)는 **Diffusers 엔진**이다. (CUDA 13 이상 노드면 sglang)
-- 파이썬 환경 `.venv-diffusers` 를 만든다: torch 2.7.1(CUDA 12.6)·diffusers 0.41 등 버전 고정(`constraints/h100-cu126-diffusers.txt`).
+- 기본 엔진은 **Diffusers**다. CUDA 13 드라이버에서도 자동으로 SGLang으로 바뀌지 않는다. SGLang은 `--engine sglang` 옵션으로만 선택한다.
+- 파이썬 환경 `.venv-diffusers` 를 만든다: torch 2.7.1+cu126·torchvision 0.22.1+cu126·torchaudio 2.7.1+cu126·diffusers 0.41 등 버전 고정(`constraints/h100-cu126-diffusers.txt`).
 - 모델: 공유 폴더 `/group-volume/models/MiniMax-H3` 의 FL2VA 를 쓴다. 텍스트 인코더(62GB)는 링크로 재사용하고, Diffusers 형식에서 없는 것만 받는다(약 72GB, `--ref` 면 +62GB). 이미 받은 것은 건너뛰고, 받다 끊기면 다시 실행하면 이어 받는다.
 - 프롬프트를 공식 형식으로 바꿀 때 쓰는 MiniMax 공식 작성 가이드 2개(40KB)도 받는다.
 - 화면 전체가 `logs/provision-<시각>.log` 에 남는다.
@@ -103,7 +111,7 @@ CLI 의 서버 주소·결과 폴더는 환경 변수 없이 한 번 저장해 �
 |---|---|---|
 | `STORAGE_ROOT` | `/group-volume/minsoo3.kim/minimax-h3-video` | 저장 위치 |
 | `H3_MODEL_DIR` | `/group-volume/models/MiniMax-H3` | 공유 모델 (없으면 찾아보고, 그래도 없으면 물어본다) |
-| `H3_ENGINE` | 자동 | `diffusers` / `sglang` 고정 |
+| `--engine` | `diffusers` | 설치·실행·웹 UI에서 `--engine sglang`을 명시한 경우만 SGLang |
 | `H3_DSERVER_CP` | 1 | 0 이면 GPU 3장 이상 방식을 끄고 서버당 2장 |
 | `H3_PORT_FL2VA` / `H3_PORT_REF2VA` | 30010 / 30011 | 포트 |
 | `H3_WAIT_TIMEOUT` | 21600 | CLI 가 영상 하나를 기다리는 최대 초 |

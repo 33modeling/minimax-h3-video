@@ -201,12 +201,14 @@ mkdir -p "$H3_OUTPUT_DIR" "$H3_INBOX_DIR" "$H3_LOG_DIR" "$STORAGE_ROOT/runs" "$H
          "$TRITON_CACHE_DIR" "$CUDA_CACHE_PATH" "$PIP_CACHE_DIR" "$PYTHONPYCACHEPREFIX" "$MPLCONFIGDIR" || {
   echo "스크래치 생성 실패: $WORK_ROOT" >&2; return 2 2>/dev/null || exit 2; }
 
-# 엔진: sglang = 드라이버 CUDA 13 이상 노드 | diffusers = 드라이버 CUDA 12.x 노드 (H3 용 sglang 0.5.17+ 은 CUDA 13 전용이라).
-# 기본 auto: 노드 드라이버를 보고 고른다. 고정하려면 H3_ENGINE=sglang|diffusers
-if [[ "${H3_ENGINE:-auto}" == auto ]]; then
-  _drv="$(h3_driver_cuda)"
-  if [[ -n "$_drv" && "${_drv%%.*}" -lt 13 ]]; then H3_ENGINE=diffusers; else H3_ENGINE=sglang; fi
-fi
+# Diffusers is the default on every driver. Launch/install CLI flags override
+# stale shell/local-file choices; CUDA 13 must not silently switch backends.
+H3_ENGINE="${H3_ENGINE_OVERRIDE:-diffusers}"
+case "$H3_ENGINE" in
+  auto|'') H3_ENGINE=diffusers ;;
+  diffusers|sglang) ;;
+  *) echo "지원하지 않는 엔진: $H3_ENGINE (diffusers 또는 sglang)" >&2; return 2 2>/dev/null || exit 2 ;;
+esac
 export H3_ENGINE
 if [[ "$H3_ENGINE" == diffusers ]]; then
   export VENV="${H3_DIFFUSERS_VENV:-$STORAGE_ROOT/.venv-diffusers}"   # torch 2.7.1(CUDA 12.6) + diffusers 0.41 — sglang venv 와 따로

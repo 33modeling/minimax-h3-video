@@ -8,6 +8,7 @@
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # sh 로 실행해도 bash 로 다시 실행
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export H3_ENGINE_OVERRIDE="${H3_ENGINE_OVERRIDE:-diffusers}"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/cluster_env.sh" >/dev/null || exit 1
 PY="$VENV/bin/python"; [[ -x "$PY" ]] || PY="$(command -v python3)"

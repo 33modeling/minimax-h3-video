@@ -5,6 +5,7 @@
 #
 #   bash scripts/up.sh                 fl2va 서버(포트 30010) — CLI(h3video gen)는 이것만 있으면 된다
 #   bash scripts/up.sh --ref           ref2va 서버도 (포트 30011)
+#   bash scripts/up.sh --engine sglang 명시한 경우만 SGLang (기본 Diffusers)
 #     GPU: --gpus 를 안 주면 비어 있는 GPU 를 쓴다. diffusers 엔진은 빈 GPU 전부(--ref 면 반씩), sglang 은 4장씩. 다른 프로세스가 쓰는 GPU 는 피한다
 #   bash scripts/up.sh --gpus 0,1,2,3 --ref-gpus 4,5,6,7 --mode memory
 #   bash scripts/up.sh --force         이 계정의 다른 GPU 작업을 먼저 끄고 띄운다 (기본은 GPU 가 모자라거나 서버당 1장이면 목록을 보여 주고 y/N 으로 묻는다)
@@ -14,8 +15,9 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"
-GPUS=""; REF_GPUS=""; REF=0; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"
+GPUS=""; REF_GPUS=""; REF=0; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"; ENGINE=diffusers
 while [[ $# -gt 0 ]]; do case "$1" in
+  --engine) ENGINE="${2:-}"; [[ "$ENGINE" == diffusers || "$ENGINE" == sglang ]] || { echo "--engine diffusers 또는 --engine sglang 을 지정하세요" >&2; exit 2; }; shift 2 ;;
   --ref) REF=1; shift ;; --check) CHECK=1; shift ;; --force|-y) FORCE=1; shift ;;
   --web|--no-web) echo "웹 UI 는 이제 따로 띄운다: 다른 창에서 bash scripts/web.sh (H3 서버와 서로 안 건드린다)"; shift ;;
   --gpus) GPUS="$2"; shift 2 ;; --ref-gpus) REF_GPUS="$2"; shift 2 ;;
@@ -28,6 +30,7 @@ problems=0; fail() { red "✗ $1"; [[ -n "${2:-}" ]] && echo "   → $2"; proble
 
 # 1) 환경 (저장 경로·캐시·포트 기본값). 문제가 있으면 cluster_env.sh 가 이유를 출력한다
 # shellcheck source=/dev/null
+export H3_ENGINE_OVERRIDE="$ENGINE"
 source "$ROOT/scripts/cluster_env.sh" || { red "cluster_env.sh 실패 (위 메시지 참고)"; exit 1; }
 cd "$ROOT"
 # 이 화면에 나오는 것 전부(서버 원본 로그·오류 포함)를 파일로도 남긴다. Ctrl+C 때 기록이 끊기지 않게 tee 는 INT 를 무시
@@ -36,7 +39,7 @@ exec > >(trap '' INT; tee -a "$UP_LOG") 2>&1
 echo "[up] 로그 파일: $UP_LOG"
 
 # 2) 점검
-echo "[up] 엔진: $H3_ENGINE (드라이버 CUDA $(h3_driver_cuda || true); 12.x → diffusers, 13 이상 → sglang)"
+echo "[up] 엔진: $H3_ENGINE (드라이버 CUDA $(h3_driver_cuda || true))"
 # 전에 띄운 H3 서버·워커가 GPU 를 잡고 남아 있으면 먼저 내린다 (내 계정이 이 레포로 띄운 것만, 다른 작업은 그대로)
 # 다시 띄우면 전에 띄운 H3 서버 묶음(서버·워커·torchrun·serve.sh·웹 UI)을 전부 내리고 시작한다
 if [[ $CHECK == 1 ]]; then

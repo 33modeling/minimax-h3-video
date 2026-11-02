@@ -3,3 +3,5 @@
 # export H3_MODEL_DIR=/group-volume/models/MiniMax-H3
 # export H3_NUM_GPUS=4
 # export H3_PORT_FL2VA=30010
+
+# 엔진 기본값은 Diffusers. SGLang은 provision.sh/up.sh/web.sh --engine sglang 으로만 선택.

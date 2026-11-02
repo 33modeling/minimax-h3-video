@@ -3,6 +3,12 @@
 #   bash scripts/diagnose.sh
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENGINE=diffusers
+if [[ "${1:-}" == --engine ]]; then
+  ENGINE="${2:-}"; [[ "$ENGINE" == diffusers || "$ENGINE" == sglang ]] || { echo "--engine diffusers 또는 sglang 필요" >&2; exit 2; }
+elif [[ $# -gt 0 ]]; then echo "사용: bash scripts/diagnose.sh [--engine diffusers|sglang]" >&2; exit 2
+fi
+export H3_ENGINE_OVERRIDE="$ENGINE"
 # shellcheck source=/dev/null
 source "$ROOT/scripts/cluster_env.sh" >/dev/null 2>&1
 sec() { echo; echo "===== $* ====="; }

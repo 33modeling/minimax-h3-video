@@ -39,6 +39,33 @@ def test_source_matches_installed_runtime(cuda, flavor):
         "torchvision>=0.26,<0.27",
     )
 
+def test_diffusers_stack_is_pinned_to_one_cuda_build(tmp_path):
+    with (
+        mock.patch.object(runtime.sys, 'prefix', str(tmp_path)),
+        mock.patch.object(runtime, 'pip_command') as command,
+    ):
+        runtime.install_diffusers_stack()
+    args=command.call_args.args
+    assert 'https://download.pytorch.org/whl/cu126' in args
+    assert 'torch==2.7.1+cu126' in args
+    assert 'torchvision==0.22.1+cu126' in args
+    assert 'torchaudio==2.7.1+cu126' in args
+    assert '--force-reinstall' not in args
+
+def test_diffusers_stack_refuses_system_python():
+    with mock.patch.object(runtime.sys,'prefix',runtime.sys.base_prefix),mock.patch.object(runtime,'pip_command') as command:
+        with pytest.raises(RuntimeError,match='system Python'):
+            runtime.install_diffusers_stack()
+        command.assert_not_called()
+
+def test_real_child_reproduces_cuda_major_mismatch(tmp_path):
+    (tmp_path/'torch.py').write_text('')
+    (tmp_path/'torchvision.py').write_text("raise RuntimeError('Detected that PyTorch and torchvision were compiled with different CUDA major versions')\n")
+    with mock.patch.dict(os.environ,{'PYTHONPATH':str(tmp_path)}):
+        failed=runtime.run_probe(False)
+    assert failed.returncode!=0
+    assert 'different CUDA major versions' in failed.stderr
+
 
 @pytest.mark.parametrize("version", ["2.11.0.dev20260101", "1.13.1", "2.99.0"])
 def test_unverified_releases_do_not_guess(version):
