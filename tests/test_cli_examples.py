@@ -70,6 +70,8 @@ class CLIExamples(unittest.TestCase):
                             setattr(args, key, str(root/value))
                     for kind in ['image', 'video', 'audio']:
                         setattr(args, kind, [str(root/p) for p in getattr(args, kind)])
+                    if hasattr(args, '_media_order'):
+                        args._media_order = [(kind, str(root/path)) for kind, path in args._media_order]
                     args.dry_run = True
                     output = io.StringIO()
                     # An accidental real submission/network access must fail this check.
