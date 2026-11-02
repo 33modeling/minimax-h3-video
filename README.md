@@ -2,6 +2,36 @@
 
 ## H100 설정부터 영상 생성까지
 
+## 기존 2+2 구성에서 --ref 메모리 부족이 났을 때
+
+H100에 설치한 코드도 업데이트해야 변경된 GPU 배치 검사가 적용됩니다. 이미 설치된 모델·입력·결과 폴더를 삭제하거나 다시 받을 필요는 없습니다.
+
+```bash
+# H100에 접속한 터미널 · 실제 설치 폴더에서 실행
+cd /user-volume/minimax-h3-video
+git status --short
+git switch main
+git pull --ff-only origin main
+source scripts/cluster_env.sh
+bash scripts/up.sh --check
+```
+
+`git status`에 수정 파일이 있거나 `switch`·`pull`이 실패하면 그 자리에서 멈추고 변경을 보관하세요. `reset --hard`로 설치 설정을 지우지 마세요. `.cluster_env.local.sh`는 기존 값을 유지합니다. `--check`는 점검만 하며 생성 서버를 시작하지 않습니다.
+
+진행 중인 H3 작업을 확인한 뒤 기존 up.sh 창을 Ctrl+C로 종료하고, H100 80GB 8장 노드에서는 다음 명령을 실행합니다.
+
+```bash
+bash scripts/up.sh --ref --gpus 0,1,2,3 --ref-gpus 4,5,6,7
+```
+
+FL2VA는 0~3번, Ref2VA는 4~7번 GPU를 사용합니다. 4장뿐인 노드에서 2+2로 나누는 실행은 차단합니다. 4장 노드 두 대를 사용할 때의 명령은 아래 10단계에 있습니다.
+
+- `CUDA out of memory`: GPU 사용량·분산 상태·입력 길이를 확인합니다. 4+4에서도 실패하면 `-s 5 --size 512`로 줄이고 참고 영상 길이와 입력 수를 줄여 확인합니다.
+- `Killed` 또는 `oom_kill` 증가: CPU RAM과 컨테이너 한도를 확인합니다. 두 서버 동시 적재의 시작 검사 기준은 280GiB, 하나는 140GiB입니다. CPU RAM이 부족하면 서버를 서로 다른 노드로 분리합니다.
+- `30011` 응답 없음: `bash scripts/status.sh`에서 `ref2va 준비됨`을 확인하고 CLI의 `config`에 나온 Ref2VA 주소를 비교합니다. 다른 노드에서 실행한다면 그 노드의 실제 주소가 필요합니다.
+
+GPU 4+4는 현재 배치 정책이며 실제 H100 추론 성공이나 최대 메모리 사용량을 새로 측정한 결과가 아닙니다. 워커마다 모델 가중치가 적재되므로 GPU 수를 늘렸다고 가중치 메모리가 그 수만큼 나뉘는 것으로 해석하지 마세요.
+
 ### 1. H100에서 코드 폴더 열기
 
 이 안내의 명령은 H100에 접속한 터미널에서 실행합니다. 코드 폴더는 scripts/up.sh가 있는 곳입니다. 아래 경로는 예시이므로 다른 위치에 복사했다면 그 폴더로 이동하세요.
