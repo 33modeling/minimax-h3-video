@@ -172,5 +172,21 @@ class StartupPreflightTest(unittest.TestCase):
         self.assertIn('선택한 엔진: sglang',result.stdout)
         self.assertIn('.[serve,dev]',(root/'trace.log').read_text())
 
+    def test_web_engine_option_preserves_local_port_and_cors_defaults(self):
+        project,env,root=self.fixture()
+        config=project/'.cluster_env.local.sh'
+        with config.open('a') as out:
+            out.write('export H3_WEB_PORT=8888 H3_CORS_ORIGIN=https://example.test\n')
+        source=(ROOT/'scripts/web.sh').read_text()
+        preamble=source.split('# 전에 띄운 웹 UI',1)[0]
+        script=project/'scripts/web-preamble.sh'
+        script.write_text(preamble+'\nprintf "RESULT %s %s %s\\n" "$PORT" "$CORS" "$H3_ENGINE"\n')
+        result=subprocess.run(['bash',str(script)],env=env,capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('RESULT 8888 https://example.test diffusers',result.stdout)
+        result=subprocess.run(['bash',str(script),'--port','9999','--cors',''],env=env,capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('RESULT 9999  diffusers',result.stdout)
+
 if __name__ == '__main__':
     unittest.main()
