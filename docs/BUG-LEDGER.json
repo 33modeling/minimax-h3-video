@@ -4,7 +4,7 @@
   "scope": "minimax-h3-video 전체 main 이력과 본 대화의 H3 설치/CLI/설명서/77 배포 관련 문제",
   "sourceCutoff": "1d5fdf59de5b37b11af123579bcbff1da94253db",
   "sourceHistoryCount": 181,
-  "caseCount": 29,
+  "caseCount": 31,
   "boardSnapshotItems": 16,
   "responsibleForCurrentWork": "Codex",
   "retention": "기존 사건과 실패 증거를 삭제하지 않는다. 수정·재발·추가 검증은 날짜와 근거를 붙여 사건 이벤트로 추가한다. 이전 스냅샷은 덮어쓰지 않는다.",
@@ -642,6 +642,13 @@
           "evidence": "bug-ledger/evidence/input-video-clarification-20261103.json",
           "note": "16초는 입력 영상. 출력 8+8 분할 설명을 사용자 작업에 적용한 것은 Codex의 오해였다. 출력 길이·실행 명령·지연 단계는 미확인."
         }
+      ],
+      "investigations": [
+        {
+          "at": "2026-11-03T11:45:16.355274+00:00",
+          "evidence": "bug-ledger/evidence/performance-cause-20261103.json",
+          "note": "기본 sharded의 순차 레이어 실행과 --ref 4+4 서버 격리를 확인. 실제 H100 단계 시간·90분 지연 비중은 미확인. 성능 수정·완주 확인 아님."
+        }
       ]
     },
     {
@@ -674,6 +681,49 @@
         "Retry resets step baseline; connection loss removes active fraction and ETA",
         "Interrupted process time freezes at last recorded checkpoint and is marked incomplete"
       ]
+    },
+    {
+      "id": "H3-030",
+      "title": "Diffusers --mode speed/memory가 실행에 반영되지 않음",
+      "kind": "성능·실행 설정",
+      "boardIds": [
+        1184
+      ],
+      "responsibility": "코드·모의 대조 재현 확인. 과거 실행 AI의 신원은 Git 작성자만으로 확정하지 않음",
+      "introducedCommit": "8fa75dac81872ce1350af3a3d0dac0115edb393e",
+      "knownBadSnapshot": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
+      "fixCommits": [],
+      "evidence": [
+        "bug-ledger/evidence/performance-cause-20261103.json",
+        "PERFORMANCE-AUDIT-20261103.md"
+      ],
+      "status": "재현·원인 확인 / 미수정·실제 H100 비중 미측정",
+      "details": [
+        "실제 serve.sh fake 실행으로 두 모드 argv/관련환경 동일 재현",
+        "SGLang에는 MODE를 전달하지만 Diffusers에는 미전달"
+      ]
+    },
+    {
+      "id": "H3-031",
+      "title": "프레임 보정 직렬·프로세스 재생성으로 다중 서버 선택 초기화",
+      "kind": "성능·실행 설정",
+      "boardIds": [
+        1185
+      ],
+      "responsibility": "코드·모의 대조 재현 확인. 과거 실행 AI의 신원은 Git 작성자만으로 확정하지 않음",
+      "introducedCommit": "e68db3a4e71a0064ffbd180b59cc806cba41a55f",
+      "knownBadSnapshot": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
+      "fixCommits": [],
+      "evidence": [
+        "bug-ledger/evidence/performance-cause-20261103.json",
+        "PERFORMANCE-AUDIT-20261103.md"
+      ],
+      "status": "재현·원인 확인 / 미수정·실제 H100 비중 미측정",
+      "details": [
+        "실제 retouch 자식 프로세스 4회 A/A/A/A; 지속 provider 대조군 A/B/C/D",
+        "GPU와 이미지 API 추론은 측정하지 않음. 소켓/서비스 시작 없음",
+        "프레임 편집·확대 동기 실행, finishing max_workers=1"
+      ]
     }
   ],
   "snapshotHashes": {
@@ -690,12 +740,14 @@
     "evidence/input-video-clarification-20261103.json": "912196744427a6c3a7ebcc974a3052bf273b20ef671d8880a12d1687dc3dec55",
     "evidence/measured-progress-validation-20261103.json": "5e48ea5b254d1340fc98cb2122b087a0c4ebbf4530185f118ef97cc8c3fc146b",
     "evidence/measured-progress-layout-recheck-20261103.json": "f21133e1f20d0b45e93f1f014ee26e8b1c862eec600440ee42f98cccd5c64fff",
-    "evidence/measured-progress-publication-20261103.json": "8c889dabe03c4ea6ab5f52255e27578160803c70e575821b45b80ca0fe90d8f2"
+    "evidence/measured-progress-publication-20261103.json": "8c889dabe03c4ea6ab5f52255e27578160803c70e575821b45b80ca0fe90d8f2",
+    "evidence/performance-cause-20261103.json": "48c9d508a82fea96b3c493f88c9ba1ac2b5142b5257066c4f9684bcca813083b"
   },
   "archiveBoard": {
     "id": 1153,
-    "status": "doing",
-    "url": "https://77model.pages.dev/bug-board/#item=1153"
+    "status": "done",
+    "url": "https://77model.pages.dev/bug-board/#item=1153",
+    "lastVerifiedAt": "2026-11-03T11:45:16.355274+00:00"
   },
   "events": [
     {
@@ -730,6 +782,16 @@
       "sourceCodeCommit": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
       "deployment": "d5759095-ec7e-4573-aeb0-a46d022813b3",
       "note": "진척 표시 공개/실제 Arcade 4폭 및 두 빌드/실제캐시 검증. H3-028 성능 미해결 유지."
+    },
+    {
+      "at": "2026-11-03T11:45:16.355274+00:00",
+      "action": "performance-investigation",
+      "cases": [
+        "H3-028",
+        "H3-030",
+        "H3-031"
+      ],
+      "note": "기존 증거·실패·29항목을 삭제하지 않고 새 원인 재현 2건을 추가. 성능 수정과 실측 결과는 없음."
     }
   ]
 }

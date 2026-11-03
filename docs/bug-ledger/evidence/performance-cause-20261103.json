@@ -1,0 +1,208 @@
+{
+  "recordedAt": "2026-11-03T11:45:16.355274+00:00",
+  "kind": "code diagnosis and mocked request/control-flow reproductions; not an H100 benchmark",
+  "source": {
+    "H3ExaminedCommit": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
+    "sharedExaminedCommit": "55c104e241ee94a79e52c264230c2f7aa42897d6",
+    "files": [
+      {
+        "repo": "H3",
+        "path": "src/h3video/dserver.py",
+        "sha256": "2ff6d02c9aa7c1155d3a52465939ae5bb066b2d2c0d97c0a7c64b573ee204fb6",
+        "matchesExaminedGit": true
+      },
+      {
+        "repo": "H3",
+        "path": "src/h3video/placement.py",
+        "sha256": "87946e05c1e8f18a4511db5e7ac820374650e916bba15f341027ae2bc7203d5e",
+        "matchesExaminedGit": true
+      },
+      {
+        "repo": "H3",
+        "path": "src/h3video/studio.py",
+        "sha256": "4de97844eb99512390203e8c7581b8c8f7fb5cb22bc247c8a9f79e4341fd5fa6",
+        "matchesExaminedGit": true
+      },
+      {
+        "repo": "H3",
+        "path": "scripts/serve.sh",
+        "sha256": "55047db78211f1f57e2bc492a866cc9f3fdd6379530bbd213feb10fef271eeb9",
+        "matchesExaminedGit": true
+      },
+      {
+        "repo": "H3",
+        "path": "scripts/up.sh",
+        "sha256": "4963d1a6a7e133c7e1afe661952b1f29a9ab5ed26281317ac0730101bd3ea770",
+        "matchesExaminedGit": true
+      },
+      {
+        "repo": "storybook-maker",
+        "path": "scripts/retouch-frame.mjs",
+        "sha256": "d3e4c38211bb10725a2c1dd53e00a6225e5e923e5e4920055d876ab99e35e695",
+        "matchesExaminedGit": true
+      },
+      {
+        "repo": "storybook-maker",
+        "path": "src/providers/qwen-image.mjs",
+        "sha256": "ec9585ee3adab35da70586ff024a8f1a5079a2e9c4614e5be98965fe0344633e",
+        "matchesExaminedGit": true
+      }
+    ]
+  },
+  "nativeGeneration": {
+    "status": "confirmed default code structure, user run not matched",
+    "defaultSelection": "H3_DSERVER_PARALLEL defaults to sharded for >=3 CUDA devices",
+    "introducedCommit": "82a2bccec786adedb0da96d49ce830546dba7836",
+    "weightCopies": 1,
+    "parallelism": "Whole transformer blocks assigned contiguously with device_map; forward iterates blocks serially. No tensor/context parallel computation in this default path. Projection modules are on the first denoiser GPU, adding a return transfer after the last block.",
+    "eightGpuBothVariants": "With up.sh --ref and eight free GPUs, startup splits into two groups of four. One conditioning GPU + three denoiser GPUs per group. A Ref2VA request uses its variant only; it does not recruit the other FL2VA group.",
+    "observedH100UtilizationPercent": null,
+    "userReportedPercent": 17,
+    "note": "A low utilization average is consistent with this schedule, but 17% and the 90-minute duration have not been independently attributed."
+  },
+  "frameCorrection": {
+    "status": "actual retouch child entrypoint reproduced with mocked images API",
+    "serialLoop": "studio.py processes a frame to completion before starting the next; it also creates a new Node process for every edited frame. The finishing executor has max_workers=1.",
+    "poolReproduction": {
+      "configuredEndpoints": [
+        "http://gpu-a.invalid:8091",
+        "http://gpu-b.invalid:8091",
+        "http://gpu-c.invalid:8091",
+        "http://gpu-d.invalid:8091"
+      ],
+      "actualRetouchChildProcesses": [
+        {
+          "pid": 869072,
+          "hostname": "gpu-a.invalid",
+          "path": "/v1/images/edits",
+          "steps": 40
+        },
+        {
+          "pid": 869087,
+          "hostname": "gpu-a.invalid",
+          "path": "/v1/images/edits",
+          "steps": 40
+        },
+        {
+          "pid": 869108,
+          "hostname": "gpu-a.invalid",
+          "path": "/v1/images/edits",
+          "steps": 40
+        },
+        {
+          "pid": 869166,
+          "hostname": "gpu-a.invalid",
+          "path": "/v1/images/edits",
+          "steps": 40
+        }
+      ],
+      "persistentProviderControl": [
+        {
+          "pid": 869222,
+          "hostname": "gpu-a.invalid",
+          "path": "/v1/images/edits",
+          "steps": 40
+        },
+        {
+          "pid": 869222,
+          "hostname": "gpu-b.invalid",
+          "path": "/v1/images/edits",
+          "steps": 40
+        },
+        {
+          "pid": 869222,
+          "hostname": "gpu-c.invalid",
+          "path": "/v1/images/edits",
+          "steps": 40
+        },
+        {
+          "pid": 869222,
+          "hostname": "gpu-d.invalid",
+          "path": "/v1/images/edits",
+          "steps": 40
+        }
+      ],
+      "allFreshProcessesSelectedFirstEndpoint": true,
+      "actualModelInferenceMeasured": false,
+      "servicesStarted": 0,
+      "networkSocketsOpened": 0
+    },
+    "upscaleGpu": "STUDIO_UPSCALER_GPU defaults to 0; all restored frames are processed synchronously.",
+    "ordinarySteps": 40,
+    "turboSteps": 8,
+    "illustrativeWorkOnly": "At 24 fps a 16-second input contains 384 frames. 40 image-edit steps per frame gives 15,360 image-edit step requests, before upscaling. Input FPS, selected editor engine and steps of the user run remain unknown."
+  },
+  "ignoredMode": {
+    "identicalEngineArgvAndModeEnvironment": true,
+    "speed": {
+      "argv": [
+        "-m",
+        "h3video.dserver",
+        "--model-dir",
+        "/tmp/tmpqokxmd0k/model",
+        "--variant",
+        "ref2va",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "30011",
+        "--out-dir",
+        "/tmp/tmpqokxmd0k/storage/dserver/ref2va"
+      ],
+      "modeEnvironment": null,
+      "visibleDevices": "0,1,2,3"
+    },
+    "memory": {
+      "argv": [
+        "-m",
+        "h3video.dserver",
+        "--model-dir",
+        "/tmp/tmpqokxmd0k/model",
+        "--variant",
+        "ref2va",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "30011",
+        "--out-dir",
+        "/tmp/tmpqokxmd0k/storage/dserver/ref2va"
+      ],
+      "modeEnvironment": null,
+      "visibleDevices": "0,1,2,3"
+    },
+    "servicesStarted": 0,
+    "GPUInferenceMeasured": false
+  },
+  "unconfirmedCandidates": [
+    "Prompt rewrite can generate up to 2048 tokens and retry twice using Qwen3-VL-32B; no stage timing from user node",
+    "Conditioning text encoder/VAE use automatic CPU offload; transfer cost not measured",
+    "Actual attention backend, GPU clocks/power, NVLink/PCIe, memory/CPU pressure, retries and output length are unknown"
+  ],
+  "primarySources": [
+    {
+      "url": "https://huggingface.co/docs/accelerate/concept_guides/big_model_inference",
+      "section": "Limits and further development",
+      "supports": "Layer device-map inference is naive parallelism with other devices idle; sequential maps reduce transfers"
+    },
+    {
+      "url": "https://huggingface.co/docs/diffusers/main/en/api/pipelines/minimax_h3",
+      "supports": "Native H3 jointly denoises packed text/reference/video/audio latents; native generation is distinct from independent image-frame editing"
+    }
+  ],
+  "scopeLimits": {
+    "H100NodeAccessible": false,
+    "userCommandAvailable": false,
+    "userNodeLogsAvailable": false,
+    "fullDurationReproduced": false,
+    "actualInferenceMeasured": false,
+    "modelWeightsDownloaded": false,
+    "networkSocketsInReproductions": 0,
+    "servicesStartedOrRestarted": 0,
+    "performanceFixImplemented": false
+  },
+  "boardIds": {
+    "nativePerformance": 1167,
+    "ignoredMode": 1184,
+    "serialRetouchPoolReset": 1185
+  }
+}
