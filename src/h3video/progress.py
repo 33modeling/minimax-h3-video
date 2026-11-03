@@ -16,6 +16,9 @@ def task_metrics(task, now=None):
                  fraction=None, etaSeconds=None, ratePerSecond=None)
     frames = copy.deepcopy(task.get('frameProgress'))
     if frames:
+        if not running:
+            frames['active'] = {}
+            frames['current'] = None
         phase.update(kind='frames', frames=frames)
         completed, total = frames['completed'], frames['total']
         if running and phase.get('phase') in ('retouch', 'upscale'):

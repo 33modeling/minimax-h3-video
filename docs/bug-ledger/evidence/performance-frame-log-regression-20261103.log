@@ -1,0 +1,35 @@
+test_persistent_two_endpoint_parallel_pause_resume_and_media_preservation (test_frame_pool.ActualFramePoolTest.test_persistent_two_endpoint_parallel_pause_resume_and_media_preservation) ... 영상 편집 작업 실패: upscale
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-performance-20261103/src/h3video/studio.py", line 960, in execute
+    self.upscale(p, snapshot, work)
+  File "/home/kms/dev/minimax-h3-performance-20261103/src/h3video/studio.py", line 899, in upscale
+    self.inspect(p, current_snapshot, work)
+  File "/home/kms/dev/minimax-h3-performance-20261103/src/h3video/studio.py", line 915, in inspect
+    log = (work / 'process.stderr').read_text(errors='replace')
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/pathlib.py", line 1058, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/tmpl1e9ggw9/outputs/_studio/edit-64c0f072bf0347ee8f551fc0645b265e/.work/4a84f93c549e41f5b698dc7941fac436/process.stderr'
+FAIL
+test_unique_endpoints_and_configured_gpus (test_frame_pool.FrameLaneTest.test_unique_endpoints_and_configured_gpus) ... ok
+
+======================================================================
+FAIL: test_persistent_two_endpoint_parallel_pause_resume_and_media_preservation (test_frame_pool.ActualFramePoolTest.test_persistent_two_endpoint_parallel_pause_resume_and_media_preservation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-performance-20261103/tests/test_frame_pool.py", line 61, in test_persistent_two_endpoint_parallel_pause_resume_and_media_preservation
+    self.assertEqual(done['task']['status'],'done',done['task']);self.assertEqual(done['task']['metrics']['frames']['completed'],8);self.assertEqual(done['task']['metrics']['frames']['cached'],cached)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'error' != 'done'
+- error
++ done
+ : {'id': '4a84f93c549e41f5b698dc7941fac436', 'operation': 'upscale', 'options': {'clip': 'video', 'scale': 2, 'engine': 'qwen-realesrgan', 'retouchPrompt': 'preserve all identities'}, 'sourceRevision': 1, 'created': 1793708516.028241, 'progress': 0, 'status': 'error', 'error': "[Errno 2] No such file or directory: '/tmp/tmpl1e9ggw9/outputs/_studio/edit-64c0f072bf0347ee8f551fc0645b265e/.work/4a84f93c549e41f5b698dc7941fac436/process.stderr'", 'message': '작업을 완료하지 못했습니다. 기존 결과는 유지됩니다.', 'progressInfo': {'phase': 'inspect', 'label': '새 장면 · 검은 화면·정지·소리·얼굴 검사', 'updatedAt': 1793708518.312974, 'startedAt': 1793708517.9165525}, 'frameProgress': {'total': 8, 'completed': 8, 'cached': 3, 'retouched': 8, 'sessionStartedAt': 1793708516.813314, 'lastCompletedAt': 1793708517.660905, 'current': None, 'workers': 2, 'active': {}}, 'activeSeconds': 2.424910068511963, 'stoppedAt': 1793708518.4654844, 'result': '72618b3e57334c899167ee2e4632cd22', 'metrics': {'phase': 'inspect', 'label': '새 장면 · 검은 화면·정지·소리·얼굴 검사', 'updatedAt': 1793708518.312974, 'startedAt': 1793708517.9165525, 'elapsedSeconds': 2.4, 'clockIncomplete': False, 'phaseElapsedSeconds': 0.5, 'fraction': None, 'etaSeconds': None, 'ratePerSecond': None, 'kind': 'frames', 'frames': {'total': 8, 'completed': 8, 'cached': 3, 'retouched': 8, 'sessionStartedAt': 1793708516.813314, 'lastCompletedAt': 1793708517.660905, 'current': None, 'workers': 2, 'active': {}}}}
+
+----------------------------------------------------------------------
+Ran 2 tests in 2.729s
+
+FAILED (failures=1)

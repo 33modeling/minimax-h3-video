@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import os
+import queue
 from pathlib import Path
 import re
 import shutil
@@ -577,14 +578,23 @@ class VideoStudio:
                                         startedAt=previous.get('startedAt', now) if previous.get('phase')==key else now)
             self.save(p)
 
-    def frame_progress(self, p, phase, current=None, *, completed=None, retouched=None):
+    def frame_progress(self, p, phase, current=None, *, completed=None, retouched=None, finished=False, retouch_done=False):
         with self.lock:
             frame = p['task']['frameProgress']
+            active = frame.setdefault('active', {})
+            if current is not None:
+                if finished:
+                    active.pop(str(current),None)
+                    completed=frame['completed']+1
+                else:
+                    active[str(current)]=phase
+            if retouch_done:frame['retouched']+=1
             if completed is not None and completed > frame['completed']:
                 frame.update(completed=completed, lastCompletedAt=time.time())
             if retouched is not None:
                 frame['retouched'] = retouched
-            frame['current'] = current
+            frame['current'] = min(map(int,active)) if active else None
+            if phase in ('retouch','upscale') and active:phase='retouch' if 'retouch' in active.values() else 'upscale'
             label = {'retouch':'프레임 AI 보정', 'upscale':'프레임 확대',
                      'assemble':'영상·오디오 조립', 'inspect':'출력 검증'}[phase]
             self.progress(p, None, label, phase=phase)
@@ -593,7 +603,8 @@ class VideoStudio:
         self.check_pause(p)
         work = self.directory(p['id']) / '.work' / p['task']['id']
         work.mkdir(parents=True, exist_ok=True)
-        out, err = work / 'process.stdout', work / 'process.stderr'
+        worker = str(threading.get_ident())
+        out, err = work / ('process-'+worker+'.stdout'), work / ('process-'+worker+'.stderr')
         with out.open('w') as stdout, err.open('w') as stderr:
             child = subprocess.Popen([str(a) for a in args], stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
                                      stdout=stdout, stderr=stderr)
@@ -788,40 +799,77 @@ class VideoStudio:
                                      sessionStartedAt=time.time(), lastCompletedAt=None, current=None)
         model = options.get('model', 'illustration')
         model_name = {'illustration': 'realesr-animevideov3', 'photo': 'realesrgan-x4plus', 'anime': 'realesrgan-x4plus-anime'}[model]
-        for index, image in enumerate(images):
+        from .frames import endpoint_lanes, upscale_devices, RetouchWorker
+        editing = options.get('engine') in ('qwen-realesrgan','qwen-turbo-realesrgan','qwen-quantized-realesrgan')
+        provider = 'qwen-image-quantized' if options.get('engine')=='qwen-quantized-realesrgan' else 'qwen-image-turbo' if options.get('engine')=='qwen-turbo-realesrgan' else 'qwen-image'
+        prefix, endpoints = endpoint_lanes(provider) if editing else ('', [None])
+        devices = upscale_devices()
+        # One lane per explicitly configured editor, never overlapping a GPU upscaler.
+        lanes = len(endpoints) if editing else len(devices)
+        task['frameProgress'].update(workers=lanes, active={})
+        gpu_locks = {device:threading.Lock() for device in devices}
+        pending = queue.Queue()
+        for index,image in enumerate(images):
+            if not (restored/image.name).exists():pending.put((index,image))
+        stopped=threading.Event()
+        def check():
             self.check_pause(p)
-            output = restored / image.name
-            if output.exists():
-                continue
-            temporary = restored / (image.stem + '.working.png')
-            source_image = image
-            if options.get('engine') in ('qwen-realesrgan', 'qwen-turbo-realesrgan', 'qwen-quantized-realesrgan'):
-                source_image = retouched / image.name
-                if not source_image.exists():
-                    self.frame_progress(p, 'retouch', index+1)
-                    shared = Path(os.environ.get('STORYBOOK_MAKER_ROOT', ROOT.parent / 'storybook-maker'))
-                    client = shared / 'scripts/retouch-frame.mjs'
-                    if client.is_file() and shutil.which('node'):
-                        command = [shutil.which('node'), client]
-                    else:
-                        python = ROOT / '.venv-video-studio/bin/python'
-                        if not os.path.exists(python):
-                            raise H3Error('이미지 편집 도구를 설치하세요: npm run install:studio')
-                        command = [python, ROOT / 'scripts/qwen-retouch.py']
-                    self.command(p, command,
-                                 dict(input=str(image), output=str(source_image), seed=0,
-                                      provider='qwen-image-quantized' if options.get('engine')=='qwen-quantized-realesrgan' else 'qwen-image-turbo' if options.get('engine')=='qwen-turbo-realesrgan' else 'qwen-image',
-                                      prompt='Preserve exact composition, identities, geometry and typography across this video frame. ' + options['retouchPrompt']))
-                    task['frameProgress']['retouched'] += 1
-                self.frame_progress(p, 'upscale', index+1,
-                                    retouched=task['frameProgress']['retouched'])
-            else:
-                self.frame_progress(p, 'upscale', index+1)
-            self.command(p, [binary, '-i', source_image, '-o', temporary, '-s', str(options['scale']), '-t', '64',
-                             '-m', home / 'models', '-n', model_name, '-g', os.environ.get('STUDIO_UPSCALER_GPU', '0'), '-j', '1:1:1'])
-            probe(temporary)
-            temporary.replace(output)
-            self.frame_progress(p, 'upscale', index+1, completed=task['frameProgress']['completed']+1)
+            if stopped.is_set():raise Paused()
+        def run_lane(lane):
+            endpoint=endpoints[lane % len(endpoints)]
+            gpu=devices[lane % len(devices)]
+            worker=None
+            try:
+                while True:
+                    check()
+                    try:index,image=pending.get_nowait()
+                    except queue.Empty:return
+                    output=restored/image.name
+                    temporary=restored/(image.stem+'.working.png')
+                    source_image=retouched/image.name if editing else image
+                    if editing and not source_image.exists():
+                        self.frame_progress(p,'retouch',index+1)
+                        if worker is None:
+                            shared=Path(os.environ.get('STORYBOOK_MAKER_ROOT',ROOT.parent/'storybook-maker'))
+                            if (shared/'src/providers/qwen-image.mjs').is_file() and shutil.which('node'):
+                                command=[shutil.which('node'),ROOT/'scripts/retouch-worker.mjs']
+                            else:
+                                python=ROOT/'.venv-video-studio/bin/python'
+                                if not python.exists():raise H3Error('프레임 편집 도구를 설치하세요: npm run install:studio')
+                                command=[python,ROOT/'scripts/qwen-retouch.py','--worker']
+                            env={**os.environ,prefix+'_BASE_URL':endpoint,'H3_FRAME_ENDPOINT':endpoint,
+                                 'H3_FRAME_PROVIDER':provider,'STORYBOOK_MAKER_ROOT':str(shared)}
+                            worker=RetouchWorker(command,env,work/('retouch-worker-'+str(lane)+'.stderr'),check)
+                        result=worker.edit(dict(input=str(image),output=str(source_image),seed=0,provider=provider,
+                            prompt='Preserve exact composition, identities, geometry and typography across this video frame. '+options['retouchPrompt']))
+                        atomic(retouched/(image.stem+'.json'),result or {})
+                        self.frame_progress(p,'upscale',index+1,retouch_done=True)
+                    self.frame_progress(p,'upscale',index+1)
+                    # Wait interruptibly: another lane may be using this same physical GPU.
+                    while not gpu_locks[gpu].acquire(timeout=.1):check()
+                    try:
+                        check()
+                        self.command(p,[binary,'-i',source_image,'-o',temporary,'-s',str(options['scale']),'-t','64',
+                            '-m',home/'models','-n',model_name,'-g',gpu,'-j','1:1:1'])
+                    finally:gpu_locks[gpu].release()
+                    probe(temporary)
+                    temporary.replace(output)
+                    self.frame_progress(p,'upscale',index+1,finished=True)
+            except BaseException:
+                stopped.set()
+                raise
+            finally:
+                if worker:worker.close()
+        if lanes==1:
+            run_lane(0)
+        else:
+            with ThreadPoolExecutor(max_workers=lanes,thread_name_prefix='video-frame') as pool:
+                futures=[pool.submit(run_lane,lane) for lane in range(lanes)]
+                errors=[]
+                for future in futures:
+                    try:future.result()
+                    except BaseException as error:errors.append(error)
+                if errors:raise next((e for e in errors if not isinstance(e,Paused)),errors[0])
         final = work / 'upscaled.mp4'
         self.frame_progress(p, 'assemble')
         self.ffmpeg(p, ['-framerate', info['frameRate'], '-i', restored / '%08d.png', '-i', source,
@@ -834,10 +882,16 @@ class VideoStudio:
             raise H3Error('업스케일 결과 길이가 달라 원본을 유지했습니다.')
         current = self.find(p, clip['id'])
         retouch_settings=None
-        try:
-            settings=json.loads((retouched/'.qwen-memory.json').read_text())
-            retouch_settings={'maxEdge':settings['edge'],'referenceMaxEdge':settings['referenceMaxEdge']}
-        except (OSError,ValueError,KeyError):pass
+        limits=[]
+        for settings_file in sorted(retouched.glob('.qwen-memory*.json')):
+            try:
+                settings=json.loads(settings_file.read_text())
+                limits.append({'maxEdge':settings['edge'],'referenceMaxEdge':settings['referenceMaxEdge']})
+            except (OSError,ValueError,KeyError):pass
+        if limits:
+            retouch_settings={'maxEdge':max(x['maxEdge']for x in limits),
+                'referenceMaxEdge':max(x['referenceMaxEdge']for x in limits),'workerLimits':limits,
+                'frameMetadataCount':len(list(retouched.glob('[0-9]*.json')))}
         variant = self.copy_variant(p, current, final, 'ai-upscale', scale=options['scale'], model=model,
                                     bakedCorrections=clip['corrections'], engine='Qwen Image UC GGUF + Real-ESRGAN' if options.get('engine')=='qwen-quantized-realesrgan' else 'Qwen Image Turbo + Real-ESRGAN' if options.get('engine')=='qwen-turbo-realesrgan' else 'Qwen Image Edit + Real-ESRGAN' if options.get('engine')=='qwen-realesrgan' else 'Real-ESRGAN',
                                     retouchPrompt=options.get('retouchPrompt'), retouchSettings=retouch_settings,parent=variant['id'])
@@ -864,7 +918,7 @@ class VideoStudio:
             self.progress(p, index / len(entries) * .85, c['label'] + ' · 검은 화면·정지·소리·얼굴 검사')
             self.ffmpeg(p, ['-i', source, '-vf', 'blackdetect=d=0.15:pix_th=0.1,freezedetect=n=-45dB:d=1',
                             '-af', 'silencedetect=n=-40dB:d=0.5', '-f', 'null', '-'])
-            log = (work / 'process.stderr').read_text(errors='replace')
+            log = (work / ('process-'+str(threading.get_ident())+'.stderr')).read_text(errors='replace')
             for kind, prefix in [('black', 'black'), ('freeze', 'lavfi.freezedetect.freeze'), ('silence', 'silence')]:
                 starts = re.findall(re.escape(prefix) + r'_start[:=]\s*([\d.]+)', log)
                 ends = re.findall(re.escape(prefix) + r'_end[:=]\s*([\d.]+)', log)
@@ -875,7 +929,7 @@ class VideoStudio:
             if not probe(source)['audio']:
                 events.append(dict(type='silence', clip=c['id'], start=entries[index]['start'], end=entries[index]['start']+c['seconds'], reason='오디오 트랙이 없습니다.'))
             self.ffmpeg(p, ['-i', source, '-vf', 'fps=4,signalstats,metadata=print:key=lavfi.signalstats.YAVG', '-an', '-f', 'null', '-'])
-            luma_log = (work / 'process.stderr').read_text(errors='replace')
+            luma_log = (work / ('process-'+str(threading.get_ident())+'.stderr')).read_text(errors='replace')
             luminance = [float(value) for value in re.findall(r'lavfi.signalstats.YAVG=([\d.]+)', luma_log)]
             for frame in range(1, len(luminance)):
                 delta = abs(luminance[frame] - luminance[frame-1])

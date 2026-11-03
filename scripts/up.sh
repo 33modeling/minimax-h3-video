@@ -16,15 +16,17 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${H3_TMUX:-h3}"
-GPUS=""; REF_GPUS=""; FL=1; REF=0; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); CORS="${H3_CORS_ORIGIN:-}"; ENGINE=diffusers
+GPUS=""; REF_GPUS=""; FL=1; REF=0; WEB=0; CHECK=0; FORCE=0; MODE_ARGS=(); PERFORMANCE="${H3_PERF_MODE:-speed}"; CORS="${H3_CORS_ORIGIN:-}"; ENGINE=diffusers
 while [[ $# -gt 0 ]]; do case "$1" in
   --engine) ENGINE="${2:-}"; [[ "$ENGINE" == diffusers || "$ENGINE" == sglang ]] || { echo "--engine diffusers 또는 --engine sglang 을 지정하세요" >&2; exit 2; }; shift 2 ;;
   --ref) FL=1; REF=1; shift ;; --fl2va-only) FL=1; REF=0; shift ;; --ref-only) FL=0; REF=1; shift ;; --check) CHECK=1; shift ;; --force|-y) FORCE=1; shift ;;
   --web|--no-web) echo "웹 UI 는 이제 따로 띄운다: 다른 창에서 bash scripts/web.sh (H3 서버와 서로 안 건드린다)"; shift ;;
   --gpus) GPUS="$2"; shift 2 ;; --ref-gpus) REF_GPUS="$2"; shift 2 ;;
-  --mode) MODE_ARGS=(--mode "$2"); shift 2 ;; --cors) echo "--cors 는 웹 UI 옵션이다: bash scripts/web.sh --cors $2"; shift 2 ;;
+  --mode) PERFORMANCE="$2"; MODE_ARGS=(--mode "$2"); shift 2 ;; --cors) echo "--cors 는 웹 UI 옵션이다: bash scripts/web.sh --cors $2"; shift 2 ;;
   -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "알 수 없는 옵션: $1 (--help)"; exit 2 ;; esac; done
+
+[[ "$PERFORMANCE" == speed || "$PERFORMANCE" == memory ]] || { echo "--mode는 speed 또는 memory입니다"; exit 2; }
 
 red() { printf '\033[31m%s\033[0m\n' "$*"; }; green() { printf '\033[32m%s\033[0m\n' "$*"; }; yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 problems=0; fail() { red "✗ $1"; [[ -n "${2:-}" ]] && echo "   → $2"; problems=$((problems + 1)); }
@@ -191,7 +193,10 @@ for k in "${!GERR[@]}"; do fail "${GERR[$k]}" "${GHINT[$k]}"; done
 layout() {   # GPU 목록 → 쓰는 방식 (diffusers)
   local n; n=$(tr ',' '\n' <<<"$1" | grep -c .)
   [[ "$H3_ENGINE" != diffusers ]] && return
-  if [[ $n -ge 3 ]]; then echo " — 텍스트 인코더·VAE 1장 + 영상 모델 가중치 한 벌을 $((n - 1))장에 분산 (weight sharding)"
+  if [[ $n -ge 3 ]]; then
+    if [[ ${H3_DSERVER_PARALLEL:-} == sharded || -z ${H3_DSERVER_PARALLEL:-} && $PERFORMANCE == memory ]]; then echo " — 메모리 모드: 가중치 한 벌을 $((n - 1))장에 순차 배치"
+    elif [[ ${H3_DSERVER_PARALLEL:-} == cp ]]; then echo " — 명시적 legacy CP: $((n - 1))장에 모델 복제"
+    else echo " — 속도 모드: 텍스트·VAE 1장 + FSDP 가중치 분산/CP 동시 계산 $((n - 1))장"; fi
   elif [[ $n -eq 2 ]]; then echo " — 텍스트 인코더 1장 + 영상 모델 1장"
   else echo " — 1장에서 번갈아 올림 (느림)"; fi; }
 if [[ $problems -eq $gpu_problems ]]; then

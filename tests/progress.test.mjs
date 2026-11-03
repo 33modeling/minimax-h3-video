@@ -30,3 +30,8 @@ test('failed and queued results retain distinct state',()=>{
  const p={title:'Movie',busy:false,clips:[{pendingCandidates:[{status:'failed',error:'fixture failure'}]}]};assert.equal(videoProgress(p).status,'error');assert.match(videoProgress(p).message,/fixture failure/);
  p.clips[0].pendingCandidates[0].status='paused';assert.equal(videoProgress(p).status,'paused');p.busy=true;p.clips=[];p.task={status:'queued',operation:'upscale',progress:.25};assert.match(videoProgress(p).message,/업스케일.*대기/);assert.equal(videoProgress(p).fraction,null);
 });
+
+test('parallel in-flight frames are separate from completed count',()=>{
+ const p=frameTask();p.task.metrics.frames={total:8,completed:3,cached:1,workers:2,active:{'2':'retouch','5':'upscale'}};
+ const v=videoProgress(p);assert.match(v.message,/완료 프레임 3\/8/);assert.match(v.message,/처리 중 프레임 2, 5/);assert.match(v.message,/작업자 2개/);
+});

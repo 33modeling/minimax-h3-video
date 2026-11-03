@@ -624,9 +624,10 @@
         "bug-ledger/evidence/low-utilization-report-20261103.json",
         "src/h3video/placement.py",
         "src/h3video/dserver.py",
-        "src/h3video/spec.py"
+        "src/h3video/spec.py",
+        "bug-ledger/evidence/performance-fix-validation-20261103.json"
       ],
-      "status": "사용자 보고·구조 확인 / 실제 실행 경로와 H100 성능 미검증",
+      "status": "동시 계산 코드 수정·작은 CUDA 검증 / 실제 H100 성능·완주 확인 전",
       "details": [
         "사용자 보고: 1080p 16초, 90분 초과, GPU 사용률 17%로 할당 종료",
         "현재 가중치 분산은 레이어를 순차 실행하며 한 요청에서 모든 GPU를 동시에 계산에 쓰지 않음",
@@ -648,6 +649,13 @@
           "at": "2026-11-03T11:45:16.355274+00:00",
           "evidence": "bug-ledger/evidence/performance-cause-20261103.json",
           "note": "기본 sharded의 순차 레이어 실행과 --ref 4+4 서버 격리를 확인. 실제 H100 단계 시간·90분 지연 비중은 미확인. 성능 수정·완주 확인 아님."
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-11-03T12:30:23.781749+00:00",
+          "action": "code-fixed-and-locally-verified",
+          "note": "FSDP2+CP speed 경로/모드 전달/endpoint별 지속 프레임 worker 수정. 작은 CUDA 및 모의 API 검증. H100 다중 GPU 전체 성능·완주 미측정."
         }
       ]
     },
@@ -695,12 +703,20 @@
       "fixCommits": [],
       "evidence": [
         "bug-ledger/evidence/performance-cause-20261103.json",
-        "PERFORMANCE-AUDIT-20261103.md"
+        "PERFORMANCE-AUDIT-20261103.md",
+        "bug-ledger/evidence/performance-fix-validation-20261103.json"
       ],
-      "status": "재현·원인 확인 / 미수정·실제 H100 비중 미측정",
+      "status": "코드 수정·대조 검증 / 원격·공개 반영 확인 전",
       "details": [
         "실제 serve.sh fake 실행으로 두 모드 argv/관련환경 동일 재현",
         "SGLang에는 MODE를 전달하지만 Diffusers에는 미전달"
+      ],
+      "events": [
+        {
+          "at": "2026-11-03T12:30:23.781749+00:00",
+          "action": "code-fixed-and-locally-verified",
+          "note": "FSDP2+CP speed 경로/모드 전달/endpoint별 지속 프레임 worker 수정. 작은 CUDA 및 모의 API 검증. H100 다중 GPU 전체 성능·완주 미측정."
+        }
       ]
     },
     {
@@ -716,13 +732,21 @@
       "fixCommits": [],
       "evidence": [
         "bug-ledger/evidence/performance-cause-20261103.json",
-        "PERFORMANCE-AUDIT-20261103.md"
+        "PERFORMANCE-AUDIT-20261103.md",
+        "bug-ledger/evidence/performance-fix-validation-20261103.json"
       ],
-      "status": "재현·원인 확인 / 미수정·실제 H100 비중 미측정",
+      "status": "코드 수정·대조 검증 / 원격·공개 반영 확인 전",
       "details": [
         "실제 retouch 자식 프로세스 4회 A/A/A/A; 지속 provider 대조군 A/B/C/D",
         "GPU와 이미지 API 추론은 측정하지 않음. 소켓/서비스 시작 없음",
         "프레임 편집·확대 동기 실행, finishing max_workers=1"
+      ],
+      "events": [
+        {
+          "at": "2026-11-03T12:30:23.781749+00:00",
+          "action": "code-fixed-and-locally-verified",
+          "note": "FSDP2+CP speed 경로/모드 전달/endpoint별 지속 프레임 worker 수정. 작은 CUDA 및 모의 API 검증. H100 다중 GPU 전체 성능·완주 미측정."
+        }
       ]
     }
   ],
@@ -741,7 +765,9 @@
     "evidence/measured-progress-validation-20261103.json": "5e48ea5b254d1340fc98cb2122b087a0c4ebbf4530185f118ef97cc8c3fc146b",
     "evidence/measured-progress-layout-recheck-20261103.json": "f21133e1f20d0b45e93f1f014ee26e8b1c862eec600440ee42f98cccd5c64fff",
     "evidence/measured-progress-publication-20261103.json": "8c889dabe03c4ea6ab5f52255e27578160803c70e575821b45b80ca0fe90d8f2",
-    "evidence/performance-cause-20261103.json": "48c9d508a82fea96b3c493f88c9ba1ac2b5142b5257066c4f9684bcca813083b"
+    "evidence/performance-cause-20261103.json": "48c9d508a82fea96b3c493f88c9ba1ac2b5142b5257066c4f9684bcca813083b",
+    "evidence/performance-frame-log-regression-20261103.log": "dec7b0e6d7924c047f36d79e53138df86c7ac66cb64044d5af562564541ec165",
+    "evidence/performance-fix-validation-20261103.json": "9654bdbe860ad9378532d356101d3148c780d96027fac0e2087ecca44d376056"
   },
   "archiveBoard": {
     "id": 1153,
@@ -792,6 +818,16 @@
         "H3-031"
       ],
       "note": "기존 증거·실패·29항목을 삭제하지 않고 새 원인 재현 2건을 추가. 성능 수정과 실측 결과는 없음."
+    },
+    {
+      "at": "2026-11-03T12:30:23.781749+00:00",
+      "action": "performance-code-fix",
+      "cases": [
+        "H3-028",
+        "H3-030",
+        "H3-031"
+      ],
+      "note": "기존 원인 조사·실패 스냅샷 유지. 개발 중 command 로그 이름 회귀를 테스트에서 발견해 고쳤고 원본 실패 로그도 보존."
     }
   ]
 }

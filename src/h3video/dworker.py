@@ -74,15 +74,21 @@ def main(argv=None) -> int:
     blocks = ModularPipeline.from_pretrained(a.model_dir).blocks
     pipe = SequentialPipelineBlocks.from_blocks_dict({"denoise": blocks.sub_blocks["denoise"]}).init_pipeline(a.model_dir)
     tname = "transformer" if a.variant == "fl2va" else "transformer_ref"
-    # 한 장씩 차례로 올린다: 동시에 올리면 CPU 메모리에 62GB × N 이 한꺼번에 잡힌다
-    for r in range(world):
-        if r == rank:
-            pipe.load_components(names=[tname, "scheduler", "audio_scheduler"], dtype=getattr(torch, a.dtype))
-            getattr(pipe, tname).to(device)
-            if use_cuda:
-                free, total = torch.cuda.mem_get_info(local)
-                print(f"[dworker {time.strftime('%H:%M:%S')}] rank {rank}: 영상 모델 → {device} (여유 {free / 2**30:.1f}GB / {total / 2**30:.1f}GB)", flush=True)
-        dist.barrier()
+    sharded = use_cuda and os.environ.get('H3_DWORKER_WEIGHT_SHARD') == 'fsdp'
+    if sharded:
+        from .parallel import load_fsdp_transformer
+        transformer, placement = load_fsdp_transformer(a.model_dir, tname, device, rank, world,
+            getattr(torch,a.dtype), ContextParallelConfig(ulysses_degree=world, ulysses_anything=True) if world>1 else None)
+        pipe.update_components(**{tname:transformer})
+        pipe.load_components(names=['scheduler','audio_scheduler'], dtype=getattr(torch,a.dtype))
+        log(rank, 'FSDP 가중치 분산 + CP 동시 계산: '+str(placement))
+    else:
+        # Explicit legacy CP only; never the CUDA speed default.
+        for r in range(world):
+            if r == rank:
+                pipe.load_components(names=[tname, 'scheduler', 'audio_scheduler'], dtype=getattr(torch,a.dtype))
+                getattr(pipe,tname).to(device)
+            dist.barrier()
     # 디노이징은 VAE 를 돌리지 않고 설정값(잠재 채널·압축 비율·청크 길이·오디오 샘플레이트)만 읽는다 → 가중치 없이 설정만 넣는다
     pipe.vae = geometry(AutoencoderKLMiniMaxH3, a.model_dir, "vae")
     pipe.audio_vae = geometry(AutoencoderKLMiniMaxH3Audio, a.model_dir, "audio_vae")
@@ -90,7 +96,7 @@ def main(argv=None) -> int:
     if os.environ.get("H3_ATTN_BACKEND"):
         tr.set_attention_backend(os.environ["H3_ATTN_BACKEND"])
     heads = tr.config.num_attention_heads
-    if world > 1:
+    if world > 1 and not sharded:
         # anything: H3 는 텍스트·조건·오디오·영상을 한 시퀀스로 묶어 길이가 제멋대로라 N 으로 안 나누어떨어질 수 있다 (헤드 56 도 3 으로 안 나뉨)
         tr.enable_parallelism(config=ContextParallelConfig(ulysses_degree=world, ulysses_anything=True))
     steps = [0]
@@ -109,7 +115,9 @@ def main(argv=None) -> int:
     free_min = torch.tensor([torch.cuda.mem_get_info(local)[0] if use_cuda else 0], dtype=torch.int64, device=device)
     dist.all_reduce(free_min, op=dist.ReduceOp.MIN)   # 영상 모델을 올린 뒤 가장 빠듯한 장의 여유 (본체가 요청마다 메모리 검사에 쓴다)
     if rank == 0:
-        conn.send_bytes(f"READY {world} {int(free_min.item())}".encode())
+        details=placement if sharded else dict(kind='replicated_cp',weightCopies=world,ranks=world)
+        import json
+        conn.send_bytes((f"READY {world} {int(free_min.item())} "+json.dumps(details)).encode())
     while True:
         # 작업은 CPU(gloo)로 나눠 받는다: GPU 메모리를 쓰지 않고, 쉬는 동안 1분마다 PING 을 돌려
         # 기다리는 집합 통신이 30분 제한에 걸려 워커가 죽지 않게 한다

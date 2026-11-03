@@ -99,14 +99,20 @@ def _seed(v) -> int:
 class Engine:
     """파이프라인 적재와 생성. 작업은 한 번에 하나 (GPU 하나를 나눠 쓰지 않는다)."""
 
-    def __init__(self, model_dir: str, variant: str, devices: list[str], dtype: str = "bfloat16", attn: str | None = None):
+    def __init__(self, model_dir: str, variant: str, devices: list[str], dtype: str = "bfloat16", attn: str | None = None, performance: str | None = None):
         model_path = Path(model_dir).expanduser().resolve()
         if not model_path.is_dir():
             raise ValueError(f'기존 로컬 영상 모델 폴더를 찾지 못했습니다: {model_path}. 자동 다운로드는 하지 않습니다.')
         model_dir = str(model_path)
         if variant == "ref2va" and len(devices) < 4:
             raise ValueError("Ref2VA에 최소 GPU 4장이 필요합니다. 2장 구성은 중단했습니다. H100 8장에서는 FL2VA 4장 + Ref2VA 4장, 4장 노드에서는 --ref-only를 사용하세요.")
-        self.reload_options = dict(model_dir=model_dir, variant=variant, devices=list(devices), dtype=dtype, attn=attn)
+        from .parallel import execution_mode
+        selected_mode = execution_mode(devices, performance)
+        if selected_mode=='fsdp_cp':
+            from .parallel import require_fsdp_runtime
+            require_fsdp_runtime()
+        self.performance = performance or os.environ.get('H3_PERF_MODE', 'speed')
+        self.reload_options = dict(model_dir=model_dir, variant=variant, devices=list(devices), dtype=dtype, attn=attn, performance=self.performance)
         import torch
         from diffusers import ComponentsManager, ModularPipeline
         from diffusers.modular_pipelines import SequentialPipelineBlocks
@@ -118,7 +124,7 @@ class Engine:
         blocks = ModularPipeline.from_pretrained(model_dir).blocks
         t0 = time.time()
         self.mode, self._proc, self._conn = "single", None, None
-        if len(devices) >= 3 and all(d.startswith("cuda:") for d in devices) and os.environ.get("H3_DSERVER_PARALLEL", "sharded") != "cp":
+        if selected_mode == "sharded":
             from .placement import load_sharded_transformer
             from .dworker import geometry
             from diffusers import AutoencoderKLMiniMaxH3, AutoencoderKLMiniMaxH3Audio
@@ -146,7 +152,8 @@ class Engine:
             for device, size in placement["weightBytes"].items():
                 log(f"영상 모델 가중치 {device}: {size / 2**30:.2f}GiB (한 벌의 일부, 활성값 제외)")
         elif len(devices) >= 3:
-            self.mode = "cp"
+            self.mode = selected_mode
+            log(f"실행 모드 {self.mode}: 가중치 분산 + 동시 시퀀스 계산" if self.mode=="fsdp_cp" else "명시적 legacy CP: GPU마다 가중치를 복제합니다")
             log(f"GPU {len(devices)}장 방식: 텍스트 인코더·VAE → {devices[0]}, 영상 모델 → {', '.join(devices[1:])} 에 나눔 (context parallel)")
             self._start_workers(model_dir, variant, devices[1:], dtype, attn)   # 워커가 영상 모델을 올리는 동안 여기서도 올린다
             stage = {n: blocks.sub_blocks.pop(n) for n in ("before_encode", "text_encoder", "vae_encoder")}
@@ -193,7 +200,7 @@ class Engine:
             m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
             self.geo = self.pipe
         self._steps_done = 0
-        if self.mode != "cp":   # cp 는 워커가 영상 모델을 갖고 진행 스텝을 보내 준다
+        if self.mode not in ("cp", "fsdp_cp"):   # cp 는 워커가 영상 모델을 갖고 진행 스텝을 보내 준다
             tname = "transformer" if variant == "fl2va" else "transformer_ref"
             self.transformer = getattr(self.pipe, tname, None)
             if self.transformer is None:
@@ -203,7 +210,7 @@ class Engine:
                 log(f"어텐션 백엔드: {attn}")
             self.transformer.register_forward_hook(self._count)
         self._te_pipe = self.pipe if self.mode == "single" else self.cond   # 텍스트 인코더(= Qwen3-VL-32B-Instruct)가 있는 쪽
-        if self.mode != "cp":   # 영상 모델이 올라갈 장: 전체 - 영상 모델 - CUDA 컨텍스트 등 1.5GB
+        if self.mode not in ("cp", "fsdp_cp"):   # 영상 모델이 올라갈 장: 전체 - 영상 모델 - CUDA 컨텍스트 등 1.5GB
             self.cp_world, self.headroom = 1, None
             if self.mode == "sharded":
                 self.headroom = max(0, min(torch.cuda.mem_get_info(torch.device(d))[0] for d in devices[1:]) - int(1.5 * 2**30))
@@ -311,7 +318,7 @@ class Engine:
         from multiprocessing.connection import Listener
         key = secrets.token_hex(16)
         self._listener = Listener(("127.0.0.1", 0), authkey=key.encode())
-        env = dict(os.environ, H3_CP_AUTHKEY=key)
+        env = dict(os.environ, H3_CP_AUTHKEY=key, H3_DWORKER_WEIGHT_SHARD="fsdp" if self.mode=="fsdp_cp" else "replicated")
         if all(d == "cpu" for d in devs):
             env["H3_CP_DEVICE"] = "cpu"
         else:   # 워커가 볼 GPU = 이 프로세스가 보는 GPU 중 첫 장을 뺀 나머지 (nvidia-smi 번호로)
@@ -341,9 +348,10 @@ class Engine:
                 raise WorkerDied(f"영상 모델 워커가 준비 중에 끝났다 (종료 코드 {self._proc.returncode}). 바로 위 [dworker] 로그가 원인")
             th.join(1)
         self._conn = box["conn"]
-        msg = self._recv().decode().split()
+        msg = self._recv().decode().split(maxsplit=3)
         self.headroom = int(msg[2]) if len(msg) > 2 and int(msg[2]) > 0 else None   # 영상 모델 장의 남는 자리
         self.cp_world = int(msg[1])
+        if len(msg)>3:self.placement=json.loads(msg[3])
         log(f"영상 모델 워커 연결: {msg[1]}장" + (f", 영상 모델 올린 뒤 가장 빠듯한 장 여유 {self.headroom / 2**30:.1f}GB" if self.headroom else ""))
 
     def _recv(self) -> bytes:
@@ -838,7 +846,7 @@ class Server:
                 # The per-request reference geometry follows the smaller edge too.
                 # A sharded engine has no failed collective to rebuild after a CUDA OOM.
                 # Re-loading every model here caused a second large RAM/VRAM allocation.
-                if isinstance(error, WorkerDied) or getattr(self.engine, "mode", None) == "cp":
+                if isinstance(error, WorkerDied) or getattr(self.engine, "mode", None) in ("cp", "fsdp_cp"):
                     self.reload_engine(error)
 
     def cancel(self, vid: str) -> dict:
@@ -973,7 +981,7 @@ def make_handler(srv: Server):
                 return self._json(200 if srv.engine_status=='ready' else 503,
                                   {"status": srv.engine_status, "engine": "diffusers", "variant": srv.variant,
                                    "error":srv.engine_error,"model_path":(srv.engine_options or {}).get('model_dir'),
-                                   "active":active,"memory_mode":getattr(srv.engine, "mode", None),
+                                   "active":active,"memory_mode":getattr(srv.engine, "mode", None), "performance_mode":getattr(srv.engine,"performance",None),
                                    "placement":getattr(srv.engine, "placement", None)})
             if path == "/v1/models":
                 if srv.engine_status != 'ready': return self._json(503,{'error':srv.engine_error or '영상 모델 복구 중'})
@@ -1082,6 +1090,7 @@ def main(argv=None) -> int:
     ap.add_argument("--out-dir", default=None, help="결과 mp4 저장 위치 (기본: $STORAGE_ROOT/dserver/<variant>)")
     ap.add_argument("--devices", default=os.environ.get("H3_DSERVER_DEVICES"), help="예: cuda:0,cuda:1 (기본: 보이는 GPU)")
     ap.add_argument("--dtype", default="bfloat16")
+    ap.add_argument("--performance-mode", choices=["speed", "memory"], default=os.environ.get("H3_PERF_MODE", "speed"), help="speed: FSDP 가중치 분산+동시 CP / memory: 순차 레이어 배치")
     ap.add_argument("--attn", default=os.environ.get("H3_ATTN_BACKEND"), help="어텐션 백엔드 (기본: PyTorch SDPA)")
     a = ap.parse_args(argv)
     out_dir = Path(a.out_dir or Path(os.environ.get("STORAGE_ROOT", "."), "dserver", a.variant))
@@ -1089,10 +1098,10 @@ def main(argv=None) -> int:
     log(f"torch {torch.__version__} (CUDA {torch.version.cuda}), 모델 {a.model_dir}, 결과 {out_dir}")
     devices = pick_devices(a.devices)
     check_free(devices[:1] if len(devices) >= 3 else devices)   # 3장 이상: 나머지는 워커가 자기 GPU 를 확인한다
-    engine = Engine(a.model_dir, a.variant, devices, a.dtype, a.attn)
+    engine = Engine(a.model_dir, a.variant, devices, a.dtype, a.attn, a.performance_mode)
     srv = Server(engine, out_dir, a.variant)
     threading.Thread(target=srv.worker, daemon=True).start()
-    if engine.mode == "cp":   # 쉬는 동안 워커가 죽어도 바로 알아채고 서버를 끝낸다 (up.sh 가 정리)
+    if engine.mode in ("cp", "fsdp_cp"):   # 쉬는 동안 워커가 죽어도 바로 알아채고 서버를 끝낸다 (up.sh 가 정리)
         def watch():
             while engine._proc.poll() is None:
                 time.sleep(2)

@@ -18,6 +18,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --gpus) GPUS="$2"; shift 2 ;; --mode) MODE="$2"; shift 2 ;; --) shift; EXTRA=("$@"); break ;;
   *) echo "알 수 없는 옵션: $1"; exit 2 ;; esac; done
 if [[ -n "$GPUS" ]]; then export CUDA_VISIBLE_DEVICES="$GPUS"; NGPU=$(tr ',' '\n' <<<"$GPUS" | grep -c .); else NGPU="$H3_NUM_GPUS"; fi
+[[ "$MODE" == speed || "$MODE" == memory ]] || { echo "--mode는 speed 또는 memory입니다"; exit 2; }
 PORT="$H3_PORT_FL2VA"; [[ "$VARIANT" == ref2va ]] && PORT="$H3_PORT_REF2VA"
 if [[ "$H3_ENGINE" == diffusers ]]; then   # 기본 Diffusers 엔진
   [[ -x "$VENV/bin/python" ]] || { echo "Diffusers venv 없음: $VENV — bash scripts/provision.sh"; exit 1; }
@@ -49,7 +50,7 @@ export H3_SERVE_ID="$VARIANT-$$"   # 이 serve.sh 가 띄운 서버·워커 표�
 if [[ "$H3_ENGINE" == diffusers ]]; then
   echo "[serve] engine=diffusers variant=$VARIANT gpus=${CUDA_VISIBLE_DEVICES:-all} port=$PORT model=$H3_DIFFUSERS_DIR log=$LOG"
   exec "$VENV/bin/python" -m h3video.dserver --model-dir "$H3_DIFFUSERS_DIR" --variant "$VARIANT" \
-    --host "$H3_HOST" --port "$PORT" --out-dir "$STORAGE_ROOT/dserver/$VARIANT" "${EXTRA[@]}" 2>&1 | tee "$LOG"
+    --performance-mode "$MODE" --host "$H3_HOST" --port "$PORT" --out-dir "$STORAGE_ROOT/dserver/$VARIANT" "${EXTRA[@]}" 2>&1 | tee "$LOG"
   exit "${PIPESTATUS[0]}"
 fi
 echo "[serve] engine=sglang variant=$VARIANT gpus=${CUDA_VISIBLE_DEVICES:-all}($NGPU) mode=$MODE port=$PORT model=$H3_MODEL_DIR log=$LOG"

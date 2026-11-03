@@ -5,7 +5,7 @@ import {printStoryboard} from './storyboard.js';
 import {mountDirections} from './prompt-library.js';
 import {mountWorkspace} from './workspace.js';
 import {mountReferenceStudio} from './reference.js';
-import {videoProgress,clipProgress} from './progress.js?v=frames-20261103';
+import {videoProgress,clipProgress} from './progress.js?v=performance-20261103';
 import {draftSettings,restoreDraft,importDraft} from './draft.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;

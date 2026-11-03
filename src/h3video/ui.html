@@ -1256,7 +1256,7 @@ const opened = new Map();         // id → {cmd, set, err} 펼쳐 둔 것 (다�
 let feedItems = [], feedAt = Date.now(), serverNow = Date.now() / 1000;
 let feedDisconnected=false;
 let nativeProgress=()=>({message:'상세 진척 확인 중',fraction:null});
-const measuredReady=import('./studio/progress.js?v=frames-20261103').then(module=>{nativeProgress=module.nativeProgress;for(const card of cards.values())card.sig='';renderFeed({items:feedItems,now:serverNow});}).catch(()=>toast('진척 표시를 불러오지 못했습니다. 화면을 새로고침하세요.'));
+const measuredReady=import('./studio/progress.js?v=performance-20261103').then(module=>{nativeProgress=module.nativeProgress;for(const card of cards.values())card.sig='';renderFeed({items:feedItems,now:serverNow});}).catch(()=>toast('진척 표시를 불러오지 못했습니다. 화면을 새로고침하세요.'));
 function progressOf(it) {return nativeProgress(it,{connectionError:feedDisconnected}).fraction;}
 function stateText(it) {
   if (it.kind === 'story') {
@@ -1662,7 +1662,7 @@ window.addEventListener('h3:workspace-recovery',event=>openVideoRecovery('studio
 import('./studio/ui-navigation.js').then(({mountStudioNavigation})=>mountStudioNavigation()).catch(error=>toast(error.message));
 const promptHost=document.createElement('div');promptHost.id='promptLibrary';document.querySelector('main.layout')?.before(promptHost);
 const promptsReady=import('./studio/prompt-library.js').then(({mountPromptLibrary,draftProject,mountDirections})=>{const controls=document.createElement('div');document.getElementById('recovery-prompt').closest('label').after(controls);mountDirections(controls,document.getElementById('recovery-prompt'));return mountPromptLibrary(promptHost,{theme:'auto',applyLabel:'영상 콘티로 불러오기',onApply:async draft=>{setMode('story');addFiles('json',[new File([JSON.stringify(draftProject(draft))],'prompt-storyboard.json',{type:'application/json'})]);toast('장면 초안을 불러왔습니다. 장면을 확인한 뒤 영상 만들기를 누르세요.');}});}).catch(error=>toast('템플릿을 불러오지 못했습니다: '+error.message));
-Promise.all([import('./studio/editor.js?v=frames-20261103'),import('./studio/feature-hub.js')]).then(([{mountVideoStudio},{mountFeatureHub}])=>{
+Promise.all([import('./studio/editor.js?v=performance-20261103'),import('./studio/feature-hub.js')]).then(([{mountVideoStudio},{mountFeatureHub}])=>{
  const editor=mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null});
  mountFeatureHub({host:document.getElementById('videoTaskHub'),startRetouch:editor.startRetouch,openFeature:editor.openFeature,onMode:next=>{setMode(next);document.querySelector('.maker').scrollIntoView({block:'start',behavior:'smooth'});document.querySelector(next==='story'?'[data-zone=json]':'#prompt')?.focus({preventScroll:true});},onAux:async kind=>{if(kind==='motion'){await motionReady;document.getElementById('openMotionStudio').click();}else {await promptsReady;const library=document.getElementById('promptLibrary');const details=library.shadowRoot?.querySelector('details');if(details)details.open=true;library.scrollIntoView({block:'start',behavior:'smooth'});library.shadowRoot?.querySelector('[data-search]')?.focus({preventScroll:true});}}});
 }).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));

@@ -537,3 +537,24 @@ OOM으로 끝난 원격 장면은 실패로 저장하고 재개할 때 새 요�
 - 중지·오류 시 완료 수는 보존하고 속도·예상 시간은 숨깁니다. 재개 시 저장한 프레임을 재사용하며 중지 시간과 재사용 프레임은 속도 계산에서 제외합니다. 연결 끊김은 마지막 확인 상태로 표시합니다.
 
 진척 코드 검증은 H100에서의 처리 속도나 1080p·16초 전체 실행 성공을 뜻하지 않습니다. 프레임 보정의 GPU 분산 방식은 이번 표시 수정으로 바뀌지 않습니다.
+
+### 2026-11-03 성능 경로 수정
+
+기본 Diffusers `speed` 모드는 3장 이상 CUDA 구성에서 **FSDP2 가중치 분산 + Context Parallel 동시 계산**을 사용합니다. GPU마다 전체 모델을 복제하지 않으며 safetensors에서 각 rank가 필요한 조각만 읽습니다. H3의 FP32 projection과 BF16 블록을 유지합니다. 기본 시작 명령은 같습니다.
+
+```bash
+# 글·이미지와 참고 생성 서버 모두: 8장에서 4+4
+bash scripts/up.sh --ref
+
+# 참고 생성만 필요할 때: Ref2VA가 빈 GPU를 전부 사용(최대 8장)
+bash scripts/up.sh --ref-only
+
+# 순차 레이어 배치가 필요한 경우에만 선택(동시 CP 계산 없음)
+bash scripts/up.sh --ref-only --mode memory
+```
+
+`--mode speed|memory`가 이제 Diffusers 엔진까지 전달됩니다. `H3_DSERVER_PARALLEL`이 별도로 고정되어 있으면 그 선택이 우선합니다. `cp`는 가중치를 복제하는 이전 방식이므로 일반 실행에는 설정하지 않습니다. `/health`의 `memory_mode=fsdp_cp`와 `placement.weightCopies=1`로 실제 경로를 확인합니다.
+
+원본 프레임 보정은 설정한 Qwen 서버마다 지속 worker 한 개를 사용합니다. `QWEN_IMAGE_BASE_URL`(또는 Turbo/Quantized의 해당 변수)에 서로 다른 서버 주소를 쉼표로 나열하면 endpoint별로 프레임을 동시에 처리합니다. 서버가 하나면 한 요청씩 처리합니다. `STUDIO_UPSCALER_GPUS=0,1`처럼 명시한 확대 GPU도 한 장당 한 작업만 실행합니다. 새 서버를 자동 시작하거나 GPU 프로세스를 종료하지 않습니다. 완료 프레임은 검증 후 저장하며 중지·재개에서 재사용하고 원본 FPS·오디오·원본 파일을 보존합니다. 품질 설정과 생성 스텝 수를 줄이는 변경은 없습니다.
+
+검증 범위: 실제 CUDA의 작은 FSDP 모델 출력 대조, 모의 3-rank의 로컬 weight 조각 검증, 모의 이미지 API를 연결한 실제 FFmpeg 프레임 동시 처리·중지/재개. H100 다중 GPU 전체 모델의 속도·최대 메모리·완주는 아직 측정하지 못했습니다.

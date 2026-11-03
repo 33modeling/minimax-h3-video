@@ -6,7 +6,10 @@ export function measuredProgress(metrics){
  if(metrics.frames){
   const f=metrics.frames;
   parts.push(`완료 프레임 ${f.completed}/${f.total}`);
-  if(f.current&&['retouch','upscale'].includes(metrics.phase)&&f.current>f.completed)parts.push(`현재 ${f.current}번`);
+  const active=Object.keys(f.active||{}).map(Number).sort((a,b)=>a-b);
+  if(active.length)parts.push(`처리 중 프레임 ${active.join(', ')}`);
+  else if(f.current&&['retouch','upscale'].includes(metrics.phase)&&f.current>f.completed)parts.push(`현재 ${f.current}번`);
+  if(f.workers>1)parts.push(`작업자 ${f.workers}개`);
   if(f.cached)parts.push(`저장본 ${f.cached}개 재사용`);
  }else if(metrics.unit==='steps'&&metrics.total){parts.push(`계산 ${metrics.completed||0}/${metrics.total}`);if(metrics.outputFrames)parts.push(`출력 ${metrics.outputFrames}프레임`);}
  if(Number.isFinite(metrics.elapsedSeconds))parts.push(`${metrics.clockIncomplete?'기록된 작업 시간':'작업 경과'} ${duration(metrics.elapsedSeconds)}`);

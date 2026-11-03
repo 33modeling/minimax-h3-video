@@ -60,4 +60,16 @@ def edit(v):
         raise RuntimeError('로컬 Qwen Image Edit 요청 실패. 원본은 보존됩니다. '+type(error).__name__+': '+detail) from None
 
 
-if __name__=='__main__':edit(json.load(sys.stdin))
+if __name__=='__main__':
+    if '--worker' in sys.argv:
+        from contextlib import redirect_stdout
+        import io
+        for line in sys.stdin:
+            try:
+                with redirect_stdout(io.StringIO()) as output:
+                    edit(json.loads(line))
+                print(json.dumps(dict(ok=True,result=json.loads(output.getvalue()))),flush=True)
+            except Exception as error:
+                print(json.dumps(dict(ok=False,error=str(error))),flush=True)
+    else:
+        edit(json.load(sys.stdin))
