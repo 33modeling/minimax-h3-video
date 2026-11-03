@@ -655,15 +655,17 @@
       "introducedCommit": null,
       "knownBadSnapshot": "f9ade8039a58c17af024a51c7645d17920672dca",
       "fixCommits": [
-        "710d367064bef4d39efa84d7f61855c74913df8e"
+        "710d367064bef4d39efa84d7f61855c74913df8e",
+        "8d8df2b25800fe3bf576f911b1ec8bf95010895e"
       ],
       "evidence": [
         "bug-ledger/evidence/measured-progress-validation-20261103.json",
         "tests/test_measured_progress.py",
         "tests/progress.test.mjs",
-        "bug-ledger/evidence/measured-progress-layout-recheck-20261103.json"
+        "bug-ledger/evidence/measured-progress-layout-recheck-20261103.json",
+        "bug-ledger/evidence/measured-progress-publication-20261103.json"
       ],
-      "status": "실제 프레임·단계 표시 수정 및 로컬 검증 / 원격·공개 반영 확인 전",
+      "status": "코드 원격·공개/실제 Arcade 4폭·두빌드/실제캐시 검증 완료. H100 성능 문제는 별도 미해결",
       "details": [
         "Verified and atomically saved restored frames / extracted total; current frame is separate",
         "Measured denoiser forward steps / planned model steps, separate from output segments",
@@ -687,7 +689,8 @@
     "evidence/low-utilization-report-20261103.json": "a3330aac2b2830012642ec5e8900307fb6607d58d9bd236984dd74468d2b1c6e",
     "evidence/input-video-clarification-20261103.json": "912196744427a6c3a7ebcc974a3052bf273b20ef671d8880a12d1687dc3dec55",
     "evidence/measured-progress-validation-20261103.json": "5e48ea5b254d1340fc98cb2122b087a0c4ebbf4530185f118ef97cc8c3fc146b",
-    "evidence/measured-progress-layout-recheck-20261103.json": "f21133e1f20d0b45e93f1f014ee26e8b1c862eec600440ee42f98cccd5c64fff"
+    "evidence/measured-progress-layout-recheck-20261103.json": "f21133e1f20d0b45e93f1f014ee26e8b1c862eec600440ee42f98cccd5c64fff",
+    "evidence/measured-progress-publication-20261103.json": "8c889dabe03c4ea6ab5f52255e27578160803c70e575821b45b80ca0fe90d8f2"
   },
   "archiveBoard": {
     "id": 1153,
@@ -719,6 +722,14 @@
       "case": "H3-029",
       "action": "verification-correction",
       "note": "추가 local 1440px 상태문구 넘침 실패를 보존하고 CSS 줄바꿈을 수정. Chromium 4폭 재검사 통과."
+    },
+    {
+      "at": "2026-11-03T04:52:04.810417+00:00",
+      "case": "H3-029",
+      "action": "published-and-verified",
+      "sourceCodeCommit": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
+      "deployment": "d5759095-ec7e-4573-aeb0-a46d022813b3",
+      "note": "진척 표시 공개/실제 Arcade 4폭 및 두 빌드/실제캐시 검증. H3-028 성능 미해결 유지."
     }
   ]
 }

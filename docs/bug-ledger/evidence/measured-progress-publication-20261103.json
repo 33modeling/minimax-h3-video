@@ -1,0 +1,302 @@
+{
+  "recordedAt": "2026-11-03T04:52:04.810417+00:00",
+  "case": "H3-029",
+  "sourceCodeCommit": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
+  "sourceFixCommits": [
+    "710d367064bef4d39efa84d7f61855c74913df8e",
+    "8d8df2b25800fe3bf576f911b1ec8bf95010895e"
+  ],
+  "hubSync": {
+    "commit": "f4f4ffc2a0cbabd0b8f89835b607e24220ccbd00",
+    "remoteMatch": true,
+    "targets": [
+      {
+        "target": "hub",
+        "root": "/home/kms/dev/33modeling-network-inventory-20261102/video-maker",
+        "declaredHashes": 15,
+        "allHashesVerified": true,
+        "changedArtifacts": [
+          "index.html",
+          "studio/editor.js",
+          "studio/progress.js",
+          "studio/editor.css"
+        ]
+      },
+      {
+        "target": "canonical",
+        "root": "/home/kms/dev/33modeling-site/video-maker",
+        "declaredHashes": 9,
+        "allHashesVerified": true,
+        "changedArtifacts": [
+          "index.html",
+          "studio/editor.js",
+          "studio/progress.js",
+          "studio/editor.css"
+        ]
+      },
+      {
+        "target": "arcade",
+        "root": "/home/kms/dev/33modeling-local-arcade/.game-builds/video-maker",
+        "declaredHashes": 15,
+        "allHashesVerified": true,
+        "changedArtifacts": [
+          "index.html",
+          "studio/editor.js",
+          "studio/progress.js",
+          "studio/editor.css"
+        ]
+      }
+    ]
+  },
+  "publication": {
+    "id": "d5759095-ec7e-4573-aeb0-a46d022813b3",
+    "previous": "ea7dc8d1-8480-432c-9eb8-9ca98beecbd4",
+    "sourceCommit": "870d27fea4faefb50109d3bb5cfd35a67f345963",
+    "sourceMain": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
+    "url": "https://d5759095.77model.pages.dev",
+    "manifestFiles": 5967,
+    "changedPaths": [
+      "/tools-backup.json",
+      "/video-maker/build.json",
+      "/video-maker/index.html",
+      "/video-maker/studio/editor.css",
+      "/video-maker/studio/editor.js",
+      "/video-maker/studio/progress.js"
+    ],
+    "unrelatedStaticAssetsPreserved": true,
+    "runtimeRecompiledFromCanonicalInputs": "59614c09d6f08c43a07a461b9f43c10e9ea22366",
+    "oldBinaryIdentityClaimed": false,
+    "stage": "success",
+    "publicAssetChecks": [
+      {
+        "path": "/video-maker/index.html",
+        "status": 200,
+        "contentType": "text/html",
+        "hashMatches": true
+      },
+      {
+        "path": "/video-maker/studio/editor.js",
+        "status": 200,
+        "contentType": "text/javascript",
+        "hashMatches": true
+      },
+      {
+        "path": "/video-maker/studio/progress.js",
+        "status": 200,
+        "contentType": "text/javascript",
+        "hashMatches": true
+      },
+      {
+        "path": "/video-maker/studio/editor.css",
+        "status": 200,
+        "contentType": "text/css",
+        "hashMatches": true
+      },
+      {
+        "path": "/video-maker/build.json",
+        "status": 200,
+        "contentType": "application/json",
+        "hashMatches": true
+      },
+      {
+        "path": "/tools-backup.json",
+        "status": 200,
+        "contentType": "application/json",
+        "hashMatches": true
+      }
+    ],
+    "configurationAndBindingsPreserved": true,
+    "publicHashesMatch": true,
+    "apiChecks": [
+      {
+        "path": "/keep-notes/api/sync",
+        "status": 200
+      },
+      {
+        "path": "/creative-ai/api/status",
+        "status": 200
+      },
+      {
+        "path": "/bug-board/api/items?limit=1",
+        "status": 200
+      }
+    ]
+  },
+  "twoBuilds": {
+    "sourceCommit": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
+    "pagesProfile": "pages",
+    "localProfile": "local",
+    "declaredFiles": 15,
+    "allHashesVerified": true,
+    "artifactHashes": {
+      "index.html": "97c0b8779381ceadfc9d23f53860bc13fe009ead46af84cbdecc7c4cb82513ba",
+      "studio/h3-cli.html": "7c4fa9a3f47c5bdd99fc3db8497e8010e465fe1cee9332aaf7a628cbef27c4c7",
+      "studio/h3-guide.css": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342",
+      "studio/h3-guide.js": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67",
+      "studio/features.js": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa",
+      "studio/feature-hub.js": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0",
+      "studio/feature-hub.css": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a",
+      "studio/editor.js": "7408e918cf292c28024640a90e680a0f2cbb357eb50354b4ba85208361a478ae",
+      "studio/editor.css": "1516c06999a811c89a2dfc0a41582d6ca9690ba2273586ac5d2e4f340b7a7691",
+      "studio/progress.js": "d290744bf94ca24be8e88de8629568dae97a7d31471aac78f3d531314b0c1a31",
+      "studio/ui.css": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce",
+      "studio/ui-navigation.js": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06",
+      "studio/batch-edit.js": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61",
+      "studio/reference.js": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e",
+      "studio/prompt-library.js": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad"
+    }
+  },
+  "actualCache": {
+    "profile": "local",
+    "source": "h3video/ui.html",
+    "sourceCommit": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
+    "files": {
+      "index.html": "e53e9459deb3c9f56f999d6bf30d495392366816e7402f1e24366a414b52e631",
+      "studio/h3-cli.html": "b5a46338ca920b42627f498192ec6c7710adbf67270a9ac9e03fa9f4111ba2e8",
+      "studio/h3-guide.css": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342",
+      "studio/h3-guide.js": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67",
+      "studio/features.js": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa",
+      "studio/feature-hub.js": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0",
+      "studio/feature-hub.css": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a",
+      "studio/editor.js": "7408e918cf292c28024640a90e680a0f2cbb357eb50354b4ba85208361a478ae",
+      "studio/ui.css": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce",
+      "studio/ui-navigation.js": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06",
+      "studio/batch-edit.js": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61",
+      "studio/reference.js": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e",
+      "studio/prompt-library.js": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad",
+      "studio/progress.js": "d290744bf94ca24be8e88de8629568dae97a7d31471aac78f3d531314b0c1a31",
+      "studio/editor.css": "c03b8f66cccc83b9a486c1e065310be3c3daf4a06c4fc50eb11f50313a1f86f7"
+    },
+    "guideSourceCommit": "82a2bccec786adedb0da96d49ce830546dba7836",
+    "progressSourceCommit": "8d8df2b25800fe3bf576f911b1ec8bf95010895e"
+  },
+  "publicBrowser": {
+    "rows": [
+      {
+        "width": 320,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 390,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 820,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 1440,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      }
+    ],
+    "serversStarted": 0,
+    "modelInferenceMeasured": false
+  },
+  "actualArcadeBrowser": {
+    "rows": [
+      {
+        "width": 320,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 390,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 820,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 1440,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      }
+    ],
+    "serversStarted": 0,
+    "modelInferenceMeasured": false
+  },
+  "earlierFailuresRetained": [
+    "Initial isolated-worktree ASR environment path failure, resolved by using existing environment; original report retained",
+    "Initial local 1440px text overflow, fixed by a full status flex row; original error retained",
+    "First Arcade 320px check transient overflow before final canonical/cache synchronization; full final 4-width rerun passed. Initial message retained in session report; cause not independently established",
+    "First Arcade fixture used /video-maker instead of actual /games/video-maker and could not import workbench bridge; corrected test route without changing service or production bridge"
+  ],
+  "limits": {
+    "actualH100FullRunVerified": false,
+    "performanceFixVerified": false,
+    "multiGPUFrameDistributionChanged": false,
+    "localServersStartedOrRestarted": 0,
+    "browserAPI": "Fixture state transitions; static application assets fetched from actual public deployment and actual local Arcade handler"
+  }
+}
