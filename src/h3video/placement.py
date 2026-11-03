@@ -75,6 +75,29 @@ def load_sharded_transformer(model_dir, name, devices, dtype, torch):
     return transformer, {"deviceMap": mapping, "weightBytes": placed, "copies": 1}
 
 
+def transfer_denoiser_state(state, device, required_keys):
+    """Move encoded CUDA data, preserving the layout builder's CPU metadata.
+
+    Diffusers packs text tags using CPU advanced indexed assignment before its
+    model hooks align arguments. CUDA tags at that earlier stage are invalid.
+    The existing Accelerate model hooks handle the later model-input boundary.
+    """
+    import torch
+    def transfer(value):
+        if isinstance(value, torch.Tensor):
+            return value.to(device) if value.is_cuda else value
+        if isinstance(value, dict):
+            return {key: transfer(item) for key, item in value.items()}
+        if isinstance(value, (tuple, list)):
+            return type(value)(transfer(item) for item in value)
+        return value
+    keep = set(required_keys) | {key for keys in state.kwargs_mapping.values() for key in keys}
+    state.values = {key: value.to("cpu") if key == "text_token_tags" and isinstance(value, torch.Tensor)
+                    else transfer(value) for key, value in state.values.items()
+                    if key in keep and key != "generator"}
+    return state
+
+
 @contextmanager
 def request_reference_geometry(pipeline, short_edge, enabled=True):
     """Make --size apply to reference encoding too; restore settings after every call.

@@ -132,6 +132,8 @@ class Engine:
             m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
             self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks.pop("decode")}).init_pipeline(model_dir)
             self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
+            den = blocks.sub_blocks["denoise"]
+            self._den_keys = {i.name for i in den.inputs if i.name} | {n for n in (getattr(den, "block_trigger_inputs", None) or []) if n}
             self.pipe = blocks.init_pipeline(model_dir)
             tname = "transformer" if variant == "fl2va" else "transformer_ref"
             transformer, placement = load_sharded_transformer(model_dir, tname, devices[1:], dt, torch)
@@ -652,9 +654,8 @@ class Engine:
                 self.check_memory(plan, h, w, state, when=" (조건 포함)")
                 t0 = time.time()
                 if self.mode == "sharded":
-                    from .dworker import to_device
-                    state.values.pop("generator", None)
-                    state.values = to_device(state.values, torch.device(self._den_dev))
+                    from .placement import transfer_denoiser_state
+                    transfer_denoiser_state(state, torch.device(self._den_dev), self._den_keys)
                 self._stage("디노이징")
                 res = self.pipe(state=state, generator=g, output=["latents", "audio_latents"], **gen)
                 times["디노이징"] = time.time() - t0

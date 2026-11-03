@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-03",
+  "introducedBy": "https://github.com/33modeling/minimax-h3-video/commit/82a2bccec786adedb0da96d49ce830546dba7836",
+  "userReport": {
+    "error": "expected all tensors to be on the same device: cuda:1 and cpu",
+    "outerFrame": "dserver.py:876"
+  },
+  "rootCause": "The sharded path moved every tensor in PipelineState, including CPU text_token_tags, to CUDA. Diffusers builds packed tags on CPU and uses advanced indexed assignment from those text tags; CPU target and CUDA values fail before the model forward hook.",
+  "localReproduction": "Actual CUDA reproduces the same error at MiniMaxH3PrepareLayoutStep.build_packed_sequence. The old transfer is exercised as a negative regression test.",
+  "fix": [
+    "Keep text_token_tags on CPU, including normalization when an upstream caller supplied CUDA tags",
+    "Preserve CPU layout metadata; move encoded CUDA conditioning to the denoiser GPU",
+    "Filter state to actual denoiser inputs while preserving workflow triggers and kwargs mapping",
+    "Retain the caller-provided CPU RNG; do not change model precision, prompt, seed, duration or reference resolution"
+  ],
+  "cpuRegression": {
+    "testsRun": 76,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3,
+    "serversStarted": 0
+  },
+  "actualCudaTests": {
+    "testsRun": 5,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "torch": "2.11.0+cu128",
+    "cudaRuntime": "12.8",
+    "diffusers": "0.41.0.dev0",
+    "accelerate": "1.15.0",
+    "device": "NVIDIA GeForce RTX 3050",
+    "peakAllocatedBytes": 11553280,
+    "scope": "Tiny H3 denoisers, not the full H100 model",
+    "tasks": [
+      "t2va",
+      "fl2va",
+      "ref2va"
+    ],
+    "physicalMultiGPU": false,
+    "serversStarted": 0
+  },
+  "matchingH3LibraryFilesBetweenTestEnvironments": {
+    "modular_pipelines/minimax_h3/before_denoise.py": "c0c3484b238b7cf529fb494bcfd02c286db8b34ce3e23fd78a17eeda257764d1",
+    "models/transformers/transformer_minimax_h3.py": "92d665e9fa10b1417088341dce5977663a180f9e6fa404fb9330062f353fe7ef",
+    "modular_pipelines/minimax_h3/denoise.py": "4c2bc8b9856c38ba1692b02e35aa68ec92beda4db273e2e71f0ebbf997e19c79"
+  },
+  "bugBoard": {
+    "id": 1151,
+    "status": "doing",
+    "ext_key": "h3-sharded-cpu-tags-regression-20261103"
+  },
+  "limitations": [
+    "Actual GPU tests use a tiny model on one RTX 3050 with torch 2.11/cu128, not the deployed H100 torch 2.7.1/cu126 environment",
+    "CUDA:0 to CUDA:1 state routing is metadata-only FakeTensor validation, not physical multi-GPU inference",
+    "A full-size H100 eight-GPU generation has not been measured"
+  ],
+  "serversStartedOrRestarted": 0,
+  "action": [
+    "Stop the old up.sh process with Ctrl+C",
+    "git pull --ff-only origin main",
+    "bash scripts/up.sh --ref"
+  ]
+}
