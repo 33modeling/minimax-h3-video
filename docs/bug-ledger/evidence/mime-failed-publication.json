@@ -1,0 +1,19 @@
+{
+  "id": "550de51d-eab8-41c9-bb36-13cb5a177101",
+  "previous": "ba1364f8-72b6-488b-8012-b947e01bd407",
+  "sourceCommit": "99a6f9f9a5c1e56c8b67355a84dd20545a3fc528",
+  "sourceMain": "5cb147b918ba65ea00f4cd5dbb5a5e14820a6a46",
+  "url": "https://550de51d.77model.pages.dev",
+  "manifestFiles": 5952,
+  "changedPaths": [
+    "/tools-backup.json",
+    "/video-maker/build.json",
+    "/video-maker/studio/h3-cli.html",
+    "/video-maker/studio/h3-guide.css",
+    "/video-maker/studio/h3-guide.js"
+  ],
+  "unrelatedStaticAssetsPreserved": true,
+  "runtimeRecompiledFromCanonicalInputs": "1631ec31a577862012223b3235e3a296cf644bc2",
+  "oldBinaryIdentityClaimed": false,
+  "stage": "created"
+}

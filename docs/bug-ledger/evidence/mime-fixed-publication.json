@@ -1,0 +1,67 @@
+{
+  "id": "8a087fda-72b3-4b31-921a-4144e6a627fa",
+  "previous": "550de51d-eab8-41c9-bb36-13cb5a177101",
+  "sourceCommit": "c896c19d3baac1ff7d47740cca3ed9f067a51905",
+  "sourceMain": "1f04b3a7e5862a38bc4a776b5ac8cfd68d6e279b",
+  "url": "https://8a087fda.77model.pages.dev",
+  "manifestFiles": 5952,
+  "changedPaths": [
+    "/tools-backup.json",
+    "/video-maker/build.json",
+    "/video-maker/studio/h3-cli.html",
+    "/video-maker/studio/h3-guide.css",
+    "/video-maker/studio/h3-guide.js"
+  ],
+  "unrelatedStaticAssetsPreserved": true,
+  "runtimeRecompiledFromCanonicalInputs": "99a6f9f9a5c1e56c8b67355a84dd20545a3fc528",
+  "oldBinaryIdentityClaimed": false,
+  "stage": "success",
+  "publicAssetChecks": [
+    {
+      "path": "/video-maker/studio/h3-cli.html",
+      "status": 200,
+      "contentType": "text/html",
+      "hashMatches": true
+    },
+    {
+      "path": "/video-maker/studio/h3-guide.css",
+      "status": 200,
+      "contentType": "text/css",
+      "hashMatches": true
+    },
+    {
+      "path": "/video-maker/studio/h3-guide.js",
+      "status": 200,
+      "contentType": "text/javascript",
+      "hashMatches": true
+    },
+    {
+      "path": "/video-maker/build.json",
+      "status": 200,
+      "contentType": "application/json",
+      "hashMatches": true
+    },
+    {
+      "path": "/tools-backup.json",
+      "status": 200,
+      "contentType": "application/json",
+      "hashMatches": true
+    }
+  ],
+  "configurationAndBindingsPreserved": true,
+  "publicHashesMatch": true,
+  "apiChecks": [
+    {
+      "path": "/keep-notes/api/sync",
+      "status": 200
+    },
+    {
+      "path": "/creative-ai/api/status",
+      "status": 200
+    },
+    {
+      "path": "/bug-board/api/items?limit=1",
+      "status": 200
+    }
+  ]
+}

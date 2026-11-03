@@ -1,0 +1,13 @@
+test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu (test_device_boundary.CudaStateBoundaryTest.test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu) ... ok
+test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout (test_device_boundary.CudaStateBoundaryTest.test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout) ... ok
+test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags (test_device_boundary.CudaStateBoundaryTest.test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags) ...   0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:00<00:00,  7.38it/s]100%|██████████| 2/2 [00:00<00:00, 14.20it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 212.56it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 117.32it/s]
+ok
+test_cpu_metadata_rng_and_kwargs_mapping_survive_filtered_transfer (test_device_boundary.StateBoundaryTest.test_cpu_metadata_rng_and_kwargs_mapping_survive_filtered_transfer) ... ok
+test_fake_cuda_handoff_moves_encoded_data_but_keeps_cpu_tags (test_device_boundary.StateBoundaryTest.test_fake_cuda_handoff_moves_encoded_data_but_keeps_cpu_tags) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 1.965s
+
+OK

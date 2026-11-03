@@ -1,0 +1,4 @@
+torch 2.11.0+cu128 CUDA 12.8
+free MiB 5093
+REPRODUCED Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+CPU metadata kept on CPU: PASS

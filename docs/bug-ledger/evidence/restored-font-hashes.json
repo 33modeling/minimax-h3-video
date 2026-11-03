@@ -1,0 +1,22 @@
+[
+  {
+    "path": "fonts/hub-samsungone/samsungone-400-4b4cd54bf80638.woff2",
+    "sha256": "b3a50db4f1816dea38d7f6ecdd6d64a63726cc0abe7bb73054f4f3f32e303278",
+    "bytes": 56752
+  },
+  {
+    "path": "fonts/hub-samsungone/samsungone-500-b4f9eb3bbcccfc.woff2",
+    "sha256": "3560fda2d2ff1e2a3a04dcd5d99795472fef10f2a7614841ccfac24b0283adb2",
+    "bytes": 56836
+  },
+  {
+    "path": "fonts/hub-samsungone/samsungone-600-2a77fa638348f8.woff2",
+    "sha256": "b03e649dfd05929ed874615672eae2295e93fa3315b6f52ea88ad4b5af138f14",
+    "bytes": 57080
+  },
+  {
+    "path": "fonts/hub-samsungone/samsungone-700-0bf498b3f2a6b0.woff2",
+    "sha256": "89a13834f43cc2eb899b39af691825aa0dcb5e844cdec8cc1fcc350502b639a6",
+    "bytes": 57916
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "testsRun": 5,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "torch": "2.11.0+cu128",
+  "cudaRuntime": "12.8",
+  "diffusers": "0.41.0.dev0",
+  "accelerate": "1.15.0",
+  "device": "NVIDIA GeForce RTX 3050",
+  "peakAllocatedBytes": 11553280,
+  "scope": "Tiny H3 denoisers, not the full H100 model",
+  "tasks": [
+    "t2va",
+    "fl2va",
+    "ref2va"
+  ],
+  "physicalMultiGPU": false,
+  "serversStarted": 0
+}

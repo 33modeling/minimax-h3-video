@@ -1,0 +1,629 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-03T02:11:46.390022+00:00",
+  "scope": "minimax-h3-video 전체 main 이력과 본 대화의 H3 설치/CLI/설명서/77 배포 관련 문제",
+  "sourceCutoff": "1d5fdf59de5b37b11af123579bcbff1da94253db",
+  "sourceHistoryCount": 181,
+  "caseCount": 27,
+  "boardSnapshotItems": 16,
+  "responsibleForCurrentWork": "Codex",
+  "retention": "기존 사건과 실패 증거를 삭제하지 않는다. 수정·재발·추가 검증은 날짜와 근거를 붙여 사건 이벤트로 추가한다. 이전 스냅샷은 덮어쓰지 않는다.",
+  "attributionPolicy": "확인된 Codex 유입·회귀는 명시한다. 동일한 Git 작성자 33modeling만으로 과거 실행 AI를 추정하지 않는다.",
+  "h100EightGpuCompletionVerified": false,
+  "cases": [
+    {
+      "id": "H3-001",
+      "title": "H3 설명서를 장면 분석실에 잘못 배치하고 H100 설치 메뉴를 숨김",
+      "kind": "설명서·메뉴",
+      "boardIds": [
+        1024
+      ],
+      "responsibility": "Codex가 유입시킨 오류·회귀가 대화 또는 실패 배포 기록으로 확인됨",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "1a0e7a8604e1e3279d706e45ae22fb7e97be6816"
+      ],
+      "evidence": [
+        "board:1024:reopened",
+        "관련 scene 수정 695bbf9302aba668ffe7269c29a20c017beaf2fb"
+      ],
+      "status": "수정·공개 UI 검증",
+      "details": [
+        "H3 정본 대신 CUT LAB에 게시",
+        "발견 가능한 H3 메뉴 누락",
+        "H100 로컬 설치·운영 안내 누락"
+      ]
+    },
+    {
+      "id": "H3-002",
+      "title": "Diffusers 변환 모델이 완전해도 별도 원본 모델이 없다는 이유로 시작 차단",
+      "kind": "설치",
+      "boardIds": [
+        1028
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "d1f8d4e386efcce8a8365605697dafb126b438aa"
+      ],
+      "evidence": [
+        "tests/test_up_preflight.py",
+        "board:1028"
+      ],
+      "status": "시작 제어 흐름 수정·사용자 H100 성공 미확인",
+      "details": []
+    },
+    {
+      "id": "H3-003",
+      "title": "PyTorch·torchvision의 CUDA 빌드 불일치",
+      "kind": "설치",
+      "boardIds": [
+        1028
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "98bfa4cf1d9fd9040551fcb0ca87e65d07b29492"
+      ],
+      "evidence": [
+        "사용자 CUDA major mismatch 보고",
+        "constraints/h100-cu126-diffusers.txt"
+      ],
+      "status": "설치 조합 정정·사용자 H100 재확인 필요",
+      "details": []
+    },
+    {
+      "id": "H3-004",
+      "title": "드라이버 CUDA 버전으로 기본 엔진을 SGLang으로 자동 변경",
+      "kind": "엔진 선택",
+      "boardIds": [
+        1028
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "98bfa4cf1d9fd9040551fcb0ca87e65d07b29492"
+      ],
+      "evidence": [
+        "scripts/cluster_env.sh",
+        "board:1028"
+      ],
+      "status": "기본 Diffusers·명시 SGLang으로 정정",
+      "details": []
+    },
+    {
+      "id": "H3-005",
+      "title": "엔진 선택 보강 중 설정된 웹 포트·CORS를 제대로 보존하지 못함",
+      "kind": "설정",
+      "boardIds": [
+        1028
+      ],
+      "responsibility": "Codex가 유입시킨 오류·회귀가 대화 또는 실패 배포 기록으로 확인됨",
+      "introducedCommit": "98bfa4cf1d9fd9040551fcb0ca87e65d07b29492",
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "a4725f9b6c94a051cbf1100374525cd6fc88279d"
+      ],
+      "evidence": [
+        "git diff a4725f9 -- scripts/web.sh",
+        "tests/test_up_preflight.py"
+      ],
+      "status": "설정 보존 수정",
+      "details": []
+    },
+    {
+      "id": "H3-006",
+      "title": "설치 노드에서 h3video 명령 위치·Python 직접 실행 안내가 불명확",
+      "kind": "설명서",
+      "boardIds": [
+        1024
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "cbad709a0217485305d9819fbb9056cdb1f77e09",
+        "836a9ad29e01b62fca0c1254580c719a64b22cc8"
+      ],
+      "evidence": [
+        "사용자 h3video 실행 파일이 없다는 보고",
+        "설치 가이드 cli-location"
+      ],
+      "status": "Python 직접 실행·설정 읽기 안내 추가",
+      "details": []
+    },
+    {
+      "id": "H3-007",
+      "title": "참고 입력을 보내는데 Ref2VA 서버 30011이 시작되지 않음",
+      "kind": "시작 동작",
+      "boardIds": [
+        1106
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "7137908995a24469cf55a02579fbe6aff96daa98",
+        "3760b5191c7baa75ba91751827c440df8d52a956"
+      ],
+      "evidence": [
+        "board:1106",
+        "scripts/up.sh"
+      ],
+      "status": "실행 규칙 정정·실제 H100 성공 미확인",
+      "details": [
+        "당시 기본 REF=0으로 참고 요청이 연결 실패",
+        "이후 사용자 요청대로 기본 실행과 --ref 실행을 구분",
+        "현재 --ref는 양 서버 실행이며 기본 단독 실행은 의도된 규칙"
+      ]
+    },
+    {
+      "id": "H3-008",
+      "title": "기본 실행을 양 서버 2+2로 바꿔 Ref2VA OOM 위험에 노출",
+      "kind": "GPU 배치",
+      "boardIds": [
+        1107
+      ],
+      "responsibility": "Codex가 유입시킨 오류·회귀가 대화 또는 실패 배포 기록으로 확인됨",
+      "introducedCommit": "7137908995a24469cf55a02579fbe6aff96daa98",
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "921af9176d4762483a9fa856aebcebf278e5675b"
+      ],
+      "evidence": [
+        "board:1107",
+        "tests/test_startup_resources.py"
+      ],
+      "status": "2+2 차단 수정·H100 OOM 해소 미측정",
+      "details": [
+        "2+2 배정 로직은 이전에도 --ref 실행에서 가능했음",
+        "7137908은 양 서버 시작을 기본으로 바꿔 이 위험을 기본 실행에 노출한 커밋"
+      ]
+    },
+    {
+      "id": "H3-009",
+      "title": "2+2 실행을 차단한 뒤에도 설명서 표에 이전 안내를 남김",
+      "kind": "설명서",
+      "boardIds": [
+        1107
+      ],
+      "responsibility": "Codex가 유입시킨 오류·회귀가 대화 또는 실패 배포 기록으로 확인됨",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "943eb709edbcfa38ccc3b4421aac69c300f95364",
+        "35f9e69734b54f94c0be2cd983c1105223d6666c"
+      ],
+      "evidence": [
+        "git diff 943eb70",
+        "board:1107"
+      ],
+      "status": "이전 안내 정정",
+      "details": []
+    },
+    {
+      "id": "H3-010",
+      "title": "GPU 수·번호를 불필요하게 직접 입력하게 한 실행 안내",
+      "kind": "사용성",
+      "boardIds": [
+        1107
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "3760b5191c7baa75ba91751827c440df8d52a956"
+      ],
+      "evidence": [
+        "사용자의 --ref 유무만으로 실행하라는 지시",
+        "tests/test_up_preflight.py"
+      ],
+      "status": "빈 GPU 자동 배정으로 정정",
+      "details": []
+    },
+    {
+      "id": "H3-011",
+      "title": "8장을 배정해도 CP 워커마다 영상 모델 가중치를 복제",
+      "kind": "메모리 설계",
+      "boardIds": [
+        1149
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": "4c33028663244e321a2e333a5252370663437260",
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "82a2bccec786adedb0da96d49ce830546dba7836"
+      ],
+      "evidence": [
+        "src/h3video/dworker.py",
+        "docs/h100-oom-sharding-20261103.json"
+      ],
+      "status": "가중치 분산 코드 수정·H100 전체 완주 미확인",
+      "details": [
+        "약 61.7GiB 가중치가 워커별로 상주",
+        "GPU 8장의 메모리를 하나로 합쳐 쓰는 방식이 아님",
+        "Meta 크기 계산은 실제 VRAM 최대 사용량 측정이 아님"
+      ]
+    },
+    {
+      "id": "H3-012",
+      "title": "출력 --size를 줄여도 참고 이미지·영상 인코딩 크기를 유지",
+      "kind": "메모리 설계",
+      "boardIds": [
+        1149
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "3760b5191c7baa75ba91751827c440df8d52a956",
+      "fixCommits": [
+        "82a2bccec786adedb0da96d49ce830546dba7836"
+      ],
+      "evidence": [
+        "docs/h100-oom-sharding-20261103.json",
+        "tests/test_placement.py"
+      ],
+      "status": "참고 geometry 연동 수정·H100 전체 완주 미확인",
+      "details": [
+        "참고 이미지 기본 short edge 2048",
+        "참고 영상은 출력 height/width와 별도 canvas 설정 사용"
+      ]
+    },
+    {
+      "id": "H3-013",
+      "title": "OOM 때 출력 크기만 줄이면서 모델 전체를 매번 재적재",
+      "kind": "재시도",
+      "boardIds": [
+        1149
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": "6da494775e6972df58f6753319cc7e99c7d0cc36",
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "82a2bccec786adedb0da96d49ce830546dba7836"
+      ],
+      "evidence": [
+        "git history self.reload_engine(error)",
+        "docs/h100-oom-sharding-20261103.json"
+      ],
+      "status": "sharded CUDA OOM의 전체 재적재 제거",
+      "details": [
+        "재적재 코드 존재는 확인됨",
+        "사용자 H100에서 재적재가 차지한 실제 최대 메모리는 미측정"
+      ]
+    },
+    {
+      "id": "H3-014",
+      "title": "가중치 분산 패치가 CPU text_token_tags까지 GPU로 전송해 생성 실패",
+      "kind": "코드 회귀",
+      "boardIds": [
+        1151
+      ],
+      "responsibility": "Codex가 유입시킨 오류·회귀가 대화 또는 실패 배포 기록으로 확인됨",
+      "introducedCommit": "82a2bccec786adedb0da96d49ce830546dba7836",
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "1d5fdf59de5b37b11af123579bcbff1da94253db"
+      ],
+      "evidence": [
+        "docs/sharded-device-boundary-20261103.json",
+        "bug-ledger/evidence/cuda-device-reproduction.log",
+        "tests/test_device_boundary.py"
+      ],
+      "status": "실제 작은 CUDA 모델 3종 통과·H100 전체 완주 미확인",
+      "details": [
+        "사용자 오류: cuda:1 and cpu, 외부 호출 dserver.py:876",
+        "CPU packed-layout 배열의 고급 인덱스 대입과 CUDA 태그 충돌",
+        "직전 71개 CPU 검사만으로 이 결함을 잡지 못함"
+      ]
+    },
+    {
+      "id": "H3-015",
+      "title": "설명서 CSS·JS를 text/html MIME으로 업로드",
+      "kind": "배포 회귀",
+      "boardIds": [
+        1145
+      ],
+      "responsibility": "Codex가 유입시킨 오류·회귀가 대화 또는 실패 배포 기록으로 확인됨",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "1f04b3a7e5862a38bc4a776b5ac8cfd68d6e279b"
+      ],
+      "evidence": [
+        "bug-ledger/evidence/mime-failed-publication.json",
+        "bug-ledger/evidence/mime-fixed-publication.json"
+      ],
+      "status": "수정 배포·공개 MIME/해시·4폭 UI 검증",
+      "details": [
+        "실패 배포 550de51d-eab8-41c9-bb36-13cb5a177101",
+        "동일 자산 키의 메타데이터 재업로드만으로 복구되지 않음",
+        "새 자산 키·올바른 MIME으로 8a087fda 배포"
+      ]
+    },
+    {
+      "id": "H3-016",
+      "title": "배치가 지원하지 않는 해상도를 통과시킴",
+      "kind": "CLI 검증",
+      "boardIds": [
+        1118
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "3760b5191c7baa75ba91751827c440df8d52a956",
+      "fixCommits": [
+        "5a7e937b7506b0eb693b8d7f8e569e2a98ba3eee"
+      ],
+      "evidence": [
+        "docs/cli-audit-20261103.json:invalid-batch-size",
+        "tests/test_cli_workflows.py"
+      ],
+      "status": "전후 재현·CLI 회귀 검증",
+      "details": []
+    },
+    {
+      "id": "H3-017",
+      "title": "배치가 오디오만 있는 Ref2VA 요청을 허용",
+      "kind": "CLI 검증",
+      "boardIds": [
+        1119
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "3760b5191c7baa75ba91751827c440df8d52a956",
+      "fixCommits": [
+        "5a7e937b7506b0eb693b8d7f8e569e2a98ba3eee"
+      ],
+      "evidence": [
+        "docs/cli-audit-20261103.json:audio-only-batch",
+        "tests/test_cli_workflows.py"
+      ],
+      "status": "전후 재현·CLI 회귀 검증",
+      "details": []
+    },
+    {
+      "id": "H3-018",
+      "title": "배치에서 첫 프레임과 참고 입력을 섞으면 첫 프레임을 무시",
+      "kind": "CLI 검증",
+      "boardIds": [
+        1120
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "3760b5191c7baa75ba91751827c440df8d52a956",
+      "fixCommits": [
+        "5a7e937b7506b0eb693b8d7f8e569e2a98ba3eee"
+      ],
+      "evidence": [
+        "docs/cli-audit-20261103.json:mixed-batch-modes",
+        "tests/test_cli_workflows.py"
+      ],
+      "status": "전후 재현·CLI 회귀 검증",
+      "details": []
+    },
+    {
+      "id": "H3-019",
+      "title": "생성 스텝 0을 기본 스텝으로 바꿔 처리",
+      "kind": "CLI 검증",
+      "boardIds": [
+        1121
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "3760b5191c7baa75ba91751827c440df8d52a956",
+      "fixCommits": [
+        "5a7e937b7506b0eb693b8d7f8e569e2a98ba3eee"
+      ],
+      "evidence": [
+        "docs/cli-audit-20261103.json:zero-steps",
+        "tests/test_cli_workflows.py"
+      ],
+      "status": "전후 재현·CLI 회귀 검증",
+      "details": []
+    },
+    {
+      "id": "H3-020",
+      "title": "IR dry-run이 실제 다듬기 API를 호출",
+      "kind": "CLI 검증",
+      "boardIds": [
+        1122
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "3760b5191c7baa75ba91751827c440df8d52a956",
+      "fixCommits": [
+        "5a7e937b7506b0eb693b8d7f8e569e2a98ba3eee"
+      ],
+      "evidence": [
+        "docs/cli-audit-20261103.json:ir-dry-run",
+        "tests/test_cli_workflows.py"
+      ],
+      "status": "전후 재현·CLI 회귀 검증",
+      "details": []
+    },
+    {
+      "id": "H3-021",
+      "title": "jobs --json이 작업이 없으면 JSON 대신 안내문 출력",
+      "kind": "CLI 검증",
+      "boardIds": [
+        1123
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "3760b5191c7baa75ba91751827c440df8d52a956",
+      "fixCommits": [
+        "5a7e937b7506b0eb693b8d7f8e569e2a98ba3eee"
+      ],
+      "evidence": [
+        "docs/cli-audit-20261103.json:empty-jobs-json",
+        "tests/test_cli_workflows.py"
+      ],
+      "status": "전후 재현·CLI 회귀 검증",
+      "details": []
+    },
+    {
+      "id": "H3-022",
+      "title": "실제 로컬 Arcade 캐시에 필요한 JS 모듈 3개 누락",
+      "kind": "동기화",
+      "boardIds": [
+        1024
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "8b911e66e84006e0f28c45cde109e6d04617a14c"
+      ],
+      "evidence": [
+        "board:1024",
+        "/home/kms/reports/h3-features-20261102/local-module-restoration.json"
+      ],
+      "status": "정본 복원·로컬 처리 경로 검증",
+      "details": [
+        "storyboard.js",
+        "ai-keys.js",
+        "handoff-store.js"
+      ]
+    },
+    {
+      "id": "H3-023",
+      "title": "모바일·태블릿 조작과 오류 표시 등 UI 결함 묶음",
+      "kind": "UI",
+      "boardIds": [
+        1024
+      ],
+      "responsibility": "본 대화에서 Codex가 수정·검증을 담당. 최초 유입 커밋 또는 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "0f733feeb43f04ae71906c3c51c56bece0b2a7bd",
+        "92ee107782025b7365ae520c2784222e32135fb3"
+      ],
+      "evidence": [
+        "board:1024",
+        "/home/kms/reports/h3-ui-audit-20261102/completion.json"
+      ],
+      "status": "화면·기능 연결 검증",
+      "details": [
+        "상단 작업 이동·기능 목록 접기·프로젝트 도구 묶음",
+        "키보드 탭 및 입력 이름 9개",
+        "분석 오류·파일 선택 접근성",
+        "템플릿 모바일 버튼·터치 대상",
+        "모션 화면비·긴 작업명·다크 대비",
+        "코드 복사 겹침·모바일 한글 코드 글꼴"
+      ]
+    },
+    {
+      "id": "H3-024",
+      "title": "배포 보존 검사 실패 뒤에도 업로드가 진행되어 기존 폰트 4개 누락",
+      "kind": "배포 회귀",
+      "boardIds": [
+        1094
+      ],
+      "responsibility": "Codex가 유입시킨 오류·회귀가 대화 또는 실패 배포 기록으로 확인됨",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [],
+      "evidence": [
+        "board:1094",
+        "bug-ledger/evidence/restored-font-hashes.json"
+      ],
+      "status": "폰트 복원·4개 URL/해시·배포 차단 검사 검증",
+      "details": [
+        "검사와 업로더를 별도 셸 명령으로 실행해 실패 후 중단하지 못함",
+        "실패 배포 321432a8",
+        "누락 228584바이트",
+        "정정 배포 4d1c0ab5"
+      ]
+    },
+    {
+      "id": "H3-025",
+      "title": "CPU·정적 검사 통과를 근거로 H100 메모리 해결을 충분히 검증하지 못함",
+      "kind": "검증 누락",
+      "boardIds": [
+        1149,
+        1151
+      ],
+      "responsibility": "Codex의 설명·검증 누락 확인",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "82a2bccec786adedb0da96d49ce830546dba7836",
+        "1d5fdf59de5b37b11af123579bcbff1da94253db"
+      ],
+      "evidence": [
+        "docs/h100-oom-sharding-20261103.json",
+        "docs/sharded-device-boundary-20261103.json",
+        "본 대화에서 8장 배정만으로 해결되는 것처럼 안내한 점 정정"
+      ],
+      "status": "검증 한계 기록·사용자 H100 완주 미확인",
+      "details": [
+        "8GPU 배정과 메모리 해결을 구분하지 않은 안내",
+        "71개 CPU 검사에 CUDA/CPU indexed assignment 재현이 빠짐",
+        "실제 RTX 3050 작은 모델 검사와 H100 전체 모델 검증을 구분"
+      ]
+    },
+    {
+      "id": "H3-026",
+      "title": "장치 오류 조사 중 root hook 실행 장치 누락을 직접 원인으로 먼저 단정",
+      "kind": "진단 오류",
+      "boardIds": [
+        1151
+      ],
+      "responsibility": "Codex의 초기 진단 오류 확인",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "1d5fdf59de5b37b11af123579bcbff1da94253db"
+      ],
+      "evidence": [
+        "본 대화의 조사 중 설명 및 이후 CUDA 재현으로 정정"
+      ],
+      "status": "설명 정정·잘못된 훅 변경은 커밋하지 않음",
+      "details": [
+        "실제 Accelerate는 main device를 root 실행 장치로 설정함",
+        "직접 원인은 준비 단계의 CPU 태그/CUDA 태그 충돌",
+        "정정한 근거와 원인만 최종 코드에 반영"
+      ]
+    },
+    {
+      "id": "H3-027",
+      "title": "diffusers 없는 환경에서 MaxSecondsTest가 None != 12로 실패",
+      "kind": "기존 테스트 결함",
+      "boardIds": [
+        41
+      ],
+      "responsibility": "기존 Git·현황판 이력. 작성 AI는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": null,
+      "fixCommits": [
+        "018cf4580edec98859b4555aa4e189449a96bb20"
+      ],
+      "evidence": [
+        "board:41",
+        "git commit 018cf45"
+      ],
+      "status": "기존 수정 이력 보존·이번 기록 작업에서 재시험하지 않음",
+      "details": []
+    }
+  ],
+  "snapshotHashes": {
+    "board-snapshot-20261103.json": "77896e95de0bee02e9866bfd03bb195822975c6113d977e42f0e4bff7e7e7062",
+    "evidence/cuda-device-fixed-tests.log": "55df70806e230f702b3ca6ccb080c9b87a0fada0692e3bf1e1c0c7c56055dc78",
+    "evidence/cuda-device-reproduction.log": "f180dae3ccdfe233e2d82f90c7b4e2041cd316c610b7f9c7ad2a247bbbe471a4",
+    "evidence/device-cpu-tests.json": "6e2afa319e5656738c0c78077c7facaccec68027f17fef4684cc66efa45a66cb",
+    "evidence/device-cuda-tests.json": "c72a7e7f92cb2a0e5fdd13011cadc9e1df47ec3fabde4962b1179151fa597377",
+    "evidence/mime-failed-publication.json": "826fedcf524585504da6b4dae8d7318d5b98b14b5ce9f1d4e01471664cca61f9",
+    "evidence/mime-fixed-publication.json": "9c9a353b7d72fb75a96cc70dc5078a9c92ea429beee270175a6b10f722b51be4",
+    "evidence/restored-font-hashes.json": "b6cbee7b96be0a1fe7f391e1d6f8e3bca21047a08d71698d5cd4222278b6f974",
+    "source-history-20261103.json": "547e0f2367b9d6a824785da4af8e2d1d7d4b55bb39dae34fde5f0c405c80e5c1"
+  },
+  "archiveBoard": {
+    "id": 1153,
+    "status": "doing",
+    "url": "https://77model.pages.dev/bug-board/#item=1153"
+  }
+}
