@@ -4,7 +4,7 @@
   "scope": "minimax-h3-video 전체 main 이력과 본 대화의 H3 설치/CLI/설명서/77 배포 관련 문제",
   "sourceCutoff": "1d5fdf59de5b37b11af123579bcbff1da94253db",
   "sourceHistoryCount": 181,
-  "caseCount": 31,
+  "caseCount": 32,
   "boardSnapshotItems": 16,
   "responsibleForCurrentWork": "Codex",
   "retention": "기존 사건과 실패 증거를 삭제하지 않는다. 수정·재발·추가 검증은 날짜와 근거를 붙여 사건 이벤트로 추가한다. 이전 스냅샷은 덮어쓰지 않는다.",
@@ -619,15 +619,18 @@
       "responsibility": "Codex가 82a2bcc에서 순차 레이어 분산을 기본으로 변경했고 H100 속도·사용률을 검증하지 못함",
       "introducedCommit": "82a2bccec786adedb0da96d49ce830546dba7836",
       "knownBadSnapshot": "6d8ad3b372033dc552f3a7cad84a978c45f0d904",
-      "fixCommits": [],
+      "fixCommits": [
+        "96d3c47f71abe12ad09ccf3938e8c297e6f3998d"
+      ],
       "evidence": [
         "bug-ledger/evidence/low-utilization-report-20261103.json",
         "src/h3video/placement.py",
         "src/h3video/dserver.py",
         "src/h3video/spec.py",
-        "bug-ledger/evidence/performance-fix-validation-20261103.json"
+        "bug-ledger/evidence/performance-fix-validation-20261103.json",
+        "bug-ledger/evidence/performance-fix-publication-20261103.json"
       ],
-      "status": "동시 계산 코드 수정·작은 CUDA 검증 / 실제 H100 성능·완주 확인 전",
+      "status": "코드·원격·공개/실제 Arcade 검증 / H100 전체 속도·완주 미확인",
       "details": [
         "사용자 보고: 1080p 16초, 90분 초과, GPU 사용률 17%로 할당 종료",
         "현재 가중치 분산은 레이어를 순차 실행하며 한 요청에서 모든 GPU를 동시에 계산에 쓰지 않음",
@@ -656,6 +659,13 @@
           "at": "2026-11-03T12:30:23.781749+00:00",
           "action": "code-fixed-and-locally-verified",
           "note": "FSDP2+CP speed 경로/모드 전달/endpoint별 지속 프레임 worker 수정. 작은 CUDA 및 모의 API 검증. H100 다중 GPU 전체 성능·완주 미측정."
+        },
+        {
+          "at": "2026-11-03T12:41:21.100711+00:00",
+          "action": "published",
+          "codeCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+          "deployment": "59fdfdcf-5bbb-46c8-83bd-aeb7badec3e2",
+          "note": "실제 H100 다중 GPU 성능 수치/완주로 보고하지 않음"
         }
       ]
     },
@@ -700,13 +710,16 @@
       "responsibility": "코드·모의 대조 재현 확인. 과거 실행 AI의 신원은 Git 작성자만으로 확정하지 않음",
       "introducedCommit": "8fa75dac81872ce1350af3a3d0dac0115edb393e",
       "knownBadSnapshot": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
-      "fixCommits": [],
+      "fixCommits": [
+        "96d3c47f71abe12ad09ccf3938e8c297e6f3998d"
+      ],
       "evidence": [
         "bug-ledger/evidence/performance-cause-20261103.json",
         "PERFORMANCE-AUDIT-20261103.md",
-        "bug-ledger/evidence/performance-fix-validation-20261103.json"
+        "bug-ledger/evidence/performance-fix-validation-20261103.json",
+        "bug-ledger/evidence/performance-fix-publication-20261103.json"
       ],
-      "status": "코드 수정·대조 검증 / 원격·공개 반영 확인 전",
+      "status": "코드 원격·동작 대조·공개/실제 Arcade 검증 완료",
       "details": [
         "실제 serve.sh fake 실행으로 두 모드 argv/관련환경 동일 재현",
         "SGLang에는 MODE를 전달하지만 Diffusers에는 미전달"
@@ -716,6 +729,13 @@
           "at": "2026-11-03T12:30:23.781749+00:00",
           "action": "code-fixed-and-locally-verified",
           "note": "FSDP2+CP speed 경로/모드 전달/endpoint별 지속 프레임 worker 수정. 작은 CUDA 및 모의 API 검증. H100 다중 GPU 전체 성능·완주 미측정."
+        },
+        {
+          "at": "2026-11-03T12:41:21.100711+00:00",
+          "action": "published",
+          "codeCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+          "deployment": "59fdfdcf-5bbb-46c8-83bd-aeb7badec3e2",
+          "note": "실제 H100 다중 GPU 성능 수치/완주로 보고하지 않음"
         }
       ]
     },
@@ -729,13 +749,16 @@
       "responsibility": "코드·모의 대조 재현 확인. 과거 실행 AI의 신원은 Git 작성자만으로 확정하지 않음",
       "introducedCommit": "e68db3a4e71a0064ffbd180b59cc806cba41a55f",
       "knownBadSnapshot": "8d8df2b25800fe3bf576f911b1ec8bf95010895e",
-      "fixCommits": [],
+      "fixCommits": [
+        "96d3c47f71abe12ad09ccf3938e8c297e6f3998d"
+      ],
       "evidence": [
         "bug-ledger/evidence/performance-cause-20261103.json",
         "PERFORMANCE-AUDIT-20261103.md",
-        "bug-ledger/evidence/performance-fix-validation-20261103.json"
+        "bug-ledger/evidence/performance-fix-validation-20261103.json",
+        "bug-ledger/evidence/performance-fix-publication-20261103.json"
       ],
-      "status": "코드 수정·대조 검증 / 원격·공개 반영 확인 전",
+      "status": "코드 원격·동작 대조·공개/실제 Arcade 검증 완료",
       "details": [
         "실제 retouch 자식 프로세스 4회 A/A/A/A; 지속 provider 대조군 A/B/C/D",
         "GPU와 이미지 API 추론은 측정하지 않음. 소켓/서비스 시작 없음",
@@ -746,7 +769,43 @@
           "at": "2026-11-03T12:30:23.781749+00:00",
           "action": "code-fixed-and-locally-verified",
           "note": "FSDP2+CP speed 경로/모드 전달/endpoint별 지속 프레임 worker 수정. 작은 CUDA 및 모의 API 검증. H100 다중 GPU 전체 성능·완주 미측정."
+        },
+        {
+          "at": "2026-11-03T12:41:21.100711+00:00",
+          "action": "published",
+          "codeCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+          "deployment": "59fdfdcf-5bbb-46c8-83bd-aeb7badec3e2",
+          "note": "실제 H100 다중 GPU 성능 수치/완주로 보고하지 않음"
         }
+      ]
+    },
+    {
+      "id": "H3-032",
+      "title": "성능 배포 build.json에 H3 대신 허브 저장소 source SHA 기록",
+      "kind": "배포·소스 이력",
+      "boardIds": [
+        1189
+      ],
+      "responsibility": "Codex의 publisher 변수 이름 충돌로 유입이 직접 확인됨",
+      "introducedCommit": null,
+      "knownBadSnapshot": "5d8b94df83b188caf27251e1329c2570ef8921f2",
+      "knownBadRepo": "33modeling/33modeling-site",
+      "fixCommits": [],
+      "publicationFix": {
+        "repo": "33modeling/33modeling-site",
+        "commit": "988041a5d48d2244adc45dc719b61f57103e7e80",
+        "branch": "source/h3-performance-fix-metadata-20261103"
+      },
+      "evidence": [
+        "bug-ledger/evidence/performance-wrong-source-publication-20261103.json",
+        "bug-ledger/evidence/performance-fix-publication-20261103.json"
+      ],
+      "status": "명시적 H3_SOURCE·원격 확인 assert·메타데이터 정정 공개 검증 완료",
+      "details": [
+        "H3 source 변수 S를 hub Git 변수 S로 덮어써 hub SHA를 build source에 기록",
+        "영상 처리 코드와 UI는96d3c47이었으나 소스 이력 값이 잘못됨",
+        "메타데이터 재배포로 source/progress/performanceSourceCommit=96d3c47 및 공개15해시/MIME 검증",
+        "최초 실패 배포와 정정 증거 모두 보존"
       ]
     }
   ],
@@ -767,7 +826,9 @@
     "evidence/measured-progress-publication-20261103.json": "8c889dabe03c4ea6ab5f52255e27578160803c70e575821b45b80ca0fe90d8f2",
     "evidence/performance-cause-20261103.json": "48c9d508a82fea96b3c493f88c9ba1ac2b5142b5257066c4f9684bcca813083b",
     "evidence/performance-frame-log-regression-20261103.log": "dec7b0e6d7924c047f36d79e53138df86c7ac66cb64044d5af562564541ec165",
-    "evidence/performance-fix-validation-20261103.json": "9654bdbe860ad9378532d356101d3148c780d96027fac0e2087ecca44d376056"
+    "evidence/performance-fix-validation-20261103.json": "9654bdbe860ad9378532d356101d3148c780d96027fac0e2087ecca44d376056",
+    "evidence/performance-wrong-source-publication-20261103.json": "bb4e3fd30b7ac7f8dd66515b6ccffb944d2741220c37072525634385703e96db",
+    "evidence/performance-fix-publication-20261103.json": "7a478eba9bb6049d912522fd0a5315d9407c3f552a7841b77d7459466c75b7cf"
   },
   "archiveBoard": {
     "id": 1153,
@@ -828,6 +889,17 @@
         "H3-031"
       ],
       "note": "기존 원인 조사·실패 스냅샷 유지. 개발 중 command 로그 이름 회귀를 테스트에서 발견해 고쳤고 원본 실패 로그도 보존."
+    },
+    {
+      "at": "2026-11-03T12:41:21.100711+00:00",
+      "action": "performance-fix-published",
+      "cases": [
+        "H3-028",
+        "H3-030",
+        "H3-031",
+        "H3-032"
+      ],
+      "note": "성능코드96d3c47·공개/실제 Arcade 반영. 배포 sourceSHA 표기 회귀도 박제·정정. H100 전체성능1167은doing 유지."
     }
   ]
 }

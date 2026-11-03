@@ -1,0 +1,537 @@
+{
+  "recordedAt": "2026-11-03T12:41:21.100711+00:00",
+  "codeCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+  "hub": {
+    "commit": "6ec780c55b2548bf4ddf1b95c770dfd434e92c9c",
+    "remoteMatch": true,
+    "H3Code": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+    "targets": [
+      {
+        "name": "hub",
+        "root": "/home/kms/dev/33modeling-network-inventory-20261102/video-maker",
+        "declaredHashes": 15,
+        "hashesVerified": true
+      },
+      {
+        "name": "canonical",
+        "root": "/home/kms/dev/33modeling-site/video-maker",
+        "declaredHashes": 9,
+        "hashesVerified": true
+      },
+      {
+        "name": "arcade",
+        "root": "/home/kms/dev/33modeling-local-arcade/.game-builds/video-maker",
+        "declaredHashes": 15,
+        "hashesVerified": true
+      }
+    ],
+    "metadataCommit": "8eff655afba7c19d1b359328c4cee22207009412"
+  },
+  "twoBuilds": {
+    "sourceCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+    "pagesProfile": "pages",
+    "localProfile": "local",
+    "declaredFiles": 15,
+    "allHashesVerified": true,
+    "artifactHashes": {
+      "index.html": "0f68186e0608557ad9ee7ee9d2fbb6b10980d8aff9cc8d7a5ef67614904b7d90",
+      "studio/h3-cli.html": "4dbac6184efdb76a8457c3b1e12d5568691de4dee021ac3505423845011c67ca",
+      "studio/h3-guide.css": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342",
+      "studio/h3-guide.js": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67",
+      "studio/features.js": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa",
+      "studio/feature-hub.js": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0",
+      "studio/feature-hub.css": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a",
+      "studio/editor.js": "e130c1be479b25ed41af1523d26f7ff9996f16778e0ac426bd602c15f00a649a",
+      "studio/editor.css": "1516c06999a811c89a2dfc0a41582d6ca9690ba2273586ac5d2e4f340b7a7691",
+      "studio/progress.js": "bfe669a60fd84ed69540ee0064a32e76a0f36adc6b51ec8e41bd57830a774690",
+      "studio/ui.css": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce",
+      "studio/ui-navigation.js": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06",
+      "studio/batch-edit.js": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61",
+      "studio/reference.js": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e",
+      "studio/prompt-library.js": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad"
+    }
+  },
+  "actualLocalCache": {
+    "profile": "local",
+    "source": "h3video/ui.html",
+    "sourceCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+    "files": {
+      "index.html": "c740bbd2d36ee7b6dcefeeb01099e365aea804078c5f10944d5437d86d5e04d7",
+      "studio/h3-cli.html": "0d1036a83dd21fa0cd551d49fe661320703d4fe2ebce057c87afb264c7269ff9",
+      "studio/h3-guide.css": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342",
+      "studio/h3-guide.js": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67",
+      "studio/features.js": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa",
+      "studio/feature-hub.js": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0",
+      "studio/feature-hub.css": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a",
+      "studio/editor.js": "e130c1be479b25ed41af1523d26f7ff9996f16778e0ac426bd602c15f00a649a",
+      "studio/ui.css": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce",
+      "studio/ui-navigation.js": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06",
+      "studio/batch-edit.js": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61",
+      "studio/reference.js": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e",
+      "studio/prompt-library.js": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad",
+      "studio/progress.js": "bfe669a60fd84ed69540ee0064a32e76a0f36adc6b51ec8e41bd57830a774690",
+      "studio/editor.css": "c03b8f66cccc83b9a486c1e065310be3c3daf4a06c4fc50eb11f50313a1f86f7"
+    },
+    "guideSourceCommit": "82a2bccec786adedb0da96d49ce830546dba7836",
+    "progressSourceCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+    "performanceSourceCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d"
+  },
+  "initialPublication": {
+    "id": "320a9a83-0d4a-44f0-a34d-710b1cbf1be6",
+    "previous": "24e55f80-47dd-4de0-b709-83ba5a14f48a",
+    "sourceCommit": "5d8b94df83b188caf27251e1329c2570ef8921f2",
+    "sourceMain": "76e19b36942756917da63b5c13a87c06b3530ce5",
+    "url": "https://320a9a83.77model.pages.dev",
+    "manifestFiles": 5974,
+    "changedPaths": [
+      "/tools-backup.json",
+      "/video-maker/build.json",
+      "/video-maker/index.html",
+      "/video-maker/studio/editor.js",
+      "/video-maker/studio/h3-cli.html",
+      "/video-maker/studio/progress.js"
+    ],
+    "unrelatedStaticAssetsPreserved": true,
+    "runtimeRecompiledFromCanonicalInputs": "5cc6798f8f09f87564eb3ad665e499a34b1bd6f3",
+    "oldBinaryIdentityClaimed": false,
+    "stage": "success",
+    "publicAssetChecks": [
+      {
+        "path": "/video-maker/index.html",
+        "status": 200,
+        "contentType": "text/html",
+        "hashMatches": true
+      },
+      {
+        "path": "/video-maker/studio/editor.js",
+        "status": 200,
+        "contentType": "text/javascript",
+        "hashMatches": true
+      },
+      {
+        "path": "/video-maker/studio/progress.js",
+        "status": 200,
+        "contentType": "text/javascript",
+        "hashMatches": true
+      },
+      {
+        "path": "/video-maker/studio/h3-cli.html",
+        "status": 200,
+        "contentType": "text/html",
+        "hashMatches": true
+      },
+      {
+        "path": "/video-maker/build.json",
+        "status": 200,
+        "contentType": "application/json",
+        "hashMatches": true
+      },
+      {
+        "path": "/tools-backup.json",
+        "status": 200,
+        "contentType": "application/json",
+        "hashMatches": true
+      }
+    ],
+    "configurationAndBindingsPreserved": true,
+    "publicHashesMatch": true,
+    "apiChecks": [
+      {
+        "path": "/keep-notes/api/sync",
+        "status": 200
+      },
+      {
+        "path": "/creative-ai/api/status",
+        "status": 200
+      },
+      {
+        "path": "/bug-board/api/items?limit=1",
+        "status": 200
+      }
+    ]
+  },
+  "metadataCorrection": {
+    "id": "59fdfdcf-5bbb-46c8-83bd-aeb7badec3e2",
+    "previous": "320a9a83-0d4a-44f0-a34d-710b1cbf1be6",
+    "sourceCommit": "988041a5d48d2244adc45dc719b61f57103e7e80",
+    "sourceMain": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+    "url": "https://59fdfdcf.77model.pages.dev",
+    "manifestFiles": 5974,
+    "changedPaths": [
+      "/tools-backup.json",
+      "/video-maker/build.json"
+    ],
+    "unrelatedStaticAssetsPreserved": true,
+    "runtimeRecompiledFromCanonicalInputs": "5d8b94df83b188caf27251e1329c2570ef8921f2",
+    "oldBinaryIdentityClaimed": false,
+    "stage": "success",
+    "publicAssetChecks": [
+      {
+        "path": "/video-maker/build.json",
+        "status": 200,
+        "contentType": "application/json",
+        "hashMatches": true
+      },
+      {
+        "path": "/tools-backup.json",
+        "status": 200,
+        "contentType": "application/json",
+        "hashMatches": true
+      }
+    ],
+    "configurationAndBindingsPreserved": true,
+    "publicHashesMatch": true,
+    "apiChecks": [
+      {
+        "path": "/keep-notes/api/sync",
+        "status": 200
+      },
+      {
+        "path": "/creative-ai/api/status",
+        "status": 200
+      },
+      {
+        "path": "/bug-board/api/items?limit=1",
+        "status": 200
+      }
+    ]
+  },
+  "publicArtifacts": {
+    "sourceCode": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+    "artifacts": [
+      {
+        "path": "index.html",
+        "expected": "b1044b919b18c3f82b59bb34d3d4f74cf2b5410d7d11f570a17a212a0bdec93c",
+        "actual": "b1044b919b18c3f82b59bb34d3d4f74cf2b5410d7d11f570a17a212a0bdec93c",
+        "matches": true,
+        "contentType": "text/html; charset=utf-8",
+        "sourceHash": "0f68186e0608557ad9ee7ee9d2fbb6b10980d8aff9cc8d7a5ef67614904b7d90"
+      },
+      {
+        "path": "studio/h3-cli.html",
+        "expected": "0038bc16f876ec23d7fa68590916d3cf3b1111d455c98824b8b81b8ab3896734",
+        "actual": "0038bc16f876ec23d7fa68590916d3cf3b1111d455c98824b8b81b8ab3896734",
+        "matches": true,
+        "contentType": "text/html; charset=utf-8",
+        "sourceHash": "4dbac6184efdb76a8457c3b1e12d5568691de4dee021ac3505423845011c67ca"
+      },
+      {
+        "path": "studio/h3-guide.css",
+        "expected": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342",
+        "actual": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342",
+        "matches": true,
+        "contentType": "text/css; charset=utf-8",
+        "sourceHash": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342"
+      },
+      {
+        "path": "studio/h3-guide.js",
+        "expected": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67",
+        "actual": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67",
+        "matches": true,
+        "contentType": "text/javascript; charset=utf-8",
+        "sourceHash": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67"
+      },
+      {
+        "path": "studio/features.js",
+        "expected": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa",
+        "actual": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa",
+        "matches": true,
+        "contentType": "application/javascript",
+        "sourceHash": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa"
+      },
+      {
+        "path": "studio/feature-hub.js",
+        "expected": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0",
+        "actual": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0",
+        "matches": true,
+        "contentType": "application/javascript",
+        "sourceHash": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0"
+      },
+      {
+        "path": "studio/feature-hub.css",
+        "expected": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a",
+        "actual": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a",
+        "matches": true,
+        "contentType": "text/css; charset=utf-8",
+        "sourceHash": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a"
+      },
+      {
+        "path": "studio/editor.js",
+        "expected": "e130c1be479b25ed41af1523d26f7ff9996f16778e0ac426bd602c15f00a649a",
+        "actual": "e130c1be479b25ed41af1523d26f7ff9996f16778e0ac426bd602c15f00a649a",
+        "matches": true,
+        "contentType": "text/javascript; charset=utf-8",
+        "sourceHash": "e130c1be479b25ed41af1523d26f7ff9996f16778e0ac426bd602c15f00a649a"
+      },
+      {
+        "path": "studio/ui.css",
+        "expected": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce",
+        "actual": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce",
+        "matches": true,
+        "contentType": "text/css; charset=utf-8",
+        "sourceHash": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce"
+      },
+      {
+        "path": "studio/ui-navigation.js",
+        "expected": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06",
+        "actual": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06",
+        "matches": true,
+        "contentType": "application/javascript",
+        "sourceHash": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06"
+      },
+      {
+        "path": "studio/batch-edit.js",
+        "expected": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61",
+        "actual": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61",
+        "matches": true,
+        "contentType": "application/javascript",
+        "sourceHash": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61"
+      },
+      {
+        "path": "studio/reference.js",
+        "expected": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e",
+        "actual": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e",
+        "matches": true,
+        "contentType": "application/javascript",
+        "sourceHash": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e"
+      },
+      {
+        "path": "studio/prompt-library.js",
+        "expected": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad",
+        "actual": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad",
+        "matches": true,
+        "contentType": "application/javascript",
+        "sourceHash": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad"
+      },
+      {
+        "path": "studio/progress.js",
+        "expected": "bfe669a60fd84ed69540ee0064a32e76a0f36adc6b51ec8e41bd57830a774690",
+        "actual": "bfe669a60fd84ed69540ee0064a32e76a0f36adc6b51ec8e41bd57830a774690",
+        "matches": true,
+        "contentType": "text/javascript; charset=utf-8",
+        "sourceHash": "bfe669a60fd84ed69540ee0064a32e76a0f36adc6b51ec8e41bd57830a774690"
+      },
+      {
+        "path": "studio/editor.css",
+        "expected": "1516c06999a811c89a2dfc0a41582d6ca9690ba2273586ac5d2e4f340b7a7691",
+        "actual": "1516c06999a811c89a2dfc0a41582d6ca9690ba2273586ac5d2e4f340b7a7691",
+        "matches": true,
+        "contentType": "text/css; charset=utf-8",
+        "sourceHash": "1516c06999a811c89a2dfc0a41582d6ca9690ba2273586ac5d2e4f340b7a7691"
+      }
+    ]
+  },
+  "browserChecks": {
+    "live-progress": {
+      "rows": [
+        {
+          "width": 320,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 390,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 820,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 1440,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        }
+      ],
+      "serversStarted": 0,
+      "modelInferenceMeasured": false
+    },
+    "live-guide": {
+      "rows": [
+        {
+          "width": 320,
+          "passed": true,
+          "taskLinks": 8,
+          "copyAndFallback": true,
+          "searchReveal": true,
+          "keyboardAndSameAnchor": true
+        },
+        {
+          "width": 390,
+          "passed": true,
+          "taskLinks": 8,
+          "copyAndFallback": true,
+          "searchReveal": true,
+          "keyboardAndSameAnchor": true
+        },
+        {
+          "width": 820,
+          "passed": true,
+          "taskLinks": 8,
+          "copyAndFallback": true,
+          "searchReveal": true,
+          "keyboardAndSameAnchor": true
+        },
+        {
+          "width": 1440,
+          "passed": true,
+          "taskLinks": 8,
+          "copyAndFallback": true,
+          "searchReveal": true,
+          "keyboardAndSameAnchor": true
+        }
+      ],
+      "serversStarted": 0
+    },
+    "arcade-progress": {
+      "rows": [
+        {
+          "width": 320,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 390,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 820,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 1440,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        }
+      ],
+      "serversStarted": 0,
+      "modelInferenceMeasured": false
+    },
+    "arcade-guide": {
+      "rows": [
+        {
+          "width": 320,
+          "passed": true,
+          "taskLinks": 8,
+          "copyAndFallback": true,
+          "searchReveal": true,
+          "keyboardAndSameAnchor": true
+        },
+        {
+          "width": 390,
+          "passed": true,
+          "taskLinks": 8,
+          "copyAndFallback": true,
+          "searchReveal": true,
+          "keyboardAndSameAnchor": true
+        },
+        {
+          "width": 820,
+          "passed": true,
+          "taskLinks": 8,
+          "copyAndFallback": true,
+          "searchReveal": true,
+          "keyboardAndSameAnchor": true
+        },
+        {
+          "width": 1440,
+          "passed": true,
+          "taskLinks": 8,
+          "copyAndFallback": true,
+          "searchReveal": true,
+          "keyboardAndSameAnchor": true
+        }
+      ],
+      "serversStarted": 0
+    }
+  },
+  "browserAPI": "Fixture state transitions through actual public assets and actual local Arcade handler; no model/server started",
+  "provenanceIncident": {
+    "case": "H3-032",
+    "boardId": 1189,
+    "responsibility": "Codex imported H3 source variable S, then overwrote S with hub Git root",
+    "badSourceField": "76e19b36942756917da63b5c13a87c06b3530ce5",
+    "actualCodeSource": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+    "fix": "Explicit H3_SOURCE alias; assert exact H3 Git HEAD and remote main; metadata-only correction",
+    "fixedSourceField": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+    "publicationFixCommit": "988041a5d48d2244adc45dc719b61f57103e7e80"
+  },
+  "limits": {
+    "H100MultiGPUFullRunMeasured": false,
+    "actualSpeedupMeasured": false,
+    "actualMultiGPUCommunicationTested": false,
+    "modelOrWebServicesStartedOrRestarted": 0
+  },
+  "verificationNotes": [
+    "The initial broad MIME checker expected only text/javascript. Existing application/javascript is also valid; final validation accepts both and verifies all 15 hashes/types. No unrelated JS asset was changed.",
+    "Progress and guide harnesses initially shared a report filename. Final records use separate names and each harness was rechecked at all four widths."
+  ]
+}

@@ -6,7 +6,7 @@
 
 수정했거나 완료로 표시했던 항목도 지우지 않는다. 원래 기록·실패 배포·부족했던 검증·재발·정정 내용을 함께 보존한다.
 
-- 원인·증상별 기록: **31항목**. 같은 사건의 설치·문서·검증 문제를 나누어 기록한 항목이 있어 독립 장애 횟수와 같지 않다.
+- 원인·증상별 기록: **32항목**. 같은 사건의 설치·문서·검증 문제를 나누어 기록한 항목이 있어 독립 장애 횟수와 같지 않다.
 - 전체 Git 이력: **181커밋**, [1d5fdf5](https://github.com/33modeling/minimax-h3-video/commit/1d5fdf59de5b37b11af123579bcbff1da94253db)까지. 이 문서 자체를 추가하는 다음 커밋은 스냅샷 범위 밖이다.
 - 현황판 원본: **16항목**의 본문·상태·이벤트 스냅샷. 당시 완료 표시는 실제 H100 완주를 뜻하지 않을 수 있다.
 - **H100 8장 전체 모델의 OOM 해소·완주는 아직 미확인이다.** 실제 RTX 3050의 작은 모델 검사와 구분한다.
@@ -45,6 +45,7 @@
 | [H3-029](#h3-029) | 실제 프레임·단계와 다른 진척률·연결 끊김 표시 | 진척 표시 | 코드·공개/실제 Arcade 4폭·두빌드 검증 |
 | [H3-030](#h3-030) | Diffusers speed/memory 모드 무시 | 실행 설정 | 모드 전달 수정·실행 인자 대조 검증 |
 | [H3-031](#h3-031) | 프레임 보정 직렬·다중 서버 선택 초기화 | 성능·GPU 분산 | endpoint별 지속 worker·실제 프레임 대조 검증 |
+| [H3-032](#h3-032) | 배포 build source SHA에 허브 저장소 값 기록 | 배포·소스 이력 | 최초 배포 보존·정정/공개15해시 검증 |
 
 ## 증거 원장
 
@@ -439,6 +440,12 @@ Diffusers에서 `--mode speed`와 `--mode memory`가 동일한 실행으로 전�
 영상 프레임 보정이 직렬이며, 프레임마다 재생성한 provider가 서버 선택 순서를 초기화한다. 실제 자식 프로세스 요청 A/A/A/A와 지속 provider 대조 A/B/C/D를 모의 API로 재현했다. [현황판 #1185](https://77model.pages.dev/bug-board/#item=1185). 최초 조사에서는 미수정이었다. 후속 코드에서 모드 전달과 endpoint별 지속 worker를 구현하고 검증했다. 실제 H100 전체 성능은 별도 미확인이다.
 
 [성능 원인 조사](PERFORMANCE-AUDIT-20261103.md) · [소스/대조 재현 원본](bug-ledger/evidence/performance-cause-20261103.json). 실제 H100 시간·속도 개선은 측정하지 않았다.
+
+### H3-032
+
+Codex가 성능 publisher에서 H3 source 변수 이름을 허브 Git 변수로 덮어써 build.json의 소스 커밋을 잘못 기록했다. 원래 배포320a9a83의 영상 처리 코드·UI는96d3c47이며 source 표기는76e19b3였다. 명시적 H3_SOURCE와 원격 main 일치 검사를 추가하고 메타데이터 두 파일만 정정해59fdfdcf로 공개했다.
+
+[현황판 #1189](https://77model.pages.dev/bug-board/#item=1189) · [실패 원본](bug-ledger/evidence/performance-wrong-source-publication-20261103.json) · [정정·공개/실제 Arcade 검증](bug-ledger/evidence/performance-fix-publication-20261103.json). 공개15개 artifact 해시와 MIME, 실제 코드 source96d3c47을 확인했다. H100 전체 성능 검증은 별도 미완료다.
 
 ## 보존 방식
 
