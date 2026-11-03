@@ -13,3 +13,5 @@
 .h3-content .cli-topic>summary::after{content:"＋"}.h3-content .cli-topic[open]>summary::after{content:"−"}.h3-top a[href="#cli-workflows"]{color:var(--accent);font-weight:700}
 
 html.h3-guide-root{scroll-padding-top:20px}
+
+/* Refresh guide delivery after correcting the earlier upload content types. */

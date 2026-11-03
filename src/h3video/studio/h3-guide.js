@@ -34,3 +34,5 @@ window.addEventListener('hashchange',reveal);
 for(const a of document.querySelectorAll('a[href^="#"]'))a.addEventListener('click',()=>{if(a.hash===location.hash)reveal();});
 for(const pre of document.querySelectorAll('pre')){const button=document.createElement('button');button.className='h3-copy';button.type='button';button.textContent='복사';button.setAttribute('aria-label','예제 명령·프롬프트 복사');button.onclick=async()=>{try{await navigator.clipboard.writeText(pre.querySelector('code').textContent);button.textContent='복사됨';}catch{const selection=getSelection(),range=document.createRange();range.selectNodeContents(pre.querySelector('code'));selection.removeAllRanges();selection.addRange(range);button.textContent='선택됨 · 직접 복사';}setTimeout(()=>button.textContent='복사',2400);};pre.append(button);}
 filterCliTopics();filter();if(location.hash)reveal();
+
+/* Refresh guide delivery after correcting the earlier upload content types. */
