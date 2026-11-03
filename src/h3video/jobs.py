@@ -54,6 +54,7 @@ class Scene:
     status: str = "pending"      # pending | queued | in_progress | completed | failed
     progress: float = 0.0
     stage: str | None = None     # 서버가 알려 주는 단계 (다듬는 중·생성 중·디코딩)
+    metrics: dict | None = None
     output: str | None = None
     error: str | None = None
 
@@ -460,7 +461,10 @@ class Worker(threading.Thread):
                 if job.stop_requested:
                     raise JobStopped()
                 sc.status = st.get("status", sc.status)
-                sc.progress = float(st.get("progress") or 0)
+                if isinstance(st.get("progress"), (int,float)):
+                    sc.progress = max(0, min(1, float(st["progress"])))
+                if isinstance(st.get("metrics"), dict):
+                    sc.metrics = st["metrics"]
                 sc.stage = st.get("stage") or sc.stage
                 self.store.save(job)
 

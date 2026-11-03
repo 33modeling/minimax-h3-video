@@ -261,6 +261,8 @@ details.ai-box{margin-top:14px;border-top:1px solid var(--line);padding-top:10px
 @media (pointer:coarse){.ai-opt{min-height:44px}}
 
 .h3-guide-menu{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 15px;border-radius:9px;background:var(--acc);color:var(--bg);font-size:14px;font-weight:700;text-decoration:none;border:1px solid var(--acc);margin-left:auto}.h3-guide-menu span{font-size:12px;font-weight:500}.h3-guide-menu:hover{filter:brightness(1.08)}.h3-guide-menu:focus-visible{outline:3px solid var(--acc);outline-offset:3px}@media(max-width:700px){.h3-guide-menu{width:100%;justify-content:space-between;margin-left:0;order:1}.servers{order:2;width:100%;margin-left:0}}
+.native-progress{display:block;width:100%;height:8px;margin:0 0 12px;accent-color:var(--acc)}
+.state .detail{overflow-wrap:anywhere}
 </style><link rel="stylesheet" href="./studio/workspace.css"><link rel="stylesheet" href="./studio/editor.css"><link rel="stylesheet" href="./studio/motion.css"><link rel="stylesheet" href="./studio/feature-hub.css"><link rel="stylesheet" href="./studio/ui.css"></head><body class="h3-studio">
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
@@ -1252,40 +1254,32 @@ $('#aspect').addEventListener('change', () => LS.set('h3video.aspect', $('#aspec
 const cards = new Map();          // id → {el, sig}
 const opened = new Map();         // id → {cmd, set, err} 펼쳐 둔 것 (다시 그려도 유지)
 let feedItems = [], feedAt = Date.now(), serverNow = Date.now() / 1000;
-function progressOf(it) {
-  if (it.kind === 'story') return it.output ? 1 : it.clips.length ? it.clips.reduce((a, c) => a + (c.status === 'completed' ? 1 : (c.progress || 0)), 0) / it.clips.length : 0;
-  if (it.status === 'completed') return 1;
-  const sc = it.scenes || [];
-  return sc.length ? sc.reduce((a, s) => a + (s.status === 'completed' ? 1 : (s.progress || 0)), 0) / sc.length : 0;
-}
+let feedDisconnected=false;
+let nativeProgress=()=>({message:'상세 진척 확인 중',fraction:null});
+const measuredReady=import('./studio/progress.js?v=frames-20261103').then(module=>{nativeProgress=module.nativeProgress;for(const card of cards.values())card.sig='';renderFeed({items:feedItems,now:serverNow});}).catch(()=>toast('진척 표시를 불러오지 못했습니다. 화면을 새로고침하세요.'));
+function progressOf(it) {return nativeProgress(it,{connectionError:feedDisconnected}).fraction;}
 function stateText(it) {
   if (it.kind === 'story') {
     if (it.status === 'completed') return ['완성', `장면 ${it.total}개를 이어 붙였어요`];
     if(it.status==='paused')return ['일시중지','완성한 장면은 보존했습니다'];
     if(it.status==='pausing')return ['일시중지 중','현재 장면을 마친 뒤 저장합니다'];
     if (it.status === 'failed') return ['실패', `장면 ${it.failed}개가 안 됐어요 (${it.done}/${it.total} 완성)`];
-    const run = it.clips.find(c => c.status === 'running' || c.status === 'in_progress');
-    return ['만드는 중', `${it.done}/${it.total} 완성${run ? ` · ${run.label} ${Math.round((run.progress || 0) * 100)}%` : it.done === it.total ? ' · 이어 붙이는 중' : ''}`];
+    return ['만드는 중',nativeProgress(it,{connectionError:feedDisconnected}).message];
   }
   if(it.status==='paused')return ['일시중지',['unsupported','unavailable'].includes(it.remote_stop)?'현재 영상 서버는 실행 중인 장면 취소를 지원하지 않습니다. 이어 만들기에서 같은 장면의 결과를 확인합니다.':'저장본에서 수정·이어 만들기'];
   if(it.status==='pausing')return ['일시중지 중','현재 장면을 마친 뒤 저장합니다'];
   if (it.status === 'completed') return ['완성', ''];
   if (it.status === 'failed') return ['실패', ''];
   if (it.status === 'pending') return ['기다리는 중', it.queue_pos > 1 ? `앞에 ${it.queue_pos - 1}개` : '곧 시작'];
-  const sc = it.scenes || [], n = sc.length;
-  const cur = sc.find(s => s.status !== 'completed');
-  if (!cur) return ['만드는 중', n > 1 ? '이어 붙이는 중' : '마무리 중'];
-  const stage = cur.status === 'queued' ? '서버 대기열' : cur.status === 'pending' ? '준비 중'
-    : (cur.stage && cur.stage !== '생성 중' ? cur.stage : `생성 ${Math.round((cur.progress || 0) * 100)}%`);
-  return ['만드는 중', `${n > 1 ? `장면 ${cur.index + 1}/${n} · ` : ''}${stage}`];
+  return ['만드는 중',nativeProgress(it,{connectionError:feedDisconnected}).message];
 }
 function titleOf(it) {
   if (it.kind === 'story') return it.title || 'JSON 한번에';
   return it.title || String(it.prompt || '').replace(/\s+/g, ' ').slice(0, 70) || '(제목 없음)';
 }
 function sigOf(it) {
-  const parts = it.kind === 'story' ? it.clips.map(c => [c.status, Math.round((c.progress || 0) * 100)]) : (it.scenes || []).map(s => [s.status, Math.round((s.progress || 0) * 100), s.stage]);
-  return JSON.stringify([it.status, it.output, it.error, it.video_url, it.queue_pos, parts, it.done, it.failed]);
+  const parts = it.kind === 'story' ? it.clips.map(c => [c.status, c.metrics,c.stage,c.segments]) : (it.scenes || []).map(s => [s.status, Math.round((s.progress || 0) * 100), s.stage,s.metrics,s.segments]);
+  return JSON.stringify([it.status, it.output, it.error, it.video_url, it.queue_pos, parts, it.done, it.failed,feedDisconnected]);
 }
 function cmdBlock(it) {
   const rows = [];
@@ -1323,17 +1317,17 @@ function cardHtml(it) {
   const o = opened.get(it.id) || {};
   const meta = story
     ? `${when(it.created)} · 장면 ${it.total}개 · 합계 ${it.seconds}초 · ${esc(it.ratio || '')}`
-    : `${when(it.created)} · ${it.total_seconds}초 · ${esc(it.aspect_ratio)}${(it.scenes || []).length > 1 ? ` · 장면 ${it.scenes.length}개` : ''}${it.short_edge && it.short_edge !== 768 ? ` · 크기 ${it.short_edge}` : ''} · 시드 ${it.seed}`;
+    : `${when(it.created)} · ${it.total_seconds}초 · ${esc(it.aspect_ratio)}${(it.scenes || []).length > 1 ? ` · 출력 구간 ${it.scenes.length}개` : ''}${it.short_edge && it.short_edge !== 768 ? ` · 크기 ${it.short_edge}` : ''} · 시드 ${it.seed}`;
   const live = it.status === 'running' || it.status === 'pending' || it.status === 'pausing';
   const elapsed = it.status === 'completed' ? `${fmt(it.elapsed)} 걸림` : live && it.elapsed ? `경과 ${fmt(it.elapsed)}` : '';
   let body = '';
-  if (live) body += `<div class="bar"><i style="width:${Math.round(progressOf(it) * 100)}%"></i></div>`;
+  if (live) {const fraction=progressOf(it);body += `<progress class="native-progress" max="1" aria-label="현재 생성 계산" ${fraction===null?'':`value="${fraction}"`}></progress>`;}
   if (story) {
     body += `<div class="sl">${it.clips.map(c => `<div class="sli">${c.image_url ? `<img src="${esc(full(c.image_url))}" alt="">` : '<span class="ph"></span>'}
       <span class="nm" title="${esc(c.text || '')}">${esc(c.label)} · ${c.seconds}초</span>
-      <span class="chip ${c.status}">${c.status === 'completed' ? '완성' : c.status === 'failed' ? '실패' : (c.status === 'running' || c.status === 'in_progress') ? Math.round((c.progress || 0) * 100) + '%' : '대기'}</span></div>`).join('')}</div>`;
+      <span class="chip ${c.status}">${c.status === 'completed' ? '완성' : c.status === 'failed' ? '실패' : (c.status === 'running' || c.status === 'in_progress') ? esc(c.metrics?.unit==='steps'?`계산 ${c.metrics.completed}/${c.metrics.total}`:c.stage||'처리 중') : '대기'}</span></div>`).join('')}</div>`;
   } else if ((it.scenes || []).length > 1 && it.status !== 'completed') {
-    body += `<div class="chips">${it.scenes.map(s => `<span class="chip ${s.status}">장면 ${s.index + 1} · ${s.duration}초${s.status === 'completed' ? ' 완성' : s.status === 'failed' ? ' 실패' : s.status === 'in_progress' ? ' ' + Math.round((s.progress || 0) * 100) + '%' : ''}</span>`).join('')}</div>`;
+    body += `<div class="chips">${it.scenes.map(s => `<span class="chip ${s.status}">출력 구간 ${s.index + 1} · ${s.duration}초${s.status === 'completed' ? ' 완성' : s.status === 'failed' ? ' 실패' : s.status === 'in_progress' ? ' '+esc(s.metrics?.unit==='steps'?`계산 ${s.metrics.completed}/${s.metrics.total}`:s.stage||'처리 중') : ''}</span>`).join('')}</div>`;
   }
   const errs = story ? it.clips.filter(c => c.error).map(c => `${c.label}: ${c.error}`).concat(it.error ? [it.error] : []) : it.error ? [it.error] : [];
   if (it.status === 'failed' || (story && errs.length && it.status !== 'running')) {
@@ -1371,7 +1365,7 @@ function updateNativeOverview(){
  const item=feedItems.find(it=>(it.kind==='story'?'story':'jobs')+':'+it.id===liveSelection)||feedItems.find(it=>['pending','running','pausing'].includes(it.status))||feedItems.find(it=>it.id===nativeOverviewId)||feedItems[0];
  if(!item){nativeWorkspace.update({});return;}nativeOverviewId=item.id;
  const busy=['pending','running','pausing'].includes(item.status),rows=item.kind==='story'?item.clips:item.scenes||[],active=rows.findIndex(row=>['running','in_progress'].includes(row.status));
- nativeWorkspace.update({id:item.id,title:titleOf(item),busy,resumable:['paused','failed'].includes(item.status),message:stateText(item).filter(Boolean).join(' · ')+(active>=0?' · 현재 장면 '+(active+1)+'/'+rows.length:''),elapsedMs:item.elapsed*1000,items:rows.map((row,index)=>({id:String(row.id??index),label:row.label||'장면 '+(index+1),preview:row.image_url?full(row.image_url):null,completed:row.status==='completed',error:row.status==='failed'||Boolean(row.error),active:busy&&['running','in_progress'].includes(row.status)}))});
+ nativeWorkspace.update({id:item.id,title:titleOf(item),busy,resumable:['paused','failed'].includes(item.status),message:stateText(item).filter(Boolean).join(' · ')+(active>=0?' · 현재 '+(item.kind==='story'?'장면 ':'출력 구간 ')+(active+1)+'/'+rows.length:''),elapsedMs:item.elapsed*1000,items:rows.map((row,index)=>({id:String(row.id??index),label:row.label||'장면 '+(index+1),preview:row.image_url?full(row.image_url):null,completed:row.status==='completed',error:row.status==='failed'||Boolean(row.error),active:busy&&['running','in_progress'].includes(row.status)}))});
 }
 // "새 작업" starts from an empty form: settings and files loaded from earlier work ("같은 설정으로 다시")
 // must not carry over. Earlier jobs keep running on the server and stay in the feed.
@@ -1451,6 +1445,7 @@ function renderFeed(data) {
   });
 }
 setInterval(() => {   // 경과 시간은 1초마다 화면에서만 올린다 (카드를 다시 그리지 않게)
+  if(feedDisconnected)return;
   const dt = (Date.now() - feedAt) / 1000;
   for (const e of $$('.el[data-live]')) { const b = +e.dataset.live; if (b) e.textContent = `경과 ${fmt(b + dt)}`; }
 }, 1000);
@@ -1563,8 +1558,8 @@ async function loadStory(it) {
 let pollTimer = null;
 async function poll() {
   clearTimeout(pollTimer);
-  try { renderFeed(await api('/api/feed')); if (!online) { setOnline(true); checkHealth(); } }
-  catch (e) { if (online) { setOnline(false); renderBanners(); } }
+  try { const data=await api('/api/feed');feedDisconnected=false;renderFeed(data); if (!online) { setOnline(true); checkHealth(); } }
+  catch (e) { feedDisconnected=true;if (online) { setOnline(false); renderBanners(); }if(feedItems.length)renderFeed({items:feedItems,now:serverNow}); }
   pollTimer = setTimeout(poll, document.hidden ? 8000 : 2500);
 }
 async function boot() {
@@ -1667,7 +1662,7 @@ window.addEventListener('h3:workspace-recovery',event=>openVideoRecovery('studio
 import('./studio/ui-navigation.js').then(({mountStudioNavigation})=>mountStudioNavigation()).catch(error=>toast(error.message));
 const promptHost=document.createElement('div');promptHost.id='promptLibrary';document.querySelector('main.layout')?.before(promptHost);
 const promptsReady=import('./studio/prompt-library.js').then(({mountPromptLibrary,draftProject,mountDirections})=>{const controls=document.createElement('div');document.getElementById('recovery-prompt').closest('label').after(controls);mountDirections(controls,document.getElementById('recovery-prompt'));return mountPromptLibrary(promptHost,{theme:'auto',applyLabel:'영상 콘티로 불러오기',onApply:async draft=>{setMode('story');addFiles('json',[new File([JSON.stringify(draftProject(draft))],'prompt-storyboard.json',{type:'application/json'})]);toast('장면 초안을 불러왔습니다. 장면을 확인한 뒤 영상 만들기를 누르세요.');}});}).catch(error=>toast('템플릿을 불러오지 못했습니다: '+error.message));
-Promise.all([import('./studio/editor.js'),import('./studio/feature-hub.js')]).then(([{mountVideoStudio},{mountFeatureHub}])=>{
+Promise.all([import('./studio/editor.js?v=frames-20261103'),import('./studio/feature-hub.js')]).then(([{mountVideoStudio},{mountFeatureHub}])=>{
  const editor=mountVideoStudio({api,full,toast,getConti:()=>storyData?{project:{title:storyData.title,clips:storyData.clips.map(c=>({id:c.id,label:c.label,prompt:c.prompt,text:c.text,seconds:c.seconds,imageName:c.image}))},images:files.pages.map(it=>it.file)}:null});
  mountFeatureHub({host:document.getElementById('videoTaskHub'),startRetouch:editor.startRetouch,openFeature:editor.openFeature,onMode:next=>{setMode(next);document.querySelector('.maker').scrollIntoView({block:'start',behavior:'smooth'});document.querySelector(next==='story'?'[data-zone=json]':'#prompt')?.focus({preventScroll:true});},onAux:async kind=>{if(kind==='motion'){await motionReady;document.getElementById('openMotionStudio').click();}else {await promptsReady;const library=document.getElementById('promptLibrary');const details=library.shadowRoot?.querySelector('details');if(details)details.open=true;library.scrollIntoView({block:'start',behavior:'smooth'});library.shadowRoot?.querySelector('[data-search]')?.focus({preventScroll:true});}}});
 }).catch(error=>toast('영상 편집실을 불러오지 못했습니다: '+error.message));

@@ -1,0 +1,132 @@
+{
+  "recordedAt": "2026-11-03T04:47:24.327590+00:00",
+  "case": "H3-029",
+  "boardId": 1171,
+  "changes": [
+    "Verified and atomically saved restored frames / extracted total; current frame is separate",
+    "Measured denoiser forward steps / planned model steps, separate from output segments",
+    "Unknown fractions during extraction, assembling, decoding and inspection",
+    "Observed speed and phase-limited ETA only; excludes cached frames and paused time",
+    "Retry resets step baseline; connection loss removes active fraction and ETA",
+    "Interrupted process time freezes at last recorded checkpoint and is marked incomplete"
+  ],
+  "validation": {
+    "CLI": {
+      "testsRun": 82,
+      "successful": true,
+      "excluded": [
+        {
+          "test": "test_cli.CliTest.test_ctrl_c_marks_job_and_prints_fetch_hint",
+          "reason": "Requires an actual child HTTP endpoint; interrupted metadata is covered separately"
+        },
+        {
+          "test": "test_cli.CliTest.test_stdin_prompt",
+          "reason": "Child process cannot share an in-memory parent transport; stdin dry-run is covered separately"
+        },
+        {
+          "test": "test_cli_ux.CtrlCTest.test_ctrl_c_on_json_says_how_to_resume",
+          "reason": "Child process does not share the in-memory HTTP registry"
+        },
+        {
+          "test": "test_qa_web_cli.CliFixesTest.test_ctrl_c_points_at_the_stopped_job",
+          "reason": "Child process does not share the in-memory HTTP registry"
+        }
+      ],
+      "realServersStarted": 0,
+      "GPUInferenceMeasured": false
+    },
+    "pythonInitial": {
+      "testsRun": 44,
+      "failures": 1,
+      "errors": 0,
+      "skips": [
+        "test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu (test_device_boundary.CudaStateBoundaryTest.test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu)",
+        "test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout (test_device_boundary.CudaStateBoundaryTest.test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout)",
+        "test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags (test_device_boundary.CudaStateBoundaryTest.test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags)"
+      ],
+      "realServersStarted": 0,
+      "H100InferenceMeasured": false
+    },
+    "pythonEnvironmentFailureRecheck": {
+      "testsRun": 1,
+      "successful": true,
+      "reason": "Isolated worktree initially lacked existing .venv-video-studio link; linked existing environment without installing or changing code",
+      "realServersStarted": 0
+    },
+    "additionalMeasuredTests": {
+      "tests": 6,
+      "test": "tests/test_measured_progress.py"
+    },
+    "javascriptTests": {
+      "tests": 6,
+      "test": "tests/progress.test.mjs"
+    },
+    "browser": {
+      "rows": [
+        {
+          "width": 320,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 390,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 820,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        },
+        {
+          "width": 1440,
+          "passed": true,
+          "checks": [
+            "native-step-counter",
+            "frame-count",
+            "phase-and-assembly",
+            "pause",
+            "disconnect-and-reconnect",
+            "done",
+            "no-horizontal-status-overflow"
+          ]
+        }
+      ],
+      "serversStarted": 0,
+      "modelInferenceMeasured": false
+    },
+    "actualMediaFixture": "Four real extracted frames; mock AI scales via FFmpeg, original bytes/audio/FPS preserved, first saved frame reused after pause"
+  },
+  "limits": {
+    "H100FullRunVerified": false,
+    "performanceImprovementMeasured": false,
+    "multiGPUFrameDistributionImplemented": false,
+    "genVideoRoutingChanged": false,
+    "realServersStarted": 0
+  },
+  "priorFailureRetained": "Initial ASR test failed because isolated worktree lacked its .venv-video-studio link. Linking the existing environment resolved the test; no application code or dependency change was used to hide it."
+}

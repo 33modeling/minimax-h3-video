@@ -365,7 +365,7 @@ def scene_line(jb: Job) -> str:
 
 
 def compact_status(jb: Job) -> str:
-    """한 줄 진행 표시용: '장면 2/4 · 생성 45%'."""
+    """Show measured compute counters separately from output segments."""
     if jb.status == "pending":
         return "준비 중"
     if jb.status in TERMINAL_STATES:
@@ -374,7 +374,7 @@ def compact_status(jb: Job) -> str:
     cur = next((s for s in jb.scenes if s.status != "completed"), None)
     if cur is None:
         return "이어 붙이는 중" if n > 1 else "마무리 중"
-    where = f"장면 {cur.index + 1}/{n} · " if n > 1 else ""
+    where = f"출력 구간 {cur.index + 1}/{n} · " if n > 1 else ""
     stage = getattr(cur, "stage", None)
     if cur.status == "queued":
         what = "서버 대기열"
@@ -383,8 +383,10 @@ def compact_status(jb: Job) -> str:
     elif stage and stage != "생성 중":
         what = stage
     else:
-        what = f"생성 {round(cur.progress * 100)}%"
-    return where + what
+        what = "생성 중"
+    from .progress import progress_text
+    measured = progress_text(cur.metrics)
+    return where + what + (' · '+measured if measured else ' · 상세 진척 확인 중' if cur.status=='in_progress' else '')
 
 
 def fit_width(s: str, cols: int) -> str:

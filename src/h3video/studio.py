@@ -139,8 +139,14 @@ class VideoStudio:
             raise KeyError(project_id)
         project = json.loads(file.read_text())
         if project.get('task', {}).get('status') in ('queued', 'running'):
-            project['task']['status'] = 'paused'
-            project['task']['message'] = '서버 재시작 후 저장한 지점에서 이어 할 수 있습니다.'
+            task = project['task']
+            # A crash has no exact end timestamp. Freeze at the last saved observation.
+            stopped = (task.get('progressInfo') or {}).get('updatedAt', task.get('created', project.get('updated', 0)))
+            if task.get('runStartedAt') is not None:
+                task['activeSeconds'] = task.get('activeSeconds', 0) + max(0, stopped-task.pop('runStartedAt'))
+                task['clockIncomplete'] = True
+            task.update(status='paused', stoppedAt=stopped,
+                        message='서버 재시작 후 저장한 지점에서 이어 할 수 있습니다.')
         return project
 
     def save(self, project):
@@ -184,6 +190,8 @@ class VideoStudio:
                     active_scene = next((s for s in job.scenes if s.status != 'completed'), None)
                     candidate['progress'] = (sum(1 if s.status == 'completed' else s.progress for s in job.scenes) / len(job.scenes)) if job.scenes else None
                     candidate['stage'] = active_scene.stage if active_scene else None
+                    candidate['metrics'] = active_scene.metrics if active_scene else None
+                    candidate['segments'] = dict(current=active_scene.index+1 if active_scene else len(job.scenes), total=len(job.scenes))
                     candidate['elapsed'] = job.to_json()['elapsed']
         for output in result.get('outputs', []):
             output['url'] = url(output['file'])
@@ -193,6 +201,8 @@ class VideoStudio:
         result['timeline'], result['duration'] = timeline(project)
         if result.get('task'):
             result['task'].pop('snapshot', None)
+            from .progress import task_metrics
+            result['task']['metrics'] = task_metrics(result['task'])
         return result
 
     def sync_candidates(self, project):
@@ -556,10 +566,28 @@ class VideoStudio:
         if self.pause_events[p['id']].is_set():
             raise Paused()
 
-    def progress(self, p, value, message):
+    def progress(self, p, value, message, *, phase=None):
         with self.lock:
-            p['task'].update(progress=max(0, min(.99, value)), message=message)
+            task = p['task']
+            previous = task.get('progressInfo') or {}
+            key = phase or previous.get('phase') or task['operation']
+            now = time.time()
+            task.update(progress=None if value is None else max(0, min(.99, value)), message=message)
+            task['progressInfo'] = dict(phase=key, label=message, updatedAt=now,
+                                        startedAt=previous.get('startedAt', now) if previous.get('phase')==key else now)
             self.save(p)
+
+    def frame_progress(self, p, phase, current=None, *, completed=None, retouched=None):
+        with self.lock:
+            frame = p['task']['frameProgress']
+            if completed is not None and completed > frame['completed']:
+                frame.update(completed=completed, lastCompletedAt=time.time())
+            if retouched is not None:
+                frame['retouched'] = retouched
+            frame['current'] = current
+            label = {'retouch':'프레임 AI 보정', 'upscale':'프레임 확대',
+                     'assemble':'영상·오디오 조립', 'inspect':'출력 검증'}[phase]
+            self.progress(p, None, label, phase=phase)
 
     def command(self, p, args, stdin=None, duration=None):
         self.check_pause(p)
@@ -730,6 +758,7 @@ class VideoStudio:
     def upscale(self, p, snapshot, work):
         task, options = p['task'], p['task']['options']
         if task.get('result'):
+            self.progress(p, None, '출력 검증', phase='inspect')
             current = copy.deepcopy(p)
             current.pop('task', None)
             self.inspect(p, current, work)
@@ -747,12 +776,16 @@ class VideoStudio:
         retouched = work / 'qwen-retouched'
         retouched.mkdir(exist_ok=True)
         if not (work / 'extracted.json').exists():
-            self.progress(p, .02, '원본 프레임 추출·밝기·색감·노이즈 보정')
+            self.progress(p, None, '원본 프레임 추출·전체 프레임 수 확인 중', phase='extract')
             self.ffmpeg(p, ['-i', source, '-vf', self.color(clip), '-fps_mode', 'passthrough', frames / '%08d.png'])
             atomic(work / 'extracted.json', info)
         images = sorted(frames.glob('*.png'))
         if not images:
             raise H3Error('업스케일할 프레임을 추출하지 못했습니다.')
+        cached = sum((restored / image.name).is_file() for image in images)
+        task['frameProgress'] = dict(total=len(images), completed=cached, cached=cached,
+                                     retouched=sum((retouched / image.name).is_file() for image in images),
+                                     sessionStartedAt=time.time(), lastCompletedAt=None, current=None)
         model = options.get('model', 'illustration')
         model_name = {'illustration': 'realesr-animevideov3', 'photo': 'realesrgan-x4plus', 'anime': 'realesrgan-x4plus-anime'}[model]
         for index, image in enumerate(images):
@@ -765,7 +798,7 @@ class VideoStudio:
             if options.get('engine') in ('qwen-realesrgan', 'qwen-turbo-realesrgan', 'qwen-quantized-realesrgan'):
                 source_image = retouched / image.name
                 if not source_image.exists():
-                    self.progress(p, .05 + .85 * index / len(images), f'Qwen Image 보정 {index+1}/{len(images)} · 원본 구도 유지')
+                    self.frame_progress(p, 'retouch', index+1)
                     shared = Path(os.environ.get('STORYBOOK_MAKER_ROOT', ROOT.parent / 'storybook-maker'))
                     client = shared / 'scripts/retouch-frame.mjs'
                     if client.is_file() and shutil.which('node'):
@@ -779,13 +812,18 @@ class VideoStudio:
                                  dict(input=str(image), output=str(source_image), seed=0,
                                       provider='qwen-image-quantized' if options.get('engine')=='qwen-quantized-realesrgan' else 'qwen-image-turbo' if options.get('engine')=='qwen-turbo-realesrgan' else 'qwen-image',
                                       prompt='Preserve exact composition, identities, geometry and typography across this video frame. ' + options['retouchPrompt']))
-            self.progress(p, .05 + .85 * index / len(images), f'AI 업스케일 {index+1}/{len(images)} 프레임 · 완료한 프레임 자동 저장')
+                    task['frameProgress']['retouched'] += 1
+                self.frame_progress(p, 'upscale', index+1,
+                                    retouched=task['frameProgress']['retouched'])
+            else:
+                self.frame_progress(p, 'upscale', index+1)
             self.command(p, [binary, '-i', source_image, '-o', temporary, '-s', str(options['scale']), '-t', '64',
                              '-m', home / 'models', '-n', model_name, '-g', os.environ.get('STUDIO_UPSCALER_GPU', '0'), '-j', '1:1:1'])
             probe(temporary)
             temporary.replace(output)
+            self.frame_progress(p, 'upscale', index+1, completed=task['frameProgress']['completed']+1)
         final = work / 'upscaled.mp4'
-        self.progress(p, .93, '원본 프레임 속도·소리 유지하여 영상 복원')
+        self.frame_progress(p, 'assemble')
         self.ffmpeg(p, ['-framerate', info['frameRate'], '-i', restored / '%08d.png', '-i', source,
                         '-map', '0:v:0', '-map', '1:a?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16',
                         '-pix_fmt', 'yuv420p', '-c:a', 'copy', '-movflags', '+faststart', final])
@@ -809,6 +847,7 @@ class VideoStudio:
         self.save(p)
         current_snapshot = copy.deepcopy(p)
         current_snapshot.pop('task', None)
+        self.frame_progress(p, 'inspect')
         self.inspect(p, current_snapshot, work)
 
     def inspect(self, p, snapshot, work):
@@ -865,6 +904,8 @@ class VideoStudio:
         try:
             self.check_pause(p)
             task['status'] = 'running'
+            task['runStartedAt'] = time.time()
+            task['progressInfo'] = {}
             snapshot = task['snapshot']
             operation = task['operation']
             if operation == 'upscale':
@@ -913,6 +954,9 @@ class VideoStudio:
             task.update(status='error', error=str(error), message='작업을 완료하지 못했습니다. 기존 결과는 유지됩니다.')
         finally:
             with self.lock:
+                stopped = time.time()
+                task['activeSeconds'] = task.get('activeSeconds', 0) + max(0, stopped-task.pop('runStartedAt', stopped))
+                task['stoppedAt'] = stopped
                 p['updated'] = time.time()
                 self.save(p)
                 self.active.pop(p['id'], None)

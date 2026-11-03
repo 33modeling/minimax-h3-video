@@ -601,6 +601,7 @@ class Engine:
         from diffusers.utils.export_utils import encode_video
         torch = self.torch
         t_all = time.time()
+        self._steps_done = 0
         self._stage("입력 읽기")
         inputs, first_image = self._load_inputs(plan)
         self._stage("다듬는 중")
@@ -627,7 +628,7 @@ class Engine:
                 on_progress(min(0.99, done / total))
                 if done != last_n:
                     last_t, last_n = now, done
-                elif self.stage == "생성 중" and now - last_t >= 600 and int(now - last_t) % 600 < 2:
+                elif self.stage in ("생성 중", "디노이징") and now - last_t >= 600 and int(now - last_t) % 600 < 2:
                     log(f"[STALL] 디노이징이 {int(now - last_t) // 60}분 동안 스텝 {done}/{total} 에서 안 넘어간다 (no step progress). "
                         f"워커(torchrun) 로그를 본다. 끄지는 않는다")
                 if done and first is None:
@@ -689,6 +690,7 @@ class Engine:
             + (f" (스텝당 {times['디노이징'] / steps:.1f}초 × {steps})" if "디노이징" in times else "")
             + f" · 전체 {time.time() - t_all:.0f}초")
         self._check_cancel()
+        self._stage("영상 저장")
         tmp = out_path.with_suffix(".part.mp4")
         encode_video(r["videos"][0], fps=24, output_path=str(tmp), audio=r["audio"][0],
                      audio_sample_rate=r["sampling_rate"])
@@ -791,6 +793,23 @@ class Server:
             self.q.put(vid)
         return {'id':vid,'status':'queued'}
 
+    def report_stage(self, job, stage):
+        from .progress import generation_metrics
+        now = time.time()
+        history = job.setdefault('phaseHistory', [])
+        if history and 'endedAt' not in history[-1]:
+            history[-1]['endedAt'] = now
+        history.append(dict(stage=stage, startedAt=now))
+        job.update(stage=stage, stageStartedAt=now)
+        job['metrics'] = generation_metrics(self.engine, job, now)
+        self.save(job)
+
+    def report_progress(self, job, progress):
+        from .progress import generation_metrics
+        job['progress'] = round(progress, 3)
+        job['metrics'] = generation_metrics(self.engine, job)
+        self.save(job)
+
     def run_with_recovery(self, job, out):
         from .memory import release_request_memory, is_memory_failure
         for attempt in range(3):
@@ -798,8 +817,8 @@ class Server:
             try:
                 if self.engine is None: raise RuntimeError(self.engine_error or '영상 모델 복구가 필요합니다.')
                 self.engine._cancel_file = self.out_dir / f"{job['id']}.cancel"
-                self.engine.on_stage = lambda stage: job.__setitem__('stage', stage)
-                return self.engine.run(job['plan'], out, lambda progress: job.__setitem__('progress', round(progress,3)))
+                self.engine.on_stage = lambda stage: self.report_stage(job, stage)
+                return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
             except Exception as error:
                 if getattr(error, "report", None):
                     job["memory_failure"] = error.report
@@ -812,8 +831,9 @@ class Server:
                 if job.get('cancel_requested'): raise GenerationCancelled('영상 생성을 중지했습니다.') from error
                 edge = min(job['plan'].get('short_edge',768), (576,448)[attempt])
                 job['plan']['short_edge'] = edge
-                job.update(progress=0,stage=f'메모리 복구 · {edge}px로 재시도 {attempt+1}/2',recovery=dict(attempt=attempt+1,short_edge=edge))
-                self.save(job)
+                job.update(progress=0, metrics=None, recovery=dict(attempt=attempt+1,short_edge=edge))
+                self.engine._steps_done = 0
+                self.report_stage(job, f'메모리 복구 · {edge}px로 재시도 {attempt+1}/2')
                 out.with_suffix('.part.mp4').unlink(missing_ok=True)
                 # The per-request reference geometry follows the smaller edge too.
                 # A sharded engine has no failed collective to rebuild after a CUDA OOM.
@@ -896,6 +916,8 @@ class Server:
             if self.engine is not None: self.engine._cancel_file = None
             (self.out_dir / f'{vid}.cancel').unlink(missing_ok=True)
         job["finished_at"] = int(time.time())
+        if job.get('phaseHistory'):
+            job['phaseHistory'][-1]['endedAt'] = time.time()
         self.save(job)
 
 
@@ -963,8 +985,11 @@ def make_handler(srv: Server):
                 if job is None:
                     return self._json(404, {"error": f"없는 id: {parts[3]}"})
                 if len(parts) == 4:
-                    return self._json(200, {k: job.get(k) for k in ("id", "status", "progress", "error", "created_at",
-                                                                    "started_at", "finished_at", "task", "prompt_used", "stage", "recovery", "memory_failure")})
+                    from .progress import generation_snapshot
+                    payload = {k: job.get(k) for k in ("id", "status", "progress", "error", "created_at",
+                               "started_at", "finished_at", "task", "prompt_used", "stage", "recovery", "memory_failure", "phaseHistory")}
+                    payload['metrics'] = generation_snapshot(job)
+                    return self._json(200, payload)
                 if parts[4] == "content":
                     f = Path(job.get("file") or "")
                     if job.get("status") != "completed" or not f.is_file():

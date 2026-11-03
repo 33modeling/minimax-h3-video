@@ -214,11 +214,11 @@ class ProgressTest(unittest.TestCase):
         jb = Job(id="j", prompt="p", total_seconds=20, aspect_ratio="16:9", seed=0, task="t2va", status="running",
                  scenes=[Scene(0, "p", 10, "t2va", status="completed", progress=1),
                          Scene(1, "p", 10, "fl2va", status="in_progress", progress=0.45)])
-        self.assertEqual(cli.compact_status(jb), "장면 2/2 · 생성 45%")
+        self.assertEqual(cli.compact_status(jb), "출력 구간 2/2 · 생성 중 · 상세 진척 확인 중")
         jb.scenes[1].stage = "다듬는 중"
-        self.assertEqual(cli.compact_status(jb), "장면 2/2 · 다듬는 중")
+        self.assertEqual(cli.compact_status(jb), "출력 구간 2/2 · 다듬는 중 · 상세 진척 확인 중")
         jb.scenes[1].status = "queued"
-        self.assertEqual(cli.compact_status(jb), "장면 2/2 · 서버 대기열")
+        self.assertEqual(cli.compact_status(jb), "출력 구간 2/2 · 서버 대기열")
         jb.status = "pending"
         self.assertEqual(cli.compact_status(jb), "준비 중")
 

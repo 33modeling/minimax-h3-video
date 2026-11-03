@@ -124,11 +124,14 @@ class VideoEditingTest(unittest.TestCase):
         job.status = 'running'
         job.started = time.time() - 10
         job.scenes = [Scene(0, 'first', 1, 'fl2va', status='completed', progress=1),
-                      Scene(1, 'second', 1, 'fl2va', status='in_progress', progress=.4, stage='디코딩')]
+                      Scene(1, 'second', 1, 'fl2va', status='in_progress', progress=.4, stage='디코딩',
+                            metrics={'unit':'steps','completed':49,'total':49,'fraction':None})]
         self.app.store.save(job)
         current = self.studio.get(p['id'])['clips'][0]['pendingCandidates'][0]
         self.assertAlmostEqual(current['progress'], .7)
         self.assertEqual(current['stage'], '디코딩')
+        self.assertEqual(current['metrics']['completed'],49)
+        self.assertEqual(current['segments'],{'current':2,'total':2})
         self.assertGreaterEqual(current['elapsed'], 10)
         job.status = 'paused'
         self.app.store.save(job)

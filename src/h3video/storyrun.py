@@ -103,8 +103,11 @@ def refresh(d: Path, state: dict, store: JobStore) -> dict:
         jb = store.get(c["job_id"]) if c.get("job_id") else None
         if not jb:
             continue
+        active = next((s for s in jb.scenes if s.status != 'completed'), None)
         st = {"status": jb.status, "output": jb.output if jb.status == "completed" else None,
               "error": jb.error if jb.status == "failed" else None,
+              "stage": active.stage if active else None, "metrics": active.metrics if active else None,
+              "segments": dict(current=active.index+1 if active else len(jb.scenes), total=len(jb.scenes)),
               "progress": (sum((1 if s.status == "completed" else s.progress) for s in jb.scenes) / len(jb.scenes)) if jb.scenes else 0}
         if any(c.get(k) != v for k, v in st.items()):
             c.update(st)
