@@ -35,6 +35,35 @@ def to_device(obj, device):
 
 
 def main(argv=None) -> int:
+    try:
+        return _main(argv)
+    except Exception as error:
+        if not getattr(error, '_h3_recorded', False):
+            import torch
+            rank = int(os.environ.get('RANK', '0'))
+            local = int(os.environ.get('LOCAL_RANK', '0'))
+            device = f'cuda:{local}' if torch.cuda.is_initialized() else 'cpu'
+            record_failure(error, torch, device, rank, os.environ.get('H3_WORKER_REQUEST_ID', 'startup'),
+                           os.environ.get('H3_WORKER_PHASE', '모델 적재'))
+        raise
+
+
+def record_failure(error, torch, device, rank, request_id, stage):
+    from .memory import memory_report, is_memory_failure
+    from .worker_state import write_failure
+    report = memory_report(torch, [device], stage, error)
+    if not is_memory_failure(error):
+        report['kind'] = 'error'
+    report['visibleDevices'] = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+    try:
+        write_failure(os.environ.get('H3_WORKER_DIAGNOSTICS'), request_id, rank, report)
+        error._h3_recorded = True
+    except (OSError, ValueError) as failure:
+        print(f'[dworker {rank}] 진단 저장 실패: {failure}; 원래 오류: {error}', flush=True)
+    return report
+
+
+def _main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="h3video.dworker")
     ap.add_argument("--model-dir", required=True)
     ap.add_argument("--variant", choices=["fl2va", "ref2va"], default="fl2va")
@@ -132,6 +161,10 @@ def main(argv=None) -> int:
         if msg == b"STOP":
             break
         job = torch.load(io.BytesIO(msg), weights_only=False, map_location="cpu")
+        os.environ['H3_WORKER_REQUEST_ID'] = job.get('request_id', 'startup')
+        os.environ['H3_WORKER_PHASE'] = '디노이징'
+        if use_cuda:
+            torch.cuda.reset_peak_memory_stats(device)
         cancel_file[0] = job.get("cancel_file")
         state = job["state"]
         for k in job.get("cuda_keys", []):   # 본체에서 GPU 에 있던 값만 GPU 로 (diffusers 가 CPU 에 두는 값은 그대로)
@@ -154,9 +187,11 @@ def main(argv=None) -> int:
         except Exception as e:   # noqa: BLE001 — 실패는 본체에 돌려준다 (모든 rank 가 같은 입력이라 같이 실패한다)
             traceback.print_exc()
             result = {"ok": False, "error": f"{type(e).__name__}: {e}", "cancelled": "H3_GENERATION_CANCELLED" in str(e)}
-            from .memory import release_request_memory, is_memory_failure
+            from .memory import release_request_memory
+            if not result['cancelled']:
+                record_failure(e, torch, str(device), rank, job.get('request_id', 'startup'), '디노이징')
             release_request_memory(e)
-            if is_memory_failure(e):
+            if not result['cancelled']:
                 # One failed rank cannot return to the next broadcast while peers
                 # are still waiting in attention collectives. torchrun replaces
                 # the owned ranks through the API server's bounded recovery.

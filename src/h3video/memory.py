@@ -1,20 +1,26 @@
 """Release failed request tensors without unloading models or touching other processes."""
 import gc
 import traceback
+import os
 
 
 def memory_report(torch, devices, stage, error):
     text = str(error).lower()
     kind = "cuda" if "cuda" in text or type(error).__name__ == "OutOfMemoryError" else "host"
-    report = {"kind": kind, "stage": stage, "error": str(error), "devices": []}
+    report = {"kind": kind, "stage": stage, "error": str(error), "devices": [],
+              "pid": os.getpid(), "allocatorScope": "this_process"}
     for device in devices:
         if not str(device).startswith("cuda"):
             continue
         try:
             free, total = torch.cuda.mem_get_info(torch.device(device))
-            report["devices"].append({"device": device, "freeBytes": free, "totalBytes": total,
-                                      "allocatedBytes": torch.cuda.memory_allocated(device),
-                                      "reservedBytes": torch.cuda.memory_reserved(device)})
+            row = {"device": device, "freeBytes": free, "totalBytes": total,
+                   "allocatedBytes": torch.cuda.memory_allocated(device),
+                   "reservedBytes": torch.cuda.memory_reserved(device)}
+            for key, name in [('peakAllocatedBytes', 'max_memory_allocated'), ('peakReservedBytes', 'max_memory_reserved')]:
+                if hasattr(torch.cuda, name):
+                    row[key] = getattr(torch.cuda, name)(device)
+            report["devices"].append(row)
         except Exception:
             pass
     return report

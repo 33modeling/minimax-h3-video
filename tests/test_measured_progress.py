@@ -72,6 +72,7 @@ class MeasuredProgressTest(unittest.TestCase):
     def test_retry_clears_previous_step_rate_and_records_phases(self):
         with tempfile.TemporaryDirectory() as tmp:
             server=Server.__new__(Server);server.out_dir=Path(tmp);server.save=lambda job:None
+            server.engine_status='ready'
             seen=[]
             class Engine:
                 mode='sharded';_steps_done=0

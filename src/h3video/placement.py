@@ -91,10 +91,15 @@ def transfer_denoiser_state(state, device, required_keys):
         if isinstance(value, (tuple, list)):
             return type(value)(transfer(item) for item in value)
         return value
-    keep = set(required_keys) | {key for keys in state.kwargs_mapping.values() for key in keys}
+    from .worker_state import denoiser_state
+    compact = denoiser_state(state, required_keys)
+    keep = set(compact.values)
     state.values = {key: value.to("cpu") if key == "text_token_tags" and isinstance(value, torch.Tensor)
                     else transfer(value) for key, value in state.values.items()
                     if key in keep and key != "generator"}
+    for key in ('references', 'image', 'last_image', 'normalized_references'):
+        if key in compact.values:
+            state.values[key] = compact.values[key]
     return state
 
 
@@ -139,3 +144,51 @@ class ExclusiveStageOffload:
         if self.on_transition:
             self.on_transition(str(model_id), type(model).__name__, str(execution_device))
         return list(hooks)
+
+
+def record_component_calls(manager, callback):
+    """Record every call, including resident models and direct encode methods."""
+    def recorded(original, component_id, device):
+        def pre_forward(module, *args, **kwargs):
+            callback(str(component_id), type(module).__name__, str(device))
+            return original(module, *args, **kwargs)
+        return pre_forward
+    for user_hook in manager.model_hooks or []:
+        hook = user_hook.hook
+        hook.pre_forward = recorded(hook.pre_forward, user_hook.model_id, hook.execution_device)
+
+
+def offload_conditioning_text(pipeline, device):
+    """Keep one Qwen decoder/vision block at a time on the conditioning GPU.
+
+    ComponentsManager's custom hook recognizes Diffusers group offloading and
+    continues to evict VAE peers without moving the whole text model to CUDA.
+    Explicit nested paths prevent grouping the entire 32B model as one block.
+    No quantization, reduced precision, stream prefetch, or second CPU copy.
+    """
+    from diffusers.hooks.group_offloading import apply_group_offloading, _is_group_offload_enabled
+    model = pipeline.text_encoder
+    if _is_group_offload_enabled(model):
+        return False
+    paths = ['model', 'model.language_model', 'model.visual']
+    for name in paths:
+        try:
+            model.get_submodule(name)
+        except AttributeError as error:
+            raise RuntimeError(f'텍스트 인코더의 블록 오프로딩 구조를 확인하지 못했습니다: {name}') from error
+    model.to('cpu')
+    apply_group_offloading(model, onload_device=device, offload_type='block_level',
+                           num_blocks_per_group=1, use_stream=False, low_cpu_mem_usage=True,
+                           block_modules=['model', 'language_model', 'visual', 'lm_head', 'embed_tokens'])
+    return True
+
+
+def release_conditioning_groups(pipeline):
+    """A failed forward skips post-hooks; release its still resident blocks."""
+    groups = set()
+    for module in pipeline.text_encoder.modules():
+        registry = getattr(module, '_diffusers_hook', None)
+        hook = registry.get_hook('group_offloading') if registry else None
+        if hook is not None and id(hook.group) not in groups:
+            hook.group.offload_()
+            groups.add(id(hook.group))

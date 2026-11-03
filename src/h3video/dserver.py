@@ -58,6 +58,17 @@ class WorkerDied(RuntimeError):
     """The owned model workers ended; the API can reload them without killing the web server."""
 
 
+class WorkerTimeout(WorkerDied):
+    """A live worker made no useful progress within its configured deadline."""
+
+
+def timeout_seconds(name, default):
+    value = float(os.environ.get(name, default))
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f'{name} must be a positive finite number of seconds')
+    return value
+
+
 def local_path(uri: str) -> str:
     """file:// → 경로 (http(s) 는 그대로: diffusers 가 직접 받는다)."""
     if uri.startswith("file://"):
@@ -100,6 +111,14 @@ class Engine:
     """파이프라인 적재와 생성. 작업은 한 번에 하나 (GPU 하나를 나눠 쓰지 않는다)."""
 
     def __init__(self, model_dir: str, variant: str, devices: list[str], dtype: str = "bfloat16", attn: str | None = None, performance: str | None = None):
+        try:
+            self._initialize(model_dir, variant, devices, dtype, attn, performance)
+        except Exception:
+            if getattr(self, '_proc', None) is not None or getattr(self, '_listener', None) is not None:
+                self._stop_workers()
+            raise
+
+    def _initialize(self, model_dir: str, variant: str, devices: list[str], dtype: str, attn: str | None, performance: str | None):
         model_path = Path(model_dir).expanduser().resolve()
         if not model_path.is_dir():
             raise ValueError(f'기존 로컬 영상 모델 폴더를 찾지 못했습니다: {model_path}. 자동 다운로드는 하지 않습니다.')
@@ -137,7 +156,7 @@ class Engine:
             m = ComponentsManager()
             self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m)
             self.cond.load_components(dtype=dt)
-            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
+            self._offload_manager(m, devices[0], offload_strategy)
             self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks.pop("decode")}).init_pipeline(model_dir)
             self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
             den = blocks.sub_blocks["denoise"]
@@ -162,7 +181,7 @@ class Engine:
             m = ComponentsManager()
             self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m)
             self.cond.load_components(dtype=dt)
-            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
+            self._offload_manager(m, devices[0], offload_strategy)
             self._cond_dev = devices[0]
             den = blocks.sub_blocks["denoise"]   # 워커로 보낼 상태 값: 디노이징 입력 + 작업을 고르는 값(references·image·last_image)
             self._den_keys = {i.name for i in den.inputs if i.name} | {n for n in (getattr(den, "block_trigger_inputs", None) or []) if n}
@@ -181,7 +200,7 @@ class Engine:
             m_c = ComponentsManager()
             self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m_c)
             self.cond.load_components(dtype=dt)
-            m_c.enable_auto_cpu_offload(device=devices[1], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
+            self._offload_manager(m_c, devices[1], offload_strategy)
             self._cond_dev = devices[1]
             self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks.pop("decode")}).init_pipeline(model_dir)
             self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
@@ -189,7 +208,7 @@ class Engine:
             self.pipe = blocks.init_pipeline(model_dir, components_manager=m_main)   # 남은 블록 = 디노이징
             tname = "transformer" if variant == "fl2va" else "transformer_ref"
             self.pipe.load_components(names=[tname, "scheduler", "audio_scheduler"], dtype=dt)
-            m_main.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
+            self._offload_manager(m_main, devices[0], offload_strategy)
             self.pipe.vae = geometry(AutoencoderKLMiniMaxH3, model_dir, "vae")   # 디노이징은 VAE 설정값만 읽는다
             self.pipe.audio_vae = geometry(AutoencoderKLMiniMaxH3Audio, model_dir, "audio_vae")
             self.geo = self.cond
@@ -199,7 +218,7 @@ class Engine:
             m = ComponentsManager()
             self.pipe = blocks.init_pipeline(model_dir, components_manager=m)
             self.pipe.load_components(workflow=load_wf, dtype=dt)
-            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
+            self._offload_manager(m, devices[0], offload_strategy)
             self.geo = self.pipe
         self._steps_done = 0
         if self.mode not in ("cp", "fsdp_cp"):   # cp 는 워커가 영상 모델을 갖고 진행 스텝을 보내 준다
@@ -212,6 +231,9 @@ class Engine:
                 log(f"어텐션 백엔드: {attn}")
             self.transformer.register_forward_hook(self._count)
         self._te_pipe = self.pipe if self.mode == "single" else self.cond   # 텍스트 인코더(= Qwen3-VL-32B-Instruct)가 있는 쪽
+        self.conditioning_offload = 'component'
+        if self.performance == 'memory' and str(devices[0]).startswith('cuda'):
+            self.enable_conditioning_offload()
         if self.mode not in ("cp", "fsdp_cp"):   # 영상 모델이 올라갈 장: 전체 - 영상 모델 - CUDA 컨텍스트 등 1.5GB
             self.cp_world, self.headroom = 1, None
             if self.mode == "sharded":
@@ -231,6 +253,20 @@ class Engine:
     def _record_component(self, component_id, component_type, device):
         self._active_component = dict(id=component_id, type=component_type, device=device)
 
+    def _offload_manager(self, manager, device, strategy):
+        from .placement import record_component_calls
+        manager.enable_auto_cpu_offload(device=device, memory_reserve_margin=MARGIN, offload_strategy=strategy)
+        record_component_calls(manager, self._record_component)
+
+    def enable_conditioning_offload(self):
+        from .placement import offload_conditioning_text
+        changed = offload_conditioning_text(self._te_pipe, getattr(self, '_cond_dev', self.devices[0]))
+        self.conditioning_offload = 'block'
+        if self.torch.cuda.is_available():
+            self.torch.cuda.empty_cache()
+        log('조건 텍스트 인코더: 블록별 CPU 오프로딩 (가중치·정밀도·스텝 유지, 전송 시간 증가 가능)')
+        return changed
+
     def _check_cancel(self):
         if getattr(self, "_cancel_file", None) and self._cancel_file.is_file():
             raise GenerationCancelled("영상 생성을 중지했습니다.")
@@ -241,9 +277,31 @@ class Engine:
 
     def _stage(self, name: str) -> None:
         self._check_cancel()
+        self._phase_memory()
         self.stage, self._stage_t0 = name, time.time()
+        self._active_component = None
+        torch = getattr(self, 'torch', None)
+        if torch is not None and torch.cuda.is_initialized():
+            for device in self._owned_memory_devices():
+                torch.cuda.reset_peak_memory_stats(device)
         if getattr(self, "on_stage", None):
             self.on_stage(name)
+
+    def _owned_memory_devices(self):
+        if self.mode in ('cp', 'fsdp_cp'):
+            return [self._cond_dev]
+        return [d for d in self.devices if str(d).startswith('cuda')]
+
+    def _phase_memory(self):
+        torch = getattr(self, 'torch', None)
+        if not getattr(self, 'stage', None) or torch is None or not torch.cuda.is_initialized():
+            return
+        from .memory import memory_report
+        snapshot = memory_report(torch, self._owned_memory_devices(), self.stage, '')
+        snapshot.update(kind='telemetry', component=getattr(self, '_active_component', None),
+                        conditioningOffload=getattr(self, 'conditioning_offload', 'component'))
+        if getattr(self, 'on_memory', None):
+            self.on_memory(snapshot)
 
     # ── 메모리 검사: 길이·해상도·조건이 영상 모델 장에 들어가는지 생성 전에 본다 ──
     def rows(self, plan: dict, h: int, w: int, state=None) -> dict:
@@ -321,9 +379,15 @@ class Engine:
         import subprocess
         import sys
         from multiprocessing.connection import Listener
+        import tempfile
+        self._worker_options = dict(model_dir=model_dir, variant=variant, devs=list(devs), dtype=dtype, attn=attn)
+        self._worker_diagnostics = Path(tempfile.mkdtemp(prefix='h3-worker-'))
+        self._worker_request_id = 'startup'
+        self._worker_started_at = time.monotonic()
         key = secrets.token_hex(16)
         self._listener = Listener(("127.0.0.1", 0), authkey=key.encode())
-        env = dict(os.environ, H3_CP_AUTHKEY=key, H3_DWORKER_WEIGHT_SHARD="fsdp" if self.mode=="fsdp_cp" else "replicated")
+        env = dict(os.environ, H3_CP_AUTHKEY=key, H3_DWORKER_WEIGHT_SHARD="fsdp" if self.mode=="fsdp_cp" else "replicated",
+                   H3_WORKER_DIAGNOSTICS=str(self._worker_diagnostics))
         if all(d == "cpu" for d in devs):
             env["H3_CP_DEVICE"] = "cpu"
         else:   # 워커가 볼 GPU = 이 프로세스가 보는 GPU 중 첫 장을 뺀 나머지 (nvidia-smi 번호로)
@@ -345,28 +409,77 @@ class Engine:
         atexit.register(self._stop_workers)
 
     def _wait_workers(self) -> None:
+        deadline = getattr(self, '_worker_started_at', time.monotonic()) + timeout_seconds('H3_WORKER_START_TIMEOUT', 1800)
         box = {}
-        th = threading.Thread(target=lambda: box.setdefault("conn", self._listener.accept()), daemon=True)
+        def accept():
+            try:
+                box['conn'] = self._listener.accept()
+            except Exception as error:
+                box['error'] = error
+        th = threading.Thread(target=accept, daemon=True)
         th.start()
         while th.is_alive():
+            self._check_worker_failure()
+            if time.monotonic() >= deadline:
+                self._stop_workers()
+                raise WorkerTimeout('영상 모델 worker 준비 제한 시간을 넘었습니다. H3_WORKER_START_TIMEOUT을 확인하세요.')
             if self._proc.poll() is not None:
+                self._check_worker_failure()
                 raise WorkerDied(f"영상 모델 워커가 준비 중에 끝났다 (종료 코드 {self._proc.returncode}). 바로 위 [dworker] 로그가 원인")
-            th.join(1)
+            th.join(min(1, max(.001, deadline-time.monotonic())))
+        if 'error' in box:
+            raise WorkerDied(f"영상 모델 worker 연결 실패: {box['error']}") from box['error']
         self._conn = box["conn"]
-        msg = self._recv().decode().split(maxsplit=3)
+        msg = self._recv(deadline).decode().split(maxsplit=3)
+        if len(msg) < 3 or msg[0] != 'READY':
+            raise WorkerDied('영상 모델 worker의 준비 응답이 올바르지 않습니다.')
         self.headroom = int(msg[2]) if len(msg) > 2 and int(msg[2]) > 0 else None   # 영상 모델 장의 남는 자리
         self.cp_world = int(msg[1])
         if len(msg)>3:self.placement=json.loads(msg[3])
         log(f"영상 모델 워커 연결: {msg[1]}장" + (f", 영상 모델 올린 뒤 가장 빠듯한 장 여유 {self.headroom / 2**30:.1f}GB" if self.headroom else ""))
 
-    def _recv(self) -> bytes:
+    def _check_worker_failure(self):
+        from .worker_state import read_failures
+        from .memory import GenerationMemoryError
+        reports = read_failures(getattr(self, '_worker_diagnostics', None), getattr(self, '_worker_request_id', None))
+        if not reports:
+            return
+        report = next((r for r in reports if r.get('kind') in ('cuda', 'host')), reports[0])
+        report = dict(report, workerReports=reports, workerFailed=True,
+                      diagnosticDirectory=str(self._worker_diagnostics), executionMode=self.mode)
+        if report.get('kind') in ('cuda', 'host'):
+            raise GenerationMemoryError(RuntimeError(report['error']), report)
+        error = WorkerDied('영상 모델 worker: '+report.get('error', 'unknown error'))
+        error.report = report
+        raise error
+
+    def restart_denoiser_workers(self):
+        options = dict(self._worker_options)
+        self._worker_unavailable = True
+        self._stop_workers()
+        try:
+            self._start_workers(**options)
+            self._wait_workers()
+        except Exception:
+            self._stop_workers()
+            raise
+        self._worker_unavailable = False
+
+    def _recv(self, deadline=None) -> bytes:
+        deadline = deadline if deadline is not None else time.monotonic() + timeout_seconds('H3_WORKER_START_TIMEOUT', 1800)
         while True:
+            self._check_worker_failure()
+            if time.monotonic() >= deadline:
+                self._stop_workers()
+                raise WorkerTimeout('영상 모델 worker가 제한 시간 안에 진척을 보내지 않았습니다. worker 기록을 보존했습니다.')
             try:
-                if self._conn.poll(1):
+                if self._conn.poll(min(1, max(.001, deadline-time.monotonic()))):
                     return self._conn.recv_bytes()
             except (EOFError, OSError) as e:
+                self._check_worker_failure()
                 raise WorkerDied(f"영상 모델 워커와 연결이 끊겼다 ({type(e).__name__}). 바로 위 [dworker] 로그가 원인") from e
             if self._proc.poll() is not None:
+                self._check_worker_failure()
                 raise WorkerDied(f"영상 모델 워커가 끝났다 (종료 코드 {self._proc.returncode}). 바로 위 [dworker] 로그가 원인")
 
     def _stop_workers(self) -> None:
@@ -403,18 +516,26 @@ class Engine:
 
     def _denoise_remote(self, state, g, gen: dict) -> dict:
         import torch
-        state.values.pop("generator", None)   # 생성기는 직렬화가 안 된다 → 상태만 넘긴다
-        keep = self._den_keys | {k for ks in state.kwargs_mapping.values() for k in ks}
-        state.values = {k: v for k, v in state.values.items() if k in keep}   # 원본 레퍼런스 영상 등은 빼서 크기를 줄인다
+        from .worker_state import denoiser_state
+        state = denoiser_state(state, self._den_keys)
         cuda_keys = [k for k, v in state.values.items() if _on_cuda(v)]   # diffusers 가 CPU 에 둔 값(text_token_tags 등)은 CPU 로 둔다
         state.values = _to_cpu(state.values)
         buf = io.BytesIO()
-        torch.save({"state": state, "gen_state": g.get_state(), "kwargs": gen, "cuda_keys": cuda_keys, "cancel_file": str(self._cancel_file) if getattr(self, "_cancel_file", None) else None}, buf)
+        self._worker_request_id = uuid.uuid4().hex
+        torch.save({"state": state, "gen_state": g.get_state(), "kwargs": gen, "cuda_keys": cuda_keys,
+                    "request_id": self._worker_request_id,
+                    "cancel_file": str(self._cancel_file) if getattr(self, "_cancel_file", None) else None}, buf)
         self._conn.send_bytes(buf.getvalue())
+        started = last_progress = time.monotonic()
+        previous_step = 0
+        stall_timeout = timeout_seconds('H3_DENOISE_STALL_TIMEOUT', 600)
+        total_timeout = timeout_seconds('H3_DENOISE_TIMEOUT', 7200)
         while True:
-            m = self._recv()
+            m = self._recv(min(started + total_timeout, last_progress + stall_timeout))
             if m.startswith(b"PROG "):
                 self._steps_done = int(m[5:])
+                if self._steps_done > previous_step:
+                    last_progress, previous_step = time.monotonic(), self._steps_done
             elif m.startswith(b"DONE"):
                 res = torch.load(io.BytesIO(m[4:]), weights_only=False)
                 if res.get("cancelled"):
@@ -501,6 +622,15 @@ class Engine:
         return resolve_canvas_size(aw, ah, self.geo.canvas_multiple, short_edge, max_px)
 
     def _load_inputs(self, plan: dict) -> tuple[dict, object]:
+        prepared = getattr(self, '_request_preparation', None)
+        if prepared is not None and prepared.inputs is not None:
+            return dict(prepared.inputs), prepared.first_image
+        result = self._load_inputs_uncached(plan)
+        if prepared is not None:
+            prepared.remember(*result)
+        return result
+
+    def _load_inputs_uncached(self, plan: dict) -> tuple[dict, object]:
         from diffusers.modular_pipelines.minimax_h3 import (MiniMaxH3AudioReference, MiniMaxH3ImageReference,
                                                             MiniMaxH3VideoReference)
         from diffusers.utils import load_image
@@ -562,6 +692,15 @@ class Engine:
         return visuals, labels
 
     def _prepare_prompt(self, plan: dict, inputs: dict) -> str:
+        prepared = getattr(self, '_request_preparation', None)
+        if prepared is not None and prepared.prompt is not None:
+            return prepared.prompt
+        prompt = self._prepare_prompt_uncached(plan, inputs)
+        if prepared is not None:
+            prepared.prompt = prompt
+        return prompt
+
+    def _prepare_prompt_uncached(self, plan: dict, inputs: dict) -> str:
         """다듬기가 켜져 있고 공식 형식이 아니면 공식 가이드대로 다시 쓰고, 키프레임 정렬 줄을 실제 길이로 붙인다."""
         from . import rewrite as RW
         task, slots = plan["task"], [s for s, _ in plan["keyframes"]]
@@ -604,14 +743,31 @@ class Engine:
             with request_reference_geometry(self._te_pipe, plan["short_edge"], plan["task"] == "ref2va"):
                 return self._run(plan, out_path, on_progress)
         except Exception as error:
+            if getattr(error, 'report', None):
+                raise
             if not is_memory_failure(error):
                 raise
-            report = memory_report(self.torch, getattr(self, "devices", []), getattr(self, "stage", "준비"), error)
+            devices = self._owned_memory_devices() if hasattr(self, '_cond_dev') else getattr(self, 'devices', [])
+            report = memory_report(self.torch, devices, getattr(self, "stage", "준비"), error)
             report['executionMode'] = getattr(self,'mode',None)
             if getattr(self,'stage','') not in ('생성 중','디노이징') or getattr(self,'mode',None)=='single':
                 report['component'] = getattr(self,'_active_component',None)
+            report['conditioningOffload'] = getattr(self, 'conditioning_offload', 'component')
             log("OOM 상세: " + json.dumps(report, ensure_ascii=False))
             raise GenerationMemoryError(error, report) from error
+        finally:
+            if getattr(self, 'conditioning_offload', None) == 'block':
+                from .placement import release_conditioning_groups
+                import sys
+                pending = sys.exc_info()[1]
+                try:
+                    release_conditioning_groups(self._te_pipe)
+                except Exception as cleanup:
+                    if pending is None:
+                        raise
+                    if getattr(pending, 'report', None):
+                        pending.report['cleanupError'] = str(cleanup)
+                    log(f'조건 모델 정리 실패 (원래 오류 보존): {cleanup}')
 
     def _run(self, plan: dict, out_path: Path, on_progress) -> str:
         from diffusers.utils.export_utils import encode_video
@@ -712,6 +868,7 @@ class Engine:
                      audio_sample_rate=r["sampling_rate"])
         self._check_cancel()
         tmp.replace(out_path)
+        self._phase_memory()
         return inputs["prompt"]
 
 
@@ -827,35 +984,92 @@ class Server:
         self.save(job)
 
     def run_with_recovery(self, job, out):
+        from .preparation import RequestPreparation
+        prepared = RequestPreparation()
+        try:
+            return self._run_with_recovery(job, out, prepared)
+        finally:
+            if self.engine is not None:
+                self.engine._request_preparation = None
+                self.engine.on_memory = None
+            prepared.close()
+
+    def _run_with_recovery(self, job, out, prepared):
         from .memory import release_request_memory, is_memory_failure
         for attempt in range(3):
             if job.get('cancel_requested'): raise GenerationCancelled('영상 생성을 중지했습니다.')
             try:
-                if self.engine is None: raise RuntimeError(self.engine_error or '영상 모델 복구가 필요합니다.')
+                if self.engine is None or self.engine_status != 'ready':
+                    raise RuntimeError(self.engine_error or '영상 모델 복구가 필요합니다.')
                 self.engine._cancel_file = self.out_dir / f"{job['id']}.cancel"
+                self.engine._request_preparation = prepared
                 self.engine.on_stage = lambda stage: self.report_stage(job, stage)
+                def on_memory(snapshot):
+                    job.setdefault('memoryHistory', []).append(snapshot)
+                    self.save(job)
+                self.engine.on_memory = on_memory
+                if attempt == 0 and isinstance(self.engine, Engine):
+                    self.engine.stage = None
                 return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
             except Exception as error:
                 if getattr(error, "report", None):
                     job["memory_failure"] = error.report
+                    job.setdefault('failureHistory', []).append(error.report)
                 if not (is_memory_failure(error) or isinstance(error,WorkerDied)) or attempt >= 2:
                     raise
                 if getattr(error, "report", {}).get("kind") == "host":
                     raise  # Output resizing cannot recover a host-RAM allocation failure.
+                if getattr(error, 'report', {}).get('cleanupError'):
+                    raise
+                if isinstance(error, WorkerTimeout):
+                    raise  # Retrying the same stalled collective wastes the allocation.
                 traceback.print_exc()
                 release_request_memory(error, getattr(self.engine,'torch',None))
                 if job.get('cancel_requested'): raise GenerationCancelled('영상 생성을 중지했습니다.') from error
-                edge = min(job['plan'].get('short_edge',768), (576,448)[attempt])
+                report = getattr(error, 'report', {})
+                component = report.get('component') or {}
+                conditioning = (report.get('stage') == '다듬는 중' or
+                                'text' in component.get('id', '').lower() or
+                                'qwen' in component.get('type', '').lower())
+                old_edge = job['plan'].get('short_edge',768)
+                edge, action = old_edge, 'worker 재시작'
+                if conditioning and getattr(self.engine, 'conditioning_offload', 'component') != 'block' and hasattr(self.engine, 'enable_conditioning_offload'):
+                    try:
+                        self.engine.enable_conditioning_offload()
+                    except Exception as failure:
+                        self.engine_status, self.engine_error = 'unavailable', str(failure)
+                        if hasattr(self.engine, '_stop_workers'):
+                            self.engine._stop_workers()
+                        raise
+                    action = '텍스트 인코더 블록 오프로딩'
+                elif isinstance(error, WorkerDied):
+                    if attempt >= 1:
+                        raise
+                else:
+                    if report.get('stage') == '다듬는 중':
+                        raise  # Output geometry does not change rewrite's visual inputs.
+                    edge = next((size for size in (576,448) if size < old_edge), old_edge)
+                    if edge == old_edge:
+                        raise
+                    action = '입력·출력 geometry 축소'
                 job['plan']['short_edge'] = edge
-                job.update(progress=0, metrics=None, recovery=dict(attempt=attempt+1,short_edge=edge))
+                recovery = dict(attempt=attempt+1, short_edge=edge, previous_short_edge=old_edge, action=action,
+                                failed_stage=report.get('stage', getattr(self.engine, 'stage', None)))
+                job.setdefault('recoveryHistory', []).append(recovery)
+                job.update(progress=0, metrics=None, recovery=recovery)
                 self.engine._steps_done = 0
-                self.report_stage(job, f'메모리 복구 · {edge}px로 재시도 {attempt+1}/2')
+                phase = (f'메모리 복구 · {edge}px로 재시도 {attempt+1}/2' if edge < old_edge
+                         else f'복구 · {action} · {edge}px · 재시도 {attempt+1}/2')
+                self.report_stage(job, phase)
                 out.with_suffix('.part.mp4').unlink(missing_ok=True)
                 # The per-request reference geometry follows the smaller edge too.
                 # A sharded engine has no failed collective to rebuild after a CUDA OOM.
                 # Re-loading every model here caused a second large RAM/VRAM allocation.
-                if isinstance(error, WorkerDied) or getattr(self.engine, "mode", None) in ("cp", "fsdp_cp"):
-                    self.reload_engine(error)
+                if isinstance(error, WorkerDied) or report.get('workerFailed'):
+                    if hasattr(self.engine, 'restart_denoiser_workers'):
+                        self.engine.restart_denoiser_workers()
+                    else:
+                        self.reload_engine(error)
 
     def cancel(self, vid: str) -> dict:
         with self.lock:
@@ -921,6 +1135,12 @@ class Server:
         except Exception as e:   # noqa: BLE001 — 실패는 작업 상태로 돌려주고 서버는 계속 돈다
             traceback.print_exc()
             job.update(status="failed", error=f"{type(e).__name__}: {e}")
+            if getattr(e, 'report', None):
+                job['memory_failure'] = e.report
+            if isinstance(e, WorkerDied) or getattr(e, 'report', {}).get('workerFailed') or getattr(e, 'report', {}).get('cleanupError') or getattr(self.engine, '_worker_unavailable', False):
+                if hasattr(self.engine, '_stop_workers'):
+                    self.engine._stop_workers()
+                self.engine_status, self.engine_error = 'unavailable', str(e)
             from .memory import release_request_memory
             release_request_memory(e, getattr(self.engine, 'torch', None))
             out.with_suffix('.part.mp4').unlink(missing_ok=True)
@@ -990,7 +1210,9 @@ def make_handler(srv: Server):
                                   {"status": srv.engine_status, "engine": "diffusers", "variant": srv.variant,
                                    "error":srv.engine_error,"model_path":(srv.engine_options or {}).get('model_dir'),
                                    "active":active,"memory_mode":getattr(srv.engine, "mode", None), "performance_mode":getattr(srv.engine,"performance",None),
-                                   "placement":getattr(srv.engine, "placement", None)})
+                                   "placement":getattr(srv.engine, "placement", None),
+                                   "conditioning_offload":getattr(srv.engine, 'conditioning_offload', None),
+                                   "worker_diagnostics":str(getattr(srv.engine, '_worker_diagnostics', ''))})
             if path == "/v1/models":
                 if srv.engine_status != 'ready': return self._json(503,{'error':srv.engine_error or '영상 모델 복구 중'})
                 return self._json(200, {"object": "list", "data": [{"id": "MiniMaxAI/MiniMax-H3", "object": "model",
@@ -1003,7 +1225,7 @@ def make_handler(srv: Server):
                 if len(parts) == 4:
                     from .progress import generation_snapshot
                     payload = {k: job.get(k) for k in ("id", "status", "progress", "error", "created_at",
-                               "started_at", "finished_at", "task", "prompt_used", "stage", "recovery", "memory_failure", "phaseHistory")}
+                               "started_at", "finished_at", "task", "prompt_used", "stage", "recovery", "memory_failure", "phaseHistory", "memoryHistory", "recoveryHistory", "failureHistory")}
                     payload['metrics'] = generation_snapshot(job)
                     return self._json(200, payload)
                 if parts[4] == "content":

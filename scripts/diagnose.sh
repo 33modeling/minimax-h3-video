@@ -21,9 +21,11 @@ CG="/sys/fs/cgroup$(awk -F: '$1=="0"{print $3; exit}' /proc/self/cgroup 2>/dev/n
 for f in "$CG/memory.events" /sys/fs/cgroup/memory/memory.oom_control; do [[ -r $f ]] && { echo "oom_kill (container, total so far): $(awk '$1=="oom_kill"{print $2}' "$f")"; break; }; done
 LC_ALL=C free -g 2>/dev/null | awk '/^Mem:/{print "RAM(host) total " $2 "GB used " $3 "GB available " $7 "GB"}'
 U=$(ls -t "$H3_LOG_DIR"/up-*.log 2>/dev/null | head -1); [[ -n "$U" ]] && grep -aE "\[up\] STOP|SERVER DIED|CAUSE" "$U" | tail -3
-S=$(ls -t "$H3_LOG_DIR"/serve-*.log 2>/dev/null | head -1)
-if [[ -n "$S" ]]; then echo "serve log: $S"; tr '\r' '\n' < "$S" | grep -aE "step [0-9]+/[0-9]+|STALL|[0-9]+%\|" | tail -2
-  echo "error lines:"; tr '\r' '\n' < "$S" | grep -aiE "error|exception|traceback|killed|signal|exitcode|nccl|out of memory|File \"" | tail -25; fi
+for VARIANT in fl2va ref2va; do
+  S=$(ls -t "$H3_LOG_DIR"/serve-"$VARIANT"-*.log 2>/dev/null | head -1)
+  if [[ -n "$S" ]]; then echo "$VARIANT serve log: $S"; tr '\r' '\n' < "$S" | grep -aE "step [0-9]+/[0-9]+|STALL|[0-9]+%\|" | tail -2
+    echo "error lines:"; tr '\r' '\n' < "$S" | grep -aiE "error|exception|traceback|killed|signal|exitcode|nccl|out of memory|File \"" | tail -25; fi
+done
 sec "코드"; (cd "$ROOT" && git -c safe.directory='*' log -1 --format='%h %ad %s' --date=format:'%m-%d %H:%M' 2>/dev/null || echo "git 없음 (rsync 로 올린 코드)"); ls -l --time-style=+%m-%d_%H:%M "$ROOT/src/h3video/dserver.py" | awk '{print "dserver.py 수정 시각:", $6}'
 sec "엔진·경로"; echo "H3_ENGINE=$H3_ENGINE VENV=$VENV"; echo "DIFFUSERS_DIR=${H3_DIFFUSERS_DIR:-} GUIDE_DIR=${H3_GUIDE_DIR:-}"
 sec "설치·Python·패키지 (읽기 전용)"
@@ -34,7 +36,9 @@ else
 fi
 if [[ "$H3_ENGINE" == diffusers ]]; then
   sec "설치된 Diffusers 모델 파일 (읽기 전용)"
-  python3 "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant fl2va
+  for VARIANT in fl2va ref2va; do
+    python3 "$ROOT/scripts/check_diffusers_model.py" "$H3_DIFFUSERS_DIR" --variant "$VARIANT"
+  done
 fi
 sec "서버 상태"; bash "$ROOT/scripts/status.sh" 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
 sec "GPU"; nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader 2>&1; python3 "$ROOT/scripts/h3_leftovers.py" --gpu-users 2>&1
@@ -52,4 +56,16 @@ for s in j.get("scenes", []):
     print(f"  장면{s['index'] + 1} {s.get('task')} {s.get('duration')}초 상태 {s.get('status')} 단계 {s.get('stage')} video_id {s.get('video_id')} 오류 {s.get('error')}")
 PY
 else echo "없음"; fi
-for f in $(ls -t "$STORAGE_ROOT"/dserver/*/*.json 2>/dev/null | head -2); do echo "-- 서버 작업 $f"; python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('status'), d.get('error')); print('memory_failure:', d.get('memory_failure')); print('recovery:', d.get('recovery'))" "$f"; done
+python3 - "$STORAGE_ROOT/dserver" <<'PY'
+import json, pathlib, sys
+for variant in ('fl2va', 'ref2va'):
+    files = sorted((pathlib.Path(sys.argv[1])/variant).glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:2]
+    for file in files:
+        print('-- 서버 작업', file)
+        try:
+            data = json.loads(file.read_text())
+            for name in ('status', 'error', 'memory_failure', 'failureHistory', 'recoveryHistory', 'memoryHistory'):
+                print(name+':', data.get(name))
+        except (OSError, ValueError) as error:
+            print('읽기 실패:', error)
+PY
