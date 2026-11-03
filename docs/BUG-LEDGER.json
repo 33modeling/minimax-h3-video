@@ -4,7 +4,7 @@
   "scope": "minimax-h3-video 전체 main 이력과 본 대화의 H3 설치/CLI/설명서/77 배포 관련 문제",
   "sourceCutoff": "1d5fdf59de5b37b11af123579bcbff1da94253db",
   "sourceHistoryCount": 181,
-  "caseCount": 35,
+  "caseCount": 36,
   "boardSnapshotItems": 16,
   "responsibleForCurrentWork": "Codex",
   "retention": "기존 사건과 실패 증거를 삭제하지 않는다. 수정·재발·추가 검증은 날짜와 근거를 붙여 사건 이벤트로 추가한다. 이전 스냅샷은 덮어쓰지 않는다.",
@@ -927,6 +927,31 @@
           "note": "추가 여섯 항목 반영·CPU/CLI/작은 CUDA 검증. H100 전체 완주·속도와 실배치 적용은 미확인."
         }
       ]
+    },
+    {
+      "id": "H3-036",
+      "title": "CLI 실행 파일/PATH 미확인 상태에서 가상환경 기본 경로를 반복 안내",
+      "kind": "CLI 실행·안내",
+      "boardIds": [
+        1214
+      ],
+      "responsibility": "Codex가 서버 up.sh와 생성 명령을 혼동하고 원격 노드의 실제 존재 확인 없이 기본 실행 파일 경로를 반복 안내함",
+      "introducedCommit": null,
+      "knownBadSnapshot": "f8f6529e650cc36652d09e38057fb30021695273",
+      "fixCommits": [
+        "72723ac7978b111c2e693ad830fd012ebfb04ff6"
+      ],
+      "evidence": [
+        "bug-ledger/evidence/cli-launcher-20261104.json",
+        "bug-ledger/evidence/cli-launcher-tests-20261104.log"
+      ],
+      "status": "루트 실행 파일·PATH 수정과 실제 CLI 검사 통과 / 사용자 GPU 노드 적용 미확인",
+      "details": [
+        "실행 파일은 설치한 저장소의 ./h3video; console script 등록 없이 직접 실행",
+        "기존 VENV Python 우선·없으면 python3; 모델/torch 재설치·서버 자동 시작 없음",
+        "cluster_env를 읽으면 저장소도 PATH에 추가",
+        "사용자 GPU 노드의 실제 VENV 파일 상태는 확인하지 못했고 명령 실패 원인을 특정 환경 변경으로 단정하지 않음"
+      ]
     }
   ],
   "snapshotHashes": {
@@ -958,7 +983,9 @@
     "evidence/ref-runtime-20261104/cpu-regressions-pre-fixture.log": "1ab6d738bbb51843ed5b20e1cae4984f61d9e56428f66a877aa45fad111687f1",
     "evidence/ref-runtime-20261104/cpu-regressions-complete.log": "c878e84a8db0123a8db764bec43b59b434f0aae0dc9b4606f88ee8b02d3986e6",
     "evidence/ref-runtime-20261104/tiny-cuda-final.log": "cf77217a863adfc61c24010ecc86e1845f97b18fdfaf37cec119a1620298cf4e",
-    "evidence/ref-runtime-20261104/cli-final.log": "60134260084f137ba670f2bbb76c39933fe1b2b6cea75e80e5c7583749c4f74d"
+    "evidence/ref-runtime-20261104/cli-final.log": "60134260084f137ba670f2bbb76c39933fe1b2b6cea75e80e5c7583749c4f74d",
+    "evidence/cli-launcher-20261104.json": "d5723d034a9e49383d3fb4c452ba99ee63ec413eb95d562000125d33189416f2",
+    "evidence/cli-launcher-tests-20261104.log": "9da907b4d45a1b1ef72e8d3c6a71a98bc1a242993081aceca0a65aaf421c2c59"
   },
   "archiveBoard": {
     "id": 1153,
@@ -1058,6 +1085,13 @@
       ],
       "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
       "note": "기존 감사/실패를 보존하고 수정 검증 원본을 추가. H100 실제 성능·사용자 OOM 해결은 미확인 유지."
+    },
+    {
+      "at": "2026-11-03T23:16:14.746739+00:00",
+      "action": "cli-launcher-fixed",
+      "case": "H3-036",
+      "codeCommit": "72723ac7978b111c2e693ad830fd012ebfb04ff6",
+      "note": "기존 경로 안내 오류를 보존하고 저장소 루트 CLI 실행 파일을 추가. 사용자 GPU 노드 적용은 미확인."
     }
   ]
 }

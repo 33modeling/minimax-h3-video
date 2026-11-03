@@ -1,0 +1,54 @@
+{
+  "codeCommit": "72723ac7978b111c2e693ad830fd012ebfb04ff6",
+  "boardId": 1214,
+  "launcherTests": {
+    "testsRun": 5,
+    "failures": 0,
+    "errors": 0
+  },
+  "CLI": {
+    "testsRun": 82,
+    "successful": true,
+    "excluded": [
+      {
+        "test": "test_cli.CliTest.test_ctrl_c_marks_job_and_prints_fetch_hint",
+        "reason": "Requires an actual child HTTP endpoint; interrupted metadata is covered separately"
+      },
+      {
+        "test": "test_cli.CliTest.test_stdin_prompt",
+        "reason": "Child process cannot share an in-memory parent transport; stdin dry-run is covered separately"
+      },
+      {
+        "test": "test_cli_ux.CtrlCTest.test_ctrl_c_on_json_says_how_to_resume",
+        "reason": "Child process does not share the in-memory HTTP registry"
+      },
+      {
+        "test": "test_qa_web_cli.CliFixesTest.test_ctrl_c_points_at_the_stopped_job",
+        "reason": "Child process does not share the in-memory HTTP registry"
+      }
+    ],
+    "realServersStarted": 0,
+    "GPUInferenceMeasured": false
+  },
+  "twoSourceBuilds": {
+    "profiles": [
+      "pages",
+      "local"
+    ],
+    "declaredFiles": 15,
+    "hashesVerified": true,
+    "frontendUnchanged": true
+  },
+  "runtimeSourceHashes": {
+    "h3video": "c8bca6fe00b30e61b39a23bb63de4809274f75cf5a9916b8a2819c9164a1d50f",
+    "scripts/cluster_env.sh": "5959374f59f3041e473cf06f9ab874ec9bd841173c9857b6149fe25b13858d0e",
+    "tests/test_cli_launcher.py": "f273c3c4c7911c8dfaf9ed024d020a850e6da8b9b9b8a4b95c02ab19bba8e99c"
+  },
+  "limits": {
+    "userH100NodeFileExistenceVerified": false,
+    "userH100CodeUpdated": false,
+    "servicesStarted": 0,
+    "modelOrTorchPackagesReinstalled": false
+  },
+  "responsibility": "Codex: confused server up.sh with generation command and repeatedly supplied a default path without verifying the installed node."
+}

@@ -1,0 +1,10 @@
+test_cluster_environment_exposes_repository_launcher_without_pip_entry (test_cli_launcher.CLILauncherTest.test_cluster_environment_exposes_repository_launcher_without_pip_entry) ... ok
+test_existing_venv_python_is_used_without_console_entry_point (test_cli_launcher.CLILauncherTest.test_existing_venv_python_is_used_without_console_entry_point) ... ok
+test_explicit_python_does_not_silently_use_another_interpreter (test_cli_launcher.CLILauncherTest.test_explicit_python_does_not_silently_use_another_interpreter) ... ok
+test_missing_venv_console_script_still_runs_help_from_another_directory (test_cli_launcher.CLILauncherTest.test_missing_venv_console_script_still_runs_help_from_another_directory) ... ok
+test_symlink_spaces_and_generation_dry_run_preserve_arguments (test_cli_launcher.CLILauncherTest.test_symlink_spaces_and_generation_dry_run_preserve_arguments) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.706s
+
+OK
