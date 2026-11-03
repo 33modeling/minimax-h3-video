@@ -225,6 +225,7 @@ else
   export VENV="${H3_VENV:-$STORAGE_ROOT/.venv}"
 fi
 [[ -x "$VENV/bin/python" ]] && export PATH="$VENV/bin:$PATH"
+case ":$PATH:" in *":$_REPO_ROOT:"*) ;; *) export PATH="$_REPO_ROOT:$PATH" ;; esac
 export PYTHONPATH="$_REPO_ROOT/src:$_REPO_ROOT/shortform${PYTHONPATH:+:$PYTHONPATH}"   # h3video + shorts(숏폼)
 
 # 체크아웃의 runs/ 는 심볼릭 링크만 허용 (fdmu 패턴)

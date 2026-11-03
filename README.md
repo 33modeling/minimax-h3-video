@@ -82,15 +82,21 @@ GPU 개수와 번호는 직접 적지 않습니다. 실제 배정 결과는 실�
 
 ### 5. 창 2 · CLI 실행
 
-같은 H100 노드에 새 터미널을 열고 같은 코드 폴더로 이동합니다. h3video 명령이 없더라도 아래처럼 설치된 Python으로 직접 실행할 수 있습니다.
+실행 파일은 **설치한 저장소 바로 아래 `h3video`**입니다. `bin/h3video` 등록이나 가상환경 활성화가 빠져도 저장소에서 바로 실행합니다.
+
+```bash
+./h3video gen "프롬프트" --video "/실제경로/참고영상.mp4"
+```
+
+새 터미널에서 짧은 `h3video` 명령을 쓰려면 같은 코드 폴더에서 환경을 읽습니다. 저장소 실행 파일도 PATH에 추가하므로 pip 실행 파일이 없어도 됩니다.
 
 ```bash
 cd /user-volume/minimax-h3-video
 source scripts/cluster_env.sh
-"$VENV/bin/python" -m h3video.cli --help
+h3video gen --help
 ```
 
-아래 예시는 실행 파일 등록 여부와 관계없이 같은 Python 직접 실행 형식을 사용합니다. h3video가 정상 등록돼 있다면 그 부분을 h3video로 줄여 써도 됩니다.
+저장소 런처는 기존 VENV의 Python을 우선 사용하고 없으면 python3로 CLI를 실행합니다. 모델·CUDA 패키지를 설치하거나 서버를 자동 시작하지 않습니다. 기존 H3 환경 변수와 저장된 CLI 설정을 유지합니다. 아래의 Python 직접 실행 예시도 같은 CLI이며, `./h3video`로 줄여 쓸 수 있습니다.
 
 ### 6. 이미지·영상 원본 위치 확인
 

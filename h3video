@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Repository-local CLI. No pip registration, shell activation or GPU service.
+set -euo pipefail
+CLI_SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$CLI_SOURCE" ]]; do
+  CLI_PARENT="$(cd -P -- "$(dirname -- "$CLI_SOURCE")" && pwd)"
+  CLI_SOURCE="$(readlink -- "$CLI_SOURCE")"
+  [[ "$CLI_SOURCE" == /* ]] || CLI_SOURCE="$CLI_PARENT/$CLI_SOURCE"
+done
+CLI_ROOT="$(cd -P -- "$(dirname -- "$CLI_SOURCE")" && pwd)"
+CLI_PYTHON=""
+if [[ -n "${H3_CLI_PYTHON:-}" ]]; then
+  CLI_PYTHON="$(command -v -- "$H3_CLI_PYTHON" || true)"
+  [[ -n "$CLI_PYTHON" && -x "$CLI_PYTHON" ]] || {
+    echo "H3_CLI_PYTHON 실행 파일을 찾지 못했습니다: $H3_CLI_PYTHON" >&2; exit 127;
+  }
+else
+  CLI_STORAGE="${STORAGE_ROOT:-${GROUP_VOLUME_ROOT:-/group-volume}/minsoo3.kim/minimax-h3-video}"
+  for CLI_ENV in "${VENV:-}" "${H3_DIFFUSERS_VENV:-}" "${H3_VENV:-}" \
+      "$CLI_STORAGE/.venv-diffusers" "$CLI_ROOT/.venv-diffusers" \
+      "$CLI_ROOT/.venv-video-studio" "$CLI_ROOT/.venv"; do
+    if [[ -n "$CLI_ENV" && -x "$CLI_ENV/bin/python" ]]; then
+      CLI_PYTHON="$CLI_ENV/bin/python"; break
+    fi
+  done
+  [[ -n "$CLI_PYTHON" ]] || CLI_PYTHON="$(command -v python3 || true)"
+fi
+[[ -n "$CLI_PYTHON" ]] || { echo 'Python 3.10 이상이 필요합니다. H3_CLI_PYTHON에 설치된 Python 경로를 지정하세요.' >&2; exit 127; }
+export PYTHONPATH="$CLI_ROOT/src:$CLI_ROOT/shortform${PYTHONPATH:+:$PYTHONPATH}"
+exec "$CLI_PYTHON" -m h3video.cli "$@"
