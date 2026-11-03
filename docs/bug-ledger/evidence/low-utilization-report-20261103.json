@@ -1,0 +1,40 @@
+{
+  "reportedAt": "2026-11-03T04:26:26.442612+00:00",
+  "userReport": {
+    "output": "1080p, 16 seconds",
+    "elapsed": "more than 90 minutes",
+    "gpuUtilizationPercent": 17,
+    "termination": "user reports allocation ended because utilization was low"
+  },
+  "rawNodeLogsAvailable": false,
+  "executedCommandKnown": false,
+  "executedCommitKnown": false,
+  "confirmedSourceStructure": {
+    "snapshot": "6d8ad3b372033dc552f3a7cad84a978c45f0d904",
+    "introducedBy": "82a2bccec786adedb0da96d49ce830546dba7836",
+    "defaultMode": "layer device_map sharding, sequential blocks",
+    "withReferenceAllocation": "4+4 across separate FL2VA/Ref2VA servers",
+    "default16SecondCliPlan": [
+      8,
+      8
+    ],
+    "defaultModelEvaluationsPerScene": 49,
+    "cliGenerationSizes": [
+      512,
+      576,
+      640,
+      704,
+      768
+    ]
+  },
+  "unknown": [
+    "Actual stage responsible for the reported time",
+    "Whether 1080p means generation, retouch/upscale, export or another build",
+    "Per-GPU utilization traces and provider termination event",
+    "Whether any OOM retries occurred"
+  ],
+  "hardwareBenchmarkMeasured": false,
+  "performanceFixImplemented": false,
+  "reasonNotToSwitchBlindly": "Returning to the earlier CP replica layout without node memory evidence can reproduce the previously reported OOM.",
+  "boardId": 1167
+}
