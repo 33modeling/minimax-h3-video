@@ -4,7 +4,7 @@
   "scope": "minimax-h3-video 전체 main 이력과 본 대화의 H3 설치/CLI/설명서/77 배포 관련 문제",
   "sourceCutoff": "1d5fdf59de5b37b11af123579bcbff1da94253db",
   "sourceHistoryCount": 181,
-  "caseCount": 32,
+  "caseCount": 33,
   "boardSnapshotItems": 16,
   "responsibleForCurrentWork": "Codex",
   "retention": "기존 사건과 실패 증거를 삭제하지 않는다. 수정·재발·추가 검증은 날짜와 근거를 붙여 사건 이벤트로 추가한다. 이전 스냅샷은 덮어쓰지 않는다.",
@@ -807,6 +807,29 @@
         "메타데이터 재배포로 source/progress/performanceSourceCommit=96d3c47 및 공개15해시/MIME 검증",
         "최초 실패 배포와 정정 증거 모두 보존"
       ]
+    },
+    {
+      "id": "H3-033",
+      "title": "조건 GPU의 텍스트 인코더·VAE 동시 상주로 활성값 여유 소진 가능",
+      "kind": "메모리·컴포넌트 수명",
+      "boardIds": [
+        1190
+      ],
+      "responsibility": "Codex가 최근 구성 변경에서 기존 자동 오프로딩 정책을 유지했음. 사용자 현재 OOM과의 일치·최초 작성 실행 주체는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "c6b90c6d08b03f303f191d90230a1511837792a1",
+      "fixCommits": [],
+      "evidence": [
+        "bug-ledger/evidence/ref-conditioning-memory-20261103.json",
+        "tests/test_conditioning_memory.py"
+      ],
+      "status": "코드 문제 재현·수정·작은 CUDA 검증 / 사용자 H100 OOM 단계 미확인",
+      "details": [
+        "4/8장 모두 조건 모델은 한 GPU를 사용함",
+        "실제 Diffusers 후크의 기본 정책을 모의 예산으로 대조해 동시 상주 반례 재현",
+        "전환 시 기존 모델을 내리는 정책으로 수정; 현재 모델 연속 호출은 유지",
+        "실제 H100 전체 모델·4/8장 충분 여부를 검증했다고 보고하지 않음"
+      ]
     }
   ],
   "snapshotHashes": {
@@ -828,7 +851,8 @@
     "evidence/performance-frame-log-regression-20261103.log": "dec7b0e6d7924c047f36d79e53138df86c7ac66cb64044d5af562564541ec165",
     "evidence/performance-fix-validation-20261103.json": "9654bdbe860ad9378532d356101d3148c780d96027fac0e2087ecca44d376056",
     "evidence/performance-wrong-source-publication-20261103.json": "bb4e3fd30b7ac7f8dd66515b6ccffb944d2741220c37072525634385703e96db",
-    "evidence/performance-fix-publication-20261103.json": "7a478eba9bb6049d912522fd0a5315d9407c3f552a7841b77d7459466c75b7cf"
+    "evidence/performance-fix-publication-20261103.json": "7a478eba9bb6049d912522fd0a5315d9407c3f552a7841b77d7459466c75b7cf",
+    "evidence/ref-conditioning-memory-20261103.json": "511b715b33c75fee8abe6d20b6f6d5bb6bccf9143a32f4235c98ea0d555aa118"
   },
   "archiveBoard": {
     "id": 1153,
@@ -900,6 +924,12 @@
         "H3-032"
       ],
       "note": "성능코드96d3c47·공개/실제 Arcade 반영. 배포 sourceSHA 표기 회귀도 박제·정정. H100 전체성능1167은doing 유지."
+    },
+    {
+      "at": "2026-11-03T12:52:19.063225+00:00",
+      "action": "ref-oom-user-report-and-component-memory-fix",
+      "case": "H3-033",
+      "note": "사용자 현재 Ref OOM 보고 보존. 실제 오류 로그 요청 중. 4장 충분·8장 완주를 주장하지 않음."
     }
   ]
 }

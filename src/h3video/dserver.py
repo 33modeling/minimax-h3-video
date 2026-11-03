@@ -116,6 +116,8 @@ class Engine:
         import torch
         from diffusers import ComponentsManager, ModularPipeline
         from diffusers.modular_pipelines import SequentialPipelineBlocks
+        from .placement import ExclusiveStageOffload
+        offload_strategy = ExclusiveStageOffload(self._record_component)
 
         self.torch, self.variant = torch, variant
         self.devices = list(devices)
@@ -135,7 +137,7 @@ class Engine:
             m = ComponentsManager()
             self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m)
             self.cond.load_components(dtype=dt)
-            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
+            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
             self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks.pop("decode")}).init_pipeline(model_dir)
             self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
             den = blocks.sub_blocks["denoise"]
@@ -160,7 +162,7 @@ class Engine:
             m = ComponentsManager()
             self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m)
             self.cond.load_components(dtype=dt)
-            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
+            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
             self._cond_dev = devices[0]
             den = blocks.sub_blocks["denoise"]   # 워커로 보낼 상태 값: 디노이징 입력 + 작업을 고르는 값(references·image·last_image)
             self._den_keys = {i.name for i in den.inputs if i.name} | {n for n in (getattr(den, "block_trigger_inputs", None) or []) if n}
@@ -179,7 +181,7 @@ class Engine:
             m_c = ComponentsManager()
             self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m_c)
             self.cond.load_components(dtype=dt)
-            m_c.enable_auto_cpu_offload(device=devices[1], memory_reserve_margin=MARGIN)
+            m_c.enable_auto_cpu_offload(device=devices[1], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
             self._cond_dev = devices[1]
             self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks.pop("decode")}).init_pipeline(model_dir)
             self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
@@ -187,7 +189,7 @@ class Engine:
             self.pipe = blocks.init_pipeline(model_dir, components_manager=m_main)   # 남은 블록 = 디노이징
             tname = "transformer" if variant == "fl2va" else "transformer_ref"
             self.pipe.load_components(names=[tname, "scheduler", "audio_scheduler"], dtype=dt)
-            m_main.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
+            m_main.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
             self.pipe.vae = geometry(AutoencoderKLMiniMaxH3, model_dir, "vae")   # 디노이징은 VAE 설정값만 읽는다
             self.pipe.audio_vae = geometry(AutoencoderKLMiniMaxH3Audio, model_dir, "audio_vae")
             self.geo = self.cond
@@ -197,7 +199,7 @@ class Engine:
             m = ComponentsManager()
             self.pipe = blocks.init_pipeline(model_dir, components_manager=m)
             self.pipe.load_components(workflow=load_wf, dtype=dt)
-            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
+            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN, offload_strategy=offload_strategy)
             self.geo = self.pipe
         self._steps_done = 0
         if self.mode not in ("cp", "fsdp_cp"):   # cp 는 워커가 영상 모델을 갖고 진행 스텝을 보내 준다
@@ -225,6 +227,9 @@ class Engine:
         self.max_pixels = int(getattr(cfg, "canvas_max_pixels", 768 * 1344) or 768 * 1344)
         log(f"적재 완료 ({time.time() - t0:.0f}초): variant={variant} 작업={'/'.join(TASKS[variant])} "
             f"캔버스 배수={self.geo.canvas_multiple} 기본 짧은 변={self.short_edge}")
+
+    def _record_component(self, component_id, component_type, device):
+        self._active_component = dict(id=component_id, type=component_type, device=device)
 
     def _check_cancel(self):
         if getattr(self, "_cancel_file", None) and self._cancel_file.is_file():
@@ -602,6 +607,9 @@ class Engine:
             if not is_memory_failure(error):
                 raise
             report = memory_report(self.torch, getattr(self, "devices", []), getattr(self, "stage", "준비"), error)
+            report['executionMode'] = getattr(self,'mode',None)
+            if getattr(self,'stage','') not in ('생성 중','디노이징') or getattr(self,'mode',None)=='single':
+                report['component'] = getattr(self,'_active_component',None)
             log("OOM 상세: " + json.dumps(report, ensure_ascii=False))
             raise GenerationMemoryError(error, report) from error
 

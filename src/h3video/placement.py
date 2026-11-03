@@ -120,3 +120,22 @@ def request_reference_geometry(pipeline, short_edge, enabled=True):
         yield
     finally:
         pipeline.register_to_config(**original)
+
+
+class ExclusiveStageOffload:
+    """Evict previous component weights before admitting the next component.
+
+    AutoOffloadStrategy budgets weights plus a fixed reserve, not the incoming
+    model's activation peak. Keeping a 32B text encoder beside a small VAE can
+    therefore exhaust their single conditioning GPU despite idle denoiser GPUs.
+    Hook installation initially offloads every model. Evicting all peers at each
+    transition maintains one resident component; repeated calls to that same
+    component do not transfer its weights again.
+    """
+    def __init__(self, on_transition=None):
+        self.on_transition = on_transition
+
+    def __call__(self, hooks, model_id, model, execution_device):
+        if self.on_transition:
+            self.on_transition(str(model_id), type(model).__name__, str(execution_device))
+        return list(hooks)

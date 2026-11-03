@@ -1,0 +1,46 @@
+{
+  "recordedAt": "2026-11-03T12:52:19.063225+00:00",
+  "case": "H3-033",
+  "boardId": 1190,
+  "userReport": "지금은 그냥 메모리 터져서 아무것도 안돼 . ref는",
+  "previousSource": "c6b90c6d08b03f303f191d90230a1511837792a1",
+  "confirmedCodeIssue": "AutoOffloadStrategy considers incoming weights and fixed reserve; can retain a 32B text encoder while VAE activations exceed the same conditioning GPU free memory.",
+  "reproduction": {
+    "kind": "Actual Diffusers hooks and strategy, simulated weights/activation budget; not H100 measurement",
+    "budgetGiB": 80,
+    "textWeightGiB": 60,
+    "vaeWeightGiB": 2,
+    "vaeActivationGiB": 22,
+    "oldResult": "Text and VAE both remain resident; fixture activation allocation fails",
+    "newResult": "Evict text weights first; fixture VAE operation succeeds; repeated calls to same component do not retransfer"
+  },
+  "fix": "ExclusiveStageOffload applied to all engine ComponentsManager offload paths; OOM report includes execution mode and active conditioning component",
+  "CPU": {
+    "testsRun": 37,
+    "failures": 0,
+    "errors": 0,
+    "skips": [
+      "test_real_cpu_gpu_eviction_preserves_outputs (test_conditioning_memory.ActualOffloadTransitionTest.test_real_cpu_gpu_eviction_preserves_outputs)"
+    ],
+    "simulation": "80GiB budget,60GiB encoder,2GiB VAE,22GiB VAE activations; not H100 measurement",
+    "serversStarted": 0
+  },
+  "actualCuda": {
+    "testsRun": 1,
+    "successful": true,
+    "gpu": "RTX3050",
+    "torch": "2.11.0+cu128",
+    "model": "two tiny Linear16 modules",
+    "verified": "Actual CPU/GPU eviction with equal outputs",
+    "H100Measured": false
+  },
+  "limits": {
+    "userNodeReachable": false,
+    "userNodeTracebackReceived": false,
+    "userOOMStageKnown": false,
+    "H100FullModelVerified": false,
+    "fourGpuSufficiencyProven": false,
+    "eightGpuSufficiencyProven": false,
+    "servicesStartedOrRestarted": 0
+  }
+}
