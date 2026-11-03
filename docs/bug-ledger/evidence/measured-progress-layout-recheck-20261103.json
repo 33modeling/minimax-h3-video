@@ -1,0 +1,82 @@
+{
+  "recordedAt": "2026-11-03T04:49:12.132244+00:00",
+  "case": "H3-029",
+  "initialBrowserFailure": {
+    "profile": "local",
+    "width": 1440,
+    "message": "status overflow 1440",
+    "passedWidthsBeforeFailure": [
+      320,
+      390,
+      820
+    ]
+  },
+  "correction": "Give measured status text a full flex row with min-width:0 and overflow-wrap:anywhere; include editor.css in declared build hashes",
+  "recheck": {
+    "rows": [
+      {
+        "width": 320,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 390,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 820,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      },
+      {
+        "width": 1440,
+        "passed": true,
+        "checks": [
+          "native-step-counter",
+          "frame-count",
+          "phase-and-assembly",
+          "pause",
+          "disconnect-and-reconnect",
+          "done",
+          "no-horizontal-status-overflow"
+        ]
+      }
+    ],
+    "serversStarted": 0,
+    "modelInferenceMeasured": false
+  },
+  "newMeasuredTests": {
+    "tests": 6,
+    "successful": true
+  },
+  "sceneViewMetricsTest": {
+    "tests": 1,
+    "successful": true
+  },
+  "realServersStarted": 0
+}

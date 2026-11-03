@@ -82,3 +82,5 @@
 @media (pointer:coarse){.vw button,.vw .vw-download,.vw select,.vw input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),.vw .vw-shot-controls [data-action=edit-shot]{min-height:44px}}
 @media(min-width:701px){.vw-form.vw-delivery-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .vr-head>button{flex:none;white-space:nowrap}
+/* Long measured counters keep their own row at every viewport width. */
+.h3-studio .vw-status span{min-width:0;flex-basis:100%;overflow-wrap:anywhere}
