@@ -283,16 +283,26 @@
       "introducedCommit": "6da494775e6972df58f6753319cc7e99c7d0cc36",
       "knownBadSnapshot": null,
       "fixCommits": [
-        "82a2bccec786adedb0da96d49ce830546dba7836"
+        "82a2bccec786adedb0da96d49ce830546dba7836",
+        "af39a71eb827c1f46a0b6425821faf6472c8b9f8"
       ],
       "evidence": [
         "git history self.reload_engine(error)",
-        "docs/h100-oom-sharding-20261103.json"
+        "docs/h100-oom-sharding-20261103.json",
+        "bug-ledger/evidence/ref-runtime-validation-20261104.json"
       ],
       "status": "sharded CUDA OOM의 전체 재적재 제거",
       "details": [
         "재적재 코드 존재는 확인됨",
         "사용자 H100에서 재적재가 차지한 실제 최대 메모리는 미측정"
+      ],
+      "events": [
+        {
+          "at": "2026-11-03T21:14:39.343544+00:00",
+          "action": "additional-runtime-fix",
+          "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
+          "note": "추가 여섯 항목 반영·CPU/CLI/작은 CUDA 검증. H100 전체 완주·속도와 실배치 적용은 미확인."
+        }
       ]
     },
     {
@@ -620,7 +630,8 @@
       "introducedCommit": "82a2bccec786adedb0da96d49ce830546dba7836",
       "knownBadSnapshot": "6d8ad3b372033dc552f3a7cad84a978c45f0d904",
       "fixCommits": [
-        "96d3c47f71abe12ad09ccf3938e8c297e6f3998d"
+        "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
+        "af39a71eb827c1f46a0b6425821faf6472c8b9f8"
       ],
       "evidence": [
         "bug-ledger/evidence/low-utilization-report-20261103.json",
@@ -628,7 +639,8 @@
         "src/h3video/dserver.py",
         "src/h3video/spec.py",
         "bug-ledger/evidence/performance-fix-validation-20261103.json",
-        "bug-ledger/evidence/performance-fix-publication-20261103.json"
+        "bug-ledger/evidence/performance-fix-publication-20261103.json",
+        "bug-ledger/evidence/ref-runtime-validation-20261104.json"
       ],
       "status": "코드·원격·공개/실제 Arcade 검증 / H100 전체 속도·완주 미확인",
       "details": [
@@ -666,6 +678,12 @@
           "codeCommit": "96d3c47f71abe12ad09ccf3938e8c297e6f3998d",
           "deployment": "59fdfdcf-5bbb-46c8-83bd-aeb7badec3e2",
           "note": "실제 H100 다중 GPU 성능 수치/완주로 보고하지 않음"
+        },
+        {
+          "at": "2026-11-03T21:14:39.343544+00:00",
+          "action": "additional-runtime-fix",
+          "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
+          "note": "추가 여섯 항목 반영·CPU/CLI/작은 CUDA 검증. H100 전체 완주·속도와 실배치 적용은 미확인."
         }
       ]
     },
@@ -818,10 +836,13 @@
       "responsibility": "Codex가 최근 구성 변경에서 기존 자동 오프로딩 정책을 유지했음. 사용자 현재 OOM과의 일치·최초 작성 실행 주체는 미확정",
       "introducedCommit": null,
       "knownBadSnapshot": "c6b90c6d08b03f303f191d90230a1511837792a1",
-      "fixCommits": [],
+      "fixCommits": [
+        "af39a71eb827c1f46a0b6425821faf6472c8b9f8"
+      ],
       "evidence": [
         "bug-ledger/evidence/ref-conditioning-memory-20261103.json",
-        "tests/test_conditioning_memory.py"
+        "tests/test_conditioning_memory.py",
+        "bug-ledger/evidence/ref-runtime-validation-20261104.json"
       ],
       "status": "코드 문제 재현·수정·작은 CUDA 검증 / 사용자 H100 OOM 단계 미확인",
       "details": [
@@ -829,6 +850,14 @@
         "실제 Diffusers 후크의 기본 정책을 모의 예산으로 대조해 동시 상주 반례 재현",
         "전환 시 기존 모델을 내리는 정책으로 수정; 현재 모델 연속 호출은 유지",
         "실제 H100 전체 모델·4/8장 충분 여부를 검증했다고 보고하지 않음"
+      ],
+      "events": [
+        {
+          "at": "2026-11-03T21:14:39.343544+00:00",
+          "action": "additional-runtime-fix",
+          "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
+          "note": "추가 여섯 항목 반영·CPU/CLI/작은 CUDA 검증. H100 전체 완주·속도와 실배치 적용은 미확인."
+        }
       ]
     },
     {
@@ -841,17 +870,28 @@
       "responsibility": "Codex가 현재 소스 감사·CPU 대조 재현으로 확인. 최초 유입·실행 작성자는 미확정",
       "introducedCommit": null,
       "knownBadSnapshot": "7b705452056e93f55ed07a9ef94d64ac2919bd9d",
-      "fixCommits": [],
+      "fixCommits": [
+        "af39a71eb827c1f46a0b6425821faf6472c8b9f8"
+      ],
       "evidence": [
         "docs/ADDITIONAL-REF-AUDIT-20261104.md",
         "bug-ledger/evidence/additional-ref-reproductions-20261104.json",
-        "bug-ledger/evidence/additional-ref-reproduce-20261104.py"
+        "bug-ledger/evidence/additional-ref-reproduce-20261104.py",
+        "bug-ledger/evidence/ref-runtime-validation-20261104.json"
       ],
-      "status": "CPU 대조 재현·현황판 open / 미수정·사용자 H100 원인 일치 미확인",
+      "status": "코드 수정·CPU 대조/작은 실제 CUDA 관련 경로 검증 / 사용자 H100 원인·완주 미확인",
       "details": [
         "실제 Engine._denoise_remote CPU 캡처에서 원본·전처리 배열 모두 잔존",
         "전송 2,367,201바이트; 메타데이터 예시 7,521바이트는 크기 비교만 검증",
         "host RAM·직렬화 개선 대상; 사용자 VRAM OOM 직접 원인 미확정"
+      ],
+      "events": [
+        {
+          "at": "2026-11-03T21:14:39.343544+00:00",
+          "action": "additional-runtime-fix",
+          "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
+          "note": "추가 여섯 항목 반영·CPU/CLI/작은 CUDA 검증. H100 전체 완주·속도와 실배치 적용은 미확인."
+        }
       ]
     },
     {
@@ -864,17 +904,28 @@
       "responsibility": "Codex가 현재 소스 감사·CPU 대조 재현으로 확인. 최초 유입·실행 작성자는 미확정",
       "introducedCommit": null,
       "knownBadSnapshot": "7b705452056e93f55ed07a9ef94d64ac2919bd9d",
-      "fixCommits": [],
+      "fixCommits": [
+        "af39a71eb827c1f46a0b6425821faf6472c8b9f8"
+      ],
       "evidence": [
         "docs/ADDITIONAL-REF-AUDIT-20261104.md",
         "bug-ledger/evidence/additional-ref-reproductions-20261104.json",
-        "bug-ledger/evidence/additional-ref-reproduce-20261104.py"
+        "bug-ledger/evidence/additional-ref-reproduce-20261104.py",
+        "bug-ledger/evidence/ref-runtime-validation-20261104.json"
       ],
-      "status": "CPU 대조 재현·현황판 open / 미수정·사용자 H100 원인 일치 미확인",
+      "status": "코드 수정·CPU 대조/작은 실제 CUDA 관련 경로 검증 / 사용자 H100 원인·완주 미확인",
       "details": [
         "실제 worker 요청 문장을 추출해 모의 계산으로 대조: OOM DONE 0회, 일반 오류 1회",
         "stderr traceback은 유지되지만 구조화 오류·rank별 메모리 기록은 유실",
         "전체 분산 worker·실제 H100 OOM 검증 아님"
+      ],
+      "events": [
+        {
+          "at": "2026-11-03T21:14:39.343544+00:00",
+          "action": "additional-runtime-fix",
+          "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
+          "note": "추가 여섯 항목 반영·CPU/CLI/작은 CUDA 검증. H100 전체 완주·속도와 실배치 적용은 미확인."
+        }
       ]
     }
   ],
@@ -901,7 +952,13 @@
     "evidence/ref-conditioning-memory-20261103.json": "511b715b33c75fee8abe6d20b6f6d5bb6bccf9143a32f4235c98ea0d555aa118",
     "evidence/additional-ref-reproduce-20261104.py": "cc4f19e6d25ad3e196a3fbc6e88ee9c64046488c19fdaf60f2b6ad15806d0437",
     "evidence/additional-ref-reproductions-20261104.json": "c9807645ae072faa6ff1c6e087fb94bdfd726057c69d869936867fa1e81433fe",
-    "evidence/rpc-reference-reproduction-20261104.json": "1a25b9f365bd1d93ef64829067cb4247b16212023bf061afd385a7529e482056"
+    "evidence/rpc-reference-reproduction-20261104.json": "1a25b9f365bd1d93ef64829067cb4247b16212023bf061afd385a7529e482056",
+    "evidence/ref-runtime-validation-20261104.json": "d44dc563be9a22e7a794a7433937ae7ccb18f494fcd6d37e31b31441c1e567bd",
+    "evidence/ref-runtime-20261104/cpu-regressions-first.log": "614c215b379d67e4b1801397a02becf1675f2043af467726ae293030edeccab6",
+    "evidence/ref-runtime-20261104/cpu-regressions-pre-fixture.log": "1ab6d738bbb51843ed5b20e1cae4984f61d9e56428f66a877aa45fad111687f1",
+    "evidence/ref-runtime-20261104/cpu-regressions-complete.log": "c878e84a8db0123a8db764bec43b59b434f0aae0dc9b4606f88ee8b02d3986e6",
+    "evidence/ref-runtime-20261104/tiny-cuda-final.log": "cf77217a863adfc61c24010ecc86e1845f97b18fdfaf37cec119a1620298cf4e",
+    "evidence/ref-runtime-20261104/cli-final.log": "60134260084f137ba670f2bbb76c39933fe1b2b6cea75e80e5c7583749c4f74d"
   },
   "archiveBoard": {
     "id": 1153,
@@ -988,6 +1045,19 @@
         "H3-035"
       ],
       "note": "새 결함 두 건만 open 기록. 실행 코드 변경 없음. 기존 33항목과 실패 증거·H100 미확인 상태를 보존."
+    },
+    {
+      "at": "2026-11-03T21:14:39.343544+00:00",
+      "action": "ref-runtime-fix-verified",
+      "cases": [
+        "H3-013",
+        "H3-028",
+        "H3-033",
+        "H3-034",
+        "H3-035"
+      ],
+      "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
+      "note": "기존 감사/실패를 보존하고 수정 검증 원본을 추가. H100 실제 성능·사용자 OOM 해결은 미확인 유지."
     }
   ]
 }

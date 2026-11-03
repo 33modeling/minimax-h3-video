@@ -1,0 +1,90 @@
+test_health_and_generate (test_client.ClientTest.test_health_and_generate) ... ok
+test_stage_input (test_client.ClientTest.test_stage_input) ... ok
+test_web (test_client.ClientTest.test_web) ... ok
+test_web_cors (test_client.ClientTest.test_web_cors)
+--cors-origin: 허용한 출처에만 CORS 헤더, 기본은 꺼짐. ... ok
+test_worker_chain (test_client.ClientTest.test_worker_chain) ... ok
+test_plan_scenes (test_client.SpecTest.test_plan_scenes) ... ok
+test_prompt (test_client.SpecTest.test_prompt) ... ok
+test_validate (test_client.SpecTest.test_validate) ... ok
+test_helpers (test_client.TuiHelpersTest.test_helpers) ... ok
+test_batch_jobs_show (test_cli.CliTest.test_batch_jobs_show) ... ok
+test_dry_run_needs_no_server_and_matches_chain (test_cli.CliTest.test_dry_run_needs_no_server_and_matches_chain) ... ok
+test_early_errors (test_cli.CliTest.test_early_errors) ... ok
+test_fetch_ref_uses_ref_server (test_cli.CliTest.test_fetch_ref_uses_ref_server) ... ok
+test_health_exit_code (test_cli.CliTest.test_health_exit_code) ... ok
+test_no_command_prints_help (test_cli.CliTest.test_no_command_prints_help) ... ok
+test_options_after_command_and_out_copy (test_cli.CliTest.test_options_after_command_and_out_copy) ... ok
+test_job_command_parses_back_to_the_same_settings (test_cli_ux.CommandForJobTest.test_job_command_parses_back_to_the_same_settings) ... ok
+test_plain_errors (test_cli_ux.CommandForJobTest.test_plain_errors) ... ok
+test_output_dir_and_errors (test_cli_ux.ConfigTest.test_output_dir_and_errors) ... ok
+test_precedence_flag_env_config_default (test_cli_ux.ConfigTest.test_precedence_flag_env_config_default) ... ok
+test_compact_status (test_cli_ux.ProgressTest.test_compact_status) ... ok
+test_one_line_on_tty_plain_lines_otherwise (test_cli_ux.ProgressTest.test_one_line_on_tty_plain_lines_otherwise) ... ok
+test_aliases_and_typos (test_cli_ux.QuickStartAndRoutingTest.test_aliases_and_typos) ... ok
+test_files_first (test_cli_ux.QuickStartAndRoutingTest.test_files_first) ... ok
+test_no_args_prints_quick_start (test_cli_ux.QuickStartAndRoutingTest.test_no_args_prints_quick_start) ... ok
+test_prompt_first_is_gen (test_cli_ux.QuickStartAndRoutingTest.test_prompt_first_is_gen) ... ok
+test_health_and_doctor_say_what_to_do (test_cli_ux.ServerCheckTest.test_health_and_doctor_say_what_to_do) ... ok
+test_result_path_and_open (test_cli_ux.ServerCheckTest.test_result_path_and_open) ... ok
+test_batch_errors_in_korean (test_qa_web_cli.CliFixesTest.test_batch_errors_in_korean) ... ok
+test_json_only_is_success_when_chosen_scenes_are_done (test_qa_web_cli.CliFixesTest.test_json_only_is_success_when_chosen_scenes_are_done) ... ok
+test_missing_media_file_names_are_not_prompts (test_qa_web_cli.CliFixesTest.test_missing_media_file_names_are_not_prompts) ... ok
+test_server_down_message_uses_the_real_port (test_qa_web_cli.CliFixesTest.test_server_down_message_uses_the_real_port) ... ok
+test_server_http_errors_in_plain_words (test_qa_web_cli.CliFixesTest.test_server_http_errors_in_plain_words) ... ok
+test_show_scene_status_in_korean_and_config_lines_up (test_qa_web_cli.CliFixesTest.test_show_scene_status_in_korean_and_config_lines_up) ... ok
+test_story_json_error_says_where (test_qa_web_cli.CliFixesTest.test_story_json_error_says_where) ... ok
+test_storybook_maker_zip_goes_to_json (test_qa_web_cli.CliFixesTest.test_storybook_maker_zip_goes_to_json)
+동화책 만들기 '파일 받기' zip 이 영상 만들기(h3video json)에 그대로 들어가야 한다 (전에는 zip 을 프롬프트 글로 읽으려 했다). ... ok
+test_download_link_sends_attachment_with_korean_name (test_qa_web_cli.WebFixesTest.test_download_link_sends_attachment_with_korean_name) ... ok
+test_number_fields_give_plain_korean_errors (test_qa_web_cli.WebFixesTest.test_number_fields_give_plain_korean_errors) ... ok
+test_story_remembers_chosen_ratio_for_same_settings_again (test_qa_web_cli.WebFixesTest.test_story_remembers_chosen_ratio_for_same_settings_again) ... ok
+test_ui_has_offline_defaults_and_download_param (test_qa_web_cli.WebFixesTest.test_ui_has_offline_defaults_and_download_param) ... ok
+test_unexpected_server_errors_come_back_as_json (test_qa_web_cli.WebFixesTest.test_unexpected_server_errors_come_back_as_json)
+업로드 폴더에 쓸 수 없을 때 연결을 그냥 끊어 화면이 '웹 서버에 연결하지 못했어요'로 잘못 알리던 것 → 500 + 쉬운 말. ... ok
+test_web_port_in_use_says_what_to_do (test_qa_web_cli.WebFixesTest.test_web_port_in_use_says_what_to_do) ... ok
+test_oom_pauses_same_project_queue_but_other_project_runs (test_stop.StopTest.test_oom_pauses_same_project_queue_but_other_project_runs) ... ok
+test_remote_cancel_error_during_wait_still_leaves_resumable_job (test_stop.StopTest.test_remote_cancel_error_during_wait_still_leaves_resumable_job) ... ok
+test_remote_failure_retries_new_request_after_reload_and_keeps_finished_scene (test_stop.StopTest.test_remote_failure_retries_new_request_after_reload_and_keeps_finished_scene) ... ok
+test_stop_cancels_supported_backend_and_resume_only_resubmits_unfinished_scene (test_stop.StopTest.test_stop_cancels_supported_backend_and_resume_only_resubmits_unfinished_scene) ... ok
+test_stop_during_submit_cancels_late_remote_request_and_stays_paused (test_stop.StopTest.test_stop_during_submit_cancels_late_remote_request_and_stays_paused) ... ok
+test_stop_exits_current_wait_and_resume_reuses_submitted_video (test_stop.StopTest.test_stop_exits_current_wait_and_resume_reuses_submitted_video) ... ok
+test_stopping_queued_job_removes_only_that_job_and_is_repeatable (test_stop.StopTest.test_stopping_queued_job_removes_only_that_job_and_is_repeatable) ... ok
+test_frame_100_scenes_keep_full_duration_and_model_requests_remain_supported (test_recovery.RecoveryTest.test_frame_100_scenes_keep_full_duration_and_model_requests_remain_supported) ... ok
+test_http_pause_edit_continue_restore_and_restart (test_recovery.RecoveryTest.test_http_pause_edit_continue_restore_and_restart) ... ok
+test_pause_restart_edit_and_resume_preserve_native_scene_outputs (test_recovery.RecoveryTest.test_pause_restart_edit_and_resume_preserve_native_scene_outputs) ... ok
+test_story_partial_edit_and_restore_keeps_other_clips_and_old_job_files (test_recovery.RecoveryTest.test_story_partial_edit_and_restore_keeps_other_clips_and_old_job_files) ... ok
+test_resume_updates_only_unfinished_scene_prompts_and_keeps_job_seed_and_completed_files (test_resume_edited_candidate.ResumeEditedCandidateTest.test_resume_updates_only_unfinished_scene_prompts_and_keeps_job_seed_and_completed_files) ... ok
+test_all_silent_and_single_scene (test_output.OutputTest.test_all_silent_and_single_scene) ... ok
+test_bad_input_keeps_previous_output (test_output.OutputTest.test_bad_input_keeps_previous_output) ... ok
+test_korean_quotes_and_spaces_in_filenames (test_output.OutputTest.test_korean_quotes_and_spaces_in_filenames) ... ok
+test_mixed_orientation_frame_rate_and_missing_audio (test_output.OutputTest.test_mixed_orientation_frame_rate_and_missing_audio) ... ok
+test_actual_png_metadata_and_mixed_inspection_results (test_cli_inputs.InputTests.test_actual_png_metadata_and_mixed_inspection_results) ... ok
+test_audio_only_reference_is_rejected_before_the_gpu (test_cli_inputs.InputTests.test_audio_only_reference_is_rejected_before_the_gpu) ... ok
+test_auto_and_explicit_inputs_keep_argument_order (test_cli_inputs.InputTests.test_auto_and_explicit_inputs_keep_argument_order) ... ok
+test_auto_input_still_enforces_reference_count_limits (test_cli_inputs.InputTests.test_auto_input_still_enforces_reference_count_limits) ... ok
+test_corrupt_media_is_reported_instead_of_claimed_valid (test_cli_inputs.InputTests.test_corrupt_media_is_reported_instead_of_claimed_valid) ... ok
+test_empty_files_are_rejected (test_cli_inputs.InputTests.test_empty_files_are_rejected) ... ok
+test_failed_staging_never_publishes_a_partial_input (test_cli_inputs.InputTests.test_failed_staging_never_publishes_a_partial_input) ... ok
+test_file_uri_with_remote_authority_is_rejected (test_cli_inputs.InputTests.test_file_uri_with_remote_authority_is_rejected) ... ok
+test_incomplete_cached_input_is_repaired (test_cli_inputs.InputTests.test_incomplete_cached_input_is_repaired) ... ok
+test_input_modified_during_copy_is_not_published (test_cli_inputs.InputTests.test_input_modified_during_copy_is_not_published) ... ok
+test_json_requires_dry_run_and_never_submits (test_cli_inputs.InputTests.test_json_requires_dry_run_and_never_submits) ... ok
+test_keyframe_paths_with_quotes_and_spaces (test_cli_inputs.InputTests.test_keyframe_paths_with_quotes_and_spaces) ... ok
+test_missing_file_suggests_the_existing_name (test_cli_inputs.InputTests.test_missing_file_suggests_the_existing_name) ... ok
+test_missing_probe_keeps_metadata_explicitly_unmeasured (test_cli_inputs.InputTests.test_missing_probe_keeps_metadata_explicitly_unmeasured) ... ok
+test_mixed_keyframe_and_reference_modes_fail_before_submission (test_cli_inputs.InputTests.test_mixed_keyframe_and_reference_modes_fail_before_submission) ... ok
+test_preview_records_shared_inbox_without_creating_it (test_cli_inputs.InputTests.test_preview_records_shared_inbox_without_creating_it) ... ok
+test_real_video_metadata_and_a_renamed_image_extension (test_cli_inputs.InputTests.test_real_video_metadata_and_a_renamed_image_extension) ... ok
+test_remote_inputs_are_explicitly_unverified_and_never_fetched (test_cli_inputs.InputTests.test_remote_inputs_are_explicitly_unverified_and_never_fetched) ... ok
+test_shell_escaped_dragged_path_is_accepted_when_it_exists (test_cli_inputs.InputTests.test_shell_escaped_dragged_path_is_accepted_when_it_exists) ... ok
+test_single_auto_input_is_a_reference_not_a_keyframe (test_cli_inputs.InputTests.test_single_auto_input_is_a_reference_not_a_keyframe) ... ok
+test_staging_streams_large_inputs_and_reuses_the_same_content_name (test_cli_inputs.InputTests.test_staging_streams_large_inputs_and_reuses_the_same_content_name) ... ok
+test_typed_input_rejects_a_known_wrong_media_kind (test_cli_inputs.InputTests.test_typed_input_rejects_a_known_wrong_media_kind) ... ok
+test_unknown_auto_type_explains_the_explicit_options (test_cli_inputs.InputTests.test_unknown_auto_type_explains_the_explicit_options) ... ok
+test_published_commands_build_requests_without_submission (test_cli_examples.CLIExamples.test_published_commands_build_requests_without_submission) ... ok
+
+----------------------------------------------------------------------
+Ran 82 tests in 6.652s
+
+OK

@@ -1,0 +1,236 @@
+{
+  "recordedAt": "2026-11-03T21:14:39.343544+00:00",
+  "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
+  "baseCommit": "c4a0121940cd5bc67f822def30ca08bfc510af65",
+  "CPU": {
+    "testsRun": 84,
+    "failures": 0,
+    "errors": 0,
+    "skipped": [
+      "test_actual_small_qwen_forward_cuda (test_ref_runtime.ConditioningBlockTest.test_actual_small_qwen_forward_cuda)",
+      "test_oom_inside_block_releases_weights_and_next_request_matches (test_ref_runtime.ConditioningBlockTest.test_oom_inside_block_releases_weights_and_next_request_matches)",
+      "test_real_h3_sampling_for_text_keyframe_and_reference (test_parallel_runtime.FSDPRuntimeTest.test_real_h3_sampling_for_text_keyframe_and_reference)",
+      "test_streamed_mixed_precision_checkpoint_matches_nonsharded_model (test_parallel_runtime.FSDPRuntimeTest.test_streamed_mixed_precision_checkpoint_matches_nonsharded_model)",
+      "test_three_simulated_ranks_load_only_their_own_exact_weight_slices (test_parallel_runtime.FSDPRuntimeTest.test_three_simulated_ranks_load_only_their_own_exact_weight_slices)",
+      "test_real_cpu_gpu_eviction_preserves_outputs (test_conditioning_memory.ActualOffloadTransitionTest.test_real_cpu_gpu_eviction_preserves_outputs)",
+      "test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu (test_device_boundary.CudaStateBoundaryTest.test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu)",
+      "test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout (test_device_boundary.CudaStateBoundaryTest.test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout)",
+      "test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags (test_device_boundary.CudaStateBoundaryTest.test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags)"
+    ],
+    "serversStarted": 0,
+    "H100InferenceMeasured": false
+  },
+  "CLI": {
+    "testsRun": 82,
+    "successful": true,
+    "excluded": [
+      {
+        "test": "test_cli.CliTest.test_ctrl_c_marks_job_and_prints_fetch_hint",
+        "reason": "Requires an actual child HTTP endpoint; interrupted metadata is covered separately"
+      },
+      {
+        "test": "test_cli.CliTest.test_stdin_prompt",
+        "reason": "Child process cannot share an in-memory parent transport; stdin dry-run is covered separately"
+      },
+      {
+        "test": "test_cli_ux.CtrlCTest.test_ctrl_c_on_json_says_how_to_resume",
+        "reason": "Child process does not share the in-memory HTTP registry"
+      },
+      {
+        "test": "test_qa_web_cli.CliFixesTest.test_ctrl_c_points_at_the_stopped_job",
+        "reason": "Child process does not share the in-memory HTTP registry"
+      }
+    ],
+    "realServersStarted": 0,
+    "GPUInferenceMeasured": false
+  },
+  "cudaEnvironmentTests": {
+    "testsRun": 8,
+    "failures": 0,
+    "errors": 0,
+    "actualCUDAUsingTests": 6,
+    "CPUCompanionTests": 2,
+    "hardware": "RTX 3050, not H100",
+    "fakeFSDPStoreNoNetwork": true,
+    "fullModelOrRealMultiGPUCollectivesTested": false,
+    "generationDeviceWarning": "Transformers warns that offloaded root model.device is CPU while input IDs are CUDA. Actual small forward/visual/generate outputs were compared; warning retained."
+  },
+  "rpc": {
+    "originalArrayBytes": 1179648,
+    "normalizedArrayBytes": 1179648,
+    "beforeBytes": 2367201,
+    "afterBytes": 7585,
+    "rawPixelsAbsentFromRPC": true,
+    "originalStatePreserved": true,
+    "measurement": "CPU serialization with same array/latent fixture as c4a0121 audit, plus new request ID",
+    "H100InferenceMeasured": false,
+    "serversStarted": 0
+  },
+  "twoBuilds": {
+    "codeCommit": "af39a71eb827c1f46a0b6425821faf6472c8b9f8",
+    "profiles": [
+      "pages",
+      "local"
+    ],
+    "declaredHashes": 15,
+    "bothBuildsVerified": true,
+    "allDeclaredBuildHashesIdentical": true,
+    "frontendChanged": false,
+    "staticDeploymentNeeded": false,
+    "actualLocalCache": {
+      "unchangedDuringThisFix": true,
+      "checkedFiles": 15,
+      "rawSourceMismatchPaths": [
+        "index.html",
+        "studio/h3-cli.html",
+        "studio/editor.css"
+      ],
+      "findings": [
+        "index.html differs only by existing shared host scripts; stripping those exactly matches source",
+        "h3-cli.html contains shared host scripts and pre-existing manual speed/--gpus guide edits",
+        "editor.css is a pre-existing shorter cached stylesheet; preserved rather than overwriting the shared host during a backend-only fix"
+      ],
+      "exactSourceMatch": false,
+      "originalHashRows": [
+        {
+          "path": "index.html",
+          "expected": "0f68186e0608557ad9ee7ee9d2fbb6b10980d8aff9cc8d7a5ef67614904b7d90",
+          "actual": "c740bbd2d36ee7b6dcefeeb01099e365aea804078c5f10944d5437d86d5e04d7",
+          "matches": false
+        },
+        {
+          "path": "studio/h3-cli.html",
+          "expected": "4dbac6184efdb76a8457c3b1e12d5568691de4dee021ac3505423845011c67ca",
+          "actual": "0d1036a83dd21fa0cd551d49fe661320703d4fe2ebce057c87afb264c7269ff9",
+          "matches": false
+        },
+        {
+          "path": "studio/h3-guide.css",
+          "expected": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342",
+          "actual": "03365e1e201746d29b64d7e5a1c44e892b2eaca4a2607ea076fdf94b1563c342",
+          "matches": true
+        },
+        {
+          "path": "studio/h3-guide.js",
+          "expected": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67",
+          "actual": "f7e6f9db660d114b1a1ac37e6a98d047a8f6b9c40bf9efd731615f39b084fd67",
+          "matches": true
+        },
+        {
+          "path": "studio/features.js",
+          "expected": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa",
+          "actual": "2131911e79698a8437997887aec0fa5926fa00e70a06477c3c17472f04ee27fa",
+          "matches": true
+        },
+        {
+          "path": "studio/feature-hub.js",
+          "expected": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0",
+          "actual": "36bb93d613b04ffefea8c78ba3368c31f361969ae37ad6c3925f9f6c502264a0",
+          "matches": true
+        },
+        {
+          "path": "studio/feature-hub.css",
+          "expected": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a",
+          "actual": "0646c065abf4fbca1559c4850d6cc9d59c97204eadf70c71b2172d9beccff85a",
+          "matches": true
+        },
+        {
+          "path": "studio/editor.js",
+          "expected": "e130c1be479b25ed41af1523d26f7ff9996f16778e0ac426bd602c15f00a649a",
+          "actual": "e130c1be479b25ed41af1523d26f7ff9996f16778e0ac426bd602c15f00a649a",
+          "matches": true
+        },
+        {
+          "path": "studio/editor.css",
+          "expected": "1516c06999a811c89a2dfc0a41582d6ca9690ba2273586ac5d2e4f340b7a7691",
+          "actual": "c03b8f66cccc83b9a486c1e065310be3c3daf4a06c4fc50eb11f50313a1f86f7",
+          "matches": false
+        },
+        {
+          "path": "studio/progress.js",
+          "expected": "bfe669a60fd84ed69540ee0064a32e76a0f36adc6b51ec8e41bd57830a774690",
+          "actual": "bfe669a60fd84ed69540ee0064a32e76a0f36adc6b51ec8e41bd57830a774690",
+          "matches": true
+        },
+        {
+          "path": "studio/ui.css",
+          "expected": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce",
+          "actual": "3ea6d40583cfef07a90d2a918b0190f85bddeada1352ee2cc6bf69826ee37cce",
+          "matches": true
+        },
+        {
+          "path": "studio/ui-navigation.js",
+          "expected": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06",
+          "actual": "c8b31b1f091df4ae916c61e5b64d1c005f71fc853738fa1abb97fc03ec58bc06",
+          "matches": true
+        },
+        {
+          "path": "studio/batch-edit.js",
+          "expected": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61",
+          "actual": "7012735ff0bd8dad652d26199aa8525aed4ee6b74f66a530bc0052a663b74c61",
+          "matches": true
+        },
+        {
+          "path": "studio/reference.js",
+          "expected": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e",
+          "actual": "058efeddbcdf7f5208f796f834d39ceede2b1c5007fb23740a5eccf52f093c4e",
+          "matches": true
+        },
+        {
+          "path": "studio/prompt-library.js",
+          "expected": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad",
+          "actual": "84fe244971ce17edf5a9c738470610fcfea3fc838f822b9a529fe50ca3bcd1ad",
+          "matches": true
+        }
+      ]
+    },
+    "H100InferenceMeasured": false,
+    "serversStartedOrRestarted": 0
+  },
+  "sourceHashes": {
+    "src/h3video/dserver.py": "38cef43f06d36c14e3969da3ecdbac6dbd32c6f8473f4a624e6767263b24021d",
+    "src/h3video/dworker.py": "8e9956579371b53e7b69aa30cc46b19e72de6a7180f8942dbe032cf54902e85f",
+    "src/h3video/memory.py": "5cbe7f4ae5d0860e5345e533ac334a24fb8c03eb572bc6f4590ecc9ebab1f8e0",
+    "src/h3video/placement.py": "c26400569b2dff865b7427d583ca8c8c07f17148ba0ebd876ac680c6fe338309",
+    "src/h3video/preparation.py": "ceb4d67aa2e7e3d30a1bace5d44492f613ed98e89315158c4ecd08f7bd79b172",
+    "src/h3video/worker_state.py": "9dddfb29875d26448e0dc3d82d3404a81ae4637baa0ccd204bc87db4d383f35e",
+    "scripts/diagnose.sh": "0a696d58e5633cc8d5baf8f50641c2318a27d414128179bce3530a7fb0d46b9c",
+    "tests/test_ref_runtime.py": "7d7937e53eed2097f52ceaaf586903382ee10eb590226c325bba0f37d4293d10",
+    "tests/test_measured_progress.py": "a5a9fa1fbf1dad103bdd74f872f63d691d200485f2f74a66fc92076e25fe7c74"
+  },
+  "logs": {
+    "ref-runtime-20261104/cpu-regressions-first.log": "614c215b379d67e4b1801397a02becf1675f2043af467726ae293030edeccab6",
+    "ref-runtime-20261104/cpu-regressions-pre-fixture.log": "1ab6d738bbb51843ed5b20e1cae4984f61d9e56428f66a877aa45fad111687f1",
+    "ref-runtime-20261104/cpu-regressions-complete.log": "c878e84a8db0123a8db764bec43b59b434f0aae0dc9b4606f88ee8b02d3986e6",
+    "ref-runtime-20261104/tiny-cuda-final.log": "cf77217a863adfc61c24010ecc86e1845f97b18fdfaf37cec119a1620298cf4e",
+    "ref-runtime-20261104/cli-final.log": "60134260084f137ba670f2bbb76c39933fe1b2b6cea75e80e5c7583749c4f74d"
+  },
+  "developmentFailuresRetained": [
+    {
+      "failure": "Initial standalone deadline test exhausted its synthetic clock values",
+      "resolution": "Corrected clock fixture, not production timeout; original tool output in session, subsequent passing raw tests retained"
+    },
+    {
+      "failure": "CPU first suite failed two cases: changed resize phase text; isolated worktree lacked ASR venv",
+      "resolution": "Kept existing resize phase text; temporary canonical venv symlink supplied for existing ASR test, removed before commit",
+      "log": "ref-runtime-20261104/cpu-regressions-first.log"
+    },
+    {
+      "failure": "Minimal Server.__new__ phase fixture omitted new engine readiness invariant",
+      "resolution": "Set fixture engine_status=ready and added a separate real Server unavailable-state regression",
+      "log": "ref-runtime-20261104/cpu-regressions-pre-fixture.log"
+    },
+    {
+      "failure": "Raw source hash equality with hosted Arcade cache failed for three pre-existing assets",
+      "resolution": "Kept raw failure findings. Both source builds pass; shared host injection/manual guide edits/shorter cached CSS preserved. No claim of identical hosted bytes."
+    }
+  ],
+  "limits": {
+    "H100FullModelOOMResolved": false,
+    "userNodeUpdatedOrRestarted": false,
+    "H1004Or8GpuSufficiencyVerified": false,
+    "H100SpeedOrPeakMemoryMeasured": false,
+    "servicesStartedOrRestarted": 0,
+    "frontendSourceChanged": false
+  }
+}

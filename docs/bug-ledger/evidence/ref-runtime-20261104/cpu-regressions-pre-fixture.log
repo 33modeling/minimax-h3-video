@@ -1,0 +1,296 @@
+test_actual_small_qwen_forward_cpu (test_ref_runtime.ConditioningBlockTest.test_actual_small_qwen_forward_cpu) ... ok
+test_actual_small_qwen_forward_cuda (test_ref_runtime.ConditioningBlockTest.test_actual_small_qwen_forward_cuda) ... skipped 'Actual tiny CUDA offload test'
+test_oom_inside_block_releases_weights_and_next_request_matches (test_ref_runtime.ConditioningBlockTest.test_oom_inside_block_releases_weights_and_next_request_matches) ... skipped 'Actual tiny CUDA cleanup test'
+test_resident_component_calls_remain_visible_in_diagnostics (test_ref_runtime.ConditioningBlockTest.test_resident_component_calls_remain_visible_in_diagnostics) ... ok
+test_heartbeat_with_unchanged_step_does_not_extend_deadline (test_ref_runtime.DeadlineTest.test_heartbeat_with_unchanged_step_does_not_extend_deadline) ... ok
+test_live_silent_worker_is_stopped_at_deadline (test_ref_runtime.DeadlineTest.test_live_silent_worker_is_stopped_at_deadline) ... ok
+test_worker_startup_wait_is_bounded_and_closes_owned_listener (test_ref_runtime.DeadlineTest.test_worker_startup_wait_is_bounded_and_closes_owned_listener) ... ok
+test_actual_rpc_has_no_pixels_and_keeps_source_state (test_ref_runtime.DenoiserTransportTest.test_actual_rpc_has_no_pixels_and_keeps_source_state) ... ok
+test_real_sampling_preserves_text_keyframe_and_mixed_reference_outputs (test_ref_runtime.DenoiserTransportTest.test_real_sampling_preserves_text_keyframe_and_mixed_reference_outputs) ...   0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 161.85it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 161.84it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 161.03it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 157.67it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 158.93it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 161.75it/s]
+ok
+test_actual_request_exception_path_persists_oom_before_rank_exits (test_ref_runtime.DurableWorkerFailureTest.test_actual_request_exception_path_persists_oom_before_rank_exits) ... ok
+test_rank_failure_survives_dead_connection_and_is_request_scoped (test_ref_runtime.DurableWorkerFailureTest.test_rank_failure_survives_dead_connection_and_is_request_scoped) ... ok
+test_startup_failure_is_saved_without_starting_workers (test_ref_runtime.DurableWorkerFailureTest.test_startup_failure_is_saved_without_starting_workers) ... ok
+test_torn_diagnostic_and_previous_request_are_ignored (test_ref_runtime.DurableWorkerFailureTest.test_torn_diagnostic_and_previous_request_are_ignored) ... ok
+test_actual_wrappers_reuse_decode_and_prompt_with_disk_backed_frames (test_ref_runtime.PreparationTest.test_actual_wrappers_reuse_decode_and_prompt_with_disk_backed_frames) ... ok
+test_host_oom_timeout_and_minimum_geometry_do_not_repeat (test_ref_runtime.RecoveryPolicyTest.test_host_oom_timeout_and_minimum_geometry_do_not_repeat) ... Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_ref_runtime.py", line 171, in run
+    if errors:raise errors.pop(0)
+              ^^^^^^^^^^^^^^^^^^^
+h3video.memory.GenerationMemoryError: GPU 메모리 부족(CUDA OOM) · 단계: 디노이징 · CUDA out of memory
+ok
+test_text_oom_offloads_without_resizing_or_restarting_healthy_workers (test_ref_runtime.RecoveryPolicyTest.test_text_oom_offloads_without_resizing_or_restarting_healthy_workers) ... Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_ref_runtime.py", line 171, in run
+    if errors:raise errors.pop(0)
+              ^^^^^^^^^^^^^^^^^^^
+h3video.memory.GenerationMemoryError: GPU 메모리 부족(CUDA OOM) · 단계: 조건 인코딩 · CUDA out of memory
+ok
+test_unknown_worker_death_retries_once_at_same_geometry (test_ref_runtime.RecoveryPolicyTest.test_unknown_worker_death_retries_once_at_same_geometry) ... Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_ref_runtime.py", line 171, in run
+    if errors:raise errors.pop(0)
+              ^^^^^^^^^^^^^^^^^^^
+h3video.dserver.WorkerDied: worker gone
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_ref_runtime.py", line 171, in run
+    if errors:raise errors.pop(0)
+              ^^^^^^^^^^^^^^^^^^^
+h3video.dserver.WorkerDied: worker gone again
+ok
+test_worker_oom_resizes_and_only_restarts_workers (test_ref_runtime.RecoveryPolicyTest.test_worker_oom_resizes_and_only_restarts_workers) ... Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_ref_runtime.py", line 171, in run
+    if errors:raise errors.pop(0)
+              ^^^^^^^^^^^^^^^^^^^
+h3video.memory.GenerationMemoryError: GPU 메모리 부족(CUDA OOM) · 단계: 디노이징 · CUDA out of memory
+ok
+test_real_h3_sampling_for_text_keyframe_and_reference (test_parallel_runtime.FSDPRuntimeTest.test_real_h3_sampling_for_text_keyframe_and_reference) ... skipped 'tiny CUDA FSDP runtime requires actual CUDA'
+test_streamed_mixed_precision_checkpoint_matches_nonsharded_model (test_parallel_runtime.FSDPRuntimeTest.test_streamed_mixed_precision_checkpoint_matches_nonsharded_model) ... skipped 'tiny CUDA FSDP runtime requires actual CUDA'
+test_three_simulated_ranks_load_only_their_own_exact_weight_slices (test_parallel_runtime.FSDPRuntimeTest.test_three_simulated_ranks_load_only_their_own_exact_weight_slices) ... skipped 'tiny CUDA FSDP runtime requires actual CUDA'
+test_local_checkpoint_rejects_duplicates_and_external_paths (test_parallel_runtime.ParallelPlanTest.test_local_checkpoint_rejects_duplicates_and_external_paths) ... ok
+test_runtime_preflight_needs_no_cuda_context (test_parallel_runtime.ParallelPlanTest.test_runtime_preflight_needs_no_cuda_context) ... ok
+test_speed_is_compute_parallel_and_memory_is_layerwise (test_parallel_runtime.ParallelPlanTest.test_speed_is_compute_parallel_and_memory_is_layerwise) ... ok
+test_uneven_and_empty_shards_reconstruct_without_overlap (test_parallel_runtime.ParallelPlanTest.test_uneven_and_empty_shards_reconstruct_without_overlap) ... ok
+test_loader_uses_local_weights_explicit_map_and_no_full_gpu_to (test_placement.PlacementTest.test_loader_uses_local_weights_explicit_map_and_no_full_gpu_to) ... ok
+test_one_copy_and_contiguous_blocks_on_selected_gpus_only (test_placement.PlacementTest.test_one_copy_and_contiguous_blocks_on_selected_gpus_only) ... ok
+test_real_checkpoint_explicit_dispatch_matches_original_forward (test_placement.PlacementTest.test_real_checkpoint_explicit_dispatch_matches_original_forward) ... Some parameters are on the meta device because they were offloaded to the cpu.
+ok
+test_actual_diffusers_reference_resize_follows_request_size (test_placement.ReferenceGeometryTest.test_actual_diffusers_reference_resize_follows_request_size) ... ok
+test_host_oom_does_not_repeat_meaningless_smaller_gpu_requests (test_placement.ReferenceGeometryTest.test_host_oom_does_not_repeat_meaningless_smaller_gpu_requests) ... ok
+test_sharded_oom_retries_without_reloading_weights_and_retains_report (test_placement.ReferenceGeometryTest.test_sharded_oom_retries_without_reloading_weights_and_retains_report) ... Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_placement.py", line 133, in run
+    raise GenerationMemoryError(RuntimeError("CUDA out of memory"), {"kind":"cuda","stage":"조건 인코딩"})
+h3video.memory.GenerationMemoryError: GPU 메모리 부족(CUDA OOM) · 단계: 조건 인코딩 · CUDA out of memory
+ok
+test_size_controls_both_references_and_restores_after_failure (test_placement.ReferenceGeometryTest.test_size_controls_both_references_and_restores_after_failure) ... ok
+test_frames (test_dserver.FramesTest.test_frames) ... ok
+test_bad_request_is_400 (test_dserver.HttpTest.test_bad_request_is_400) ... ok
+test_cancel_queued_and_active_generation_then_accept_next_request (test_dserver.HttpTest.test_cancel_queued_and_active_generation_then_accept_next_request) ... [dserver 06:08:28] 접수 video_af3a03fc01e74bfd (t2va, 대기 1)
+[dserver 06:08:28] 접수 video_a1b1663f1ae047c3 (t2va, 대기 1)
+[dserver 06:08:28] 접수 video_8ad6dc4014fd422d (t2va, 대기 1)
+[dserver 06:08:28] 완료 video_8ad6dc4014fd422d → /tmp/tmp05mom_d_/out/video_8ad6dc4014fd422d.mp4 (0.0MB, 0초)
+ok
+test_explicit_model_recovery_keeps_api_up (test_dserver.HttpTest.test_explicit_model_recovery_keeps_api_up) ... ok
+test_failure_and_restart (test_dserver.HttpTest.test_failure_and_restart) ... [dserver 06:08:28] 접수 video_c5ddb9112ca04c6b (t2va, 대기 1)
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 171, in run
+    raise RuntimeError("CUDA out of memory")
+RuntimeError: CUDA out of memory
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 171, in run
+    raise RuntimeError("CUDA out of memory")
+RuntimeError: CUDA out of memory
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1116, in _one
+    used = self.run_with_recovery(job, out)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 981, in run_with_recovery
+    return self._run_with_recovery(job, out, prepared)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 171, in run
+    raise RuntimeError("CUDA out of memory")
+RuntimeError: CUDA out of memory
+[dserver 06:08:29] 실패 video_c5ddb9112ca04c6b: RuntimeError: CUDA out of memory
+[dserver 06:08:29] 접수 video_78a252326f304625 (t2va, 대기 1)
+[dserver 06:08:29] 완료 video_78a252326f304625 → /tmp/tmpgyz39g6c/out/video_78a252326f304625.mp4 (0.0MB, 0초)
+ok
+test_generate_roundtrip (test_dserver.HttpTest.test_generate_roundtrip) ... [dserver 06:08:29] 접수 video_b7ce44a1a3ab487b (fl2va, 대기 1)
+[dserver 06:08:29] 완료 video_b7ce44a1a3ab487b → /tmp/tmpq_mas1an/out/video_b7ce44a1a3ab487b.mp4 (0.0MB, 0초)
+ok
+test_oom_retries_lower_resolution_with_same_prompt_seed_duration_and_api_survives (test_dserver.HttpTest.test_oom_retries_lower_resolution_with_same_prompt_seed_duration_and_api_survives) ... [dserver 06:08:29] 접수 video_36c516488e524485 (t2va, 대기 1)
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 184, in failing
+    if len(calls)<3:raise MemoryError('CUDA out of memory')
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+MemoryError: CUDA out of memory
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 184, in failing
+    if len(calls)<3:raise MemoryError('CUDA out of memory')
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+MemoryError: CUDA out of memory
+[dserver 06:08:29] 완료 video_36c516488e524485 → /tmp/tmpk1419fkc/out/video_36c516488e524485.mp4 (0.0MB, 0초)
+ok
+test_repeated_oom_is_bounded_and_next_request_can_still_run (test_dserver.HttpTest.test_repeated_oom_is_bounded_and_next_request_can_still_run) ... [dserver 06:08:29] 접수 video_bc0b0a4a53324d01 (t2va, 대기 1)
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 210, in failing
+    raise MemoryError('CUDA out of memory')
+MemoryError: CUDA out of memory
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 210, in failing
+    raise MemoryError('CUDA out of memory')
+MemoryError: CUDA out of memory
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1116, in _one
+    used = self.run_with_recovery(job, out)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 981, in run_with_recovery
+    return self._run_with_recovery(job, out, prepared)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 210, in failing
+    raise MemoryError('CUDA out of memory')
+MemoryError: CUDA out of memory
+[dserver 06:08:30] 실패 video_bc0b0a4a53324d01: MemoryError: CUDA out of memory
+[dserver 06:08:30] 접수 video_cbe9bcb8c9484273 (t2va, 대기 1)
+[dserver 06:08:30] 완료 video_cbe9bcb8c9484273 → /tmp/tmp5asjfo5a/out/video_cbe9bcb8c9484273.mp4 (0.0MB, 0초)
+ok
+test_web_model_recovery_routes_to_configured_engine (test_dserver.HttpTest.test_web_model_recovery_routes_to_configured_engine) ... ok
+test_worker_death_recovers_without_exiting_other_servers (test_dserver.HttpTest.test_worker_death_recovers_without_exiting_other_servers) ... [dserver 06:08:30] 접수 video_2c0fb4a09aec4042 (t2va, 대기 1)
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_dserver.py", line 198, in dying
+    if len(calls)==1:raise dserver.WorkerDied('worker process ended')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+h3video.dserver.WorkerDied: worker process ended
+[dserver 06:08:30] 완료 video_2c0fb4a09aec4042 → /tmp/tmpuede6gv8/out/video_2c0fb4a09aec4042.mp4 (0.0MB, 0초)
+ok
+test_http_and_split (test_dserver.MaxSecondsTest.test_http_and_split) ... ok
+test_max_seconds (test_dserver.MaxSecondsTest.test_max_seconds) ... ok
+test_plan_scenes_limits (test_dserver.MaxSecondsTest.test_plan_scenes_limits) ... ok
+test_fits (test_dserver.MemoryCheckTest.test_fits) ... [dserver 06:08:30] 메모리 예상 (접수): 시퀀스 75,386행 (영상 72,576·오디오 810·텍스트 2,000·조건 0) → 영상 모델 장마다 약 12.9GB / 여유 16.5GB
+[dserver 06:08:30] 메모리 예상 (접수): 시퀀스 61,902행 (영상 58,752·오디오 1,150·텍스트 2,000·조건 0) → 영상 모델 장마다 약 10.6GB / 여유 16.5GB
+[dserver 06:08:30] 메모리 예상 (접수): 시퀀스 105,966행 (영상 102,816·오디오 1,150·텍스트 2,000·조건 0) → 영상 모델 장마다 약 6.1GB / 여유 16.5GB
+ok
+test_one_gpu_15s_warns_but_does_not_reject (test_dserver.MemoryCheckTest.test_one_gpu_15s_warns_but_does_not_reject) ... ok
+test_rows (test_dserver.MemoryCheckTest.test_rows) ... ok
+test_keyframe_slots (test_dserver.PlanTest.test_keyframe_slots) ... ok
+test_local_path (test_dserver.PlanTest.test_local_path) ... ok
+test_ref_ok_and_ignored (test_dserver.PlanTest.test_ref_ok_and_ignored) ... ok
+test_rejects (test_dserver.PlanTest.test_rejects) ... ok
+test_t2va (test_dserver.PlanTest.test_t2va) ... ok
+test_addr (test_dserver.WorkerHelpersTest.test_addr) ... ok
+test_pick_devices_spec (test_dserver.WorkerHelpersTest.test_pick_devices_spec) ... ok
+test_to_cpu (test_dserver.WorkerHelpersTest.test_to_cpu) ... ok
+test_chained_failure_frames_are_released_before_allocator_cleanup (test_request_memory.RequestMemoryTest.test_chained_failure_frames_are_released_before_allocator_cleanup) ... ok
+test_failed_video_request_releases_memory_then_next_request_can_run (test_request_memory.RequestMemoryTest.test_failed_video_request_releases_memory_then_next_request_can_run) ... [dserver 06:08:30] 접수 video_5baa513af4a842d1 (t2va, 대기 1)
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_request_memory.py", line 39, in run
+    tensor=Tensor();refs.append(weakref.ref(tensor));raise RuntimeError('CUDA out of memory')
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: CUDA out of memory
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_request_memory.py", line 39, in run
+    tensor=Tensor();refs.append(weakref.ref(tensor));raise RuntimeError('CUDA out of memory')
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: CUDA out of memory
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1116, in _one
+    used = self.run_with_recovery(job, out)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 981, in run_with_recovery
+    return self._run_with_recovery(job, out, prepared)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 1004, in _run_with_recovery
+    return self.engine.run(job['plan'], out, lambda progress: self.report_progress(job, progress))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_request_memory.py", line 39, in run
+    tensor=Tensor();refs.append(weakref.ref(tensor));raise RuntimeError('CUDA out of memory')
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: CUDA out of memory
+[dserver 06:08:30] 실패 video_5baa513af4a842d1: RuntimeError: CUDA out of memory
+[dserver 06:08:30] 접수 video_11ea4652ada847d2 (t2va, 대기 2)
+[dserver 06:08:30] 완료 video_11ea4652ada847d2 → /tmp/tmpfxzb0prq/video_11ea4652ada847d2.mp4 (0.0MB, 0초)
+ok
+test_real_cpu_gpu_eviction_preserves_outputs (test_conditioning_memory.ActualOffloadTransitionTest.test_real_cpu_gpu_eviction_preserves_outputs) ... skipped 'Actual CUDA required for tiny offload transition'
+test_exclusive_policy_evicts_before_vae_and_reuses_same_component (test_conditioning_memory.ConditioningMemoryTest.test_exclusive_policy_evicts_before_vae_and_reuses_same_component) ... ok
+test_old_auto_policy_can_keep_text_weights_when_vae_activations_do_not_fit (test_conditioning_memory.ConditioningMemoryTest.test_old_auto_policy_can_keep_text_weights_when_vae_activations_do_not_fit) ... ok
+test_oom_report_identifies_conditioning_component_without_stale_denoiser_label (test_conditioning_memory.ConditioningMemoryTest.test_oom_report_identifies_conditioning_component_without_stale_denoiser_label) ... [dserver 06:08:30] OOM 상세: {"kind": "cuda", "stage": "조건 인코딩", "error": "CUDA out of memory (fixture)", "devices": [], "pid": 2677695, "allocatorScope": "this_process", "executionMode": "fsdp_cp", "component": {"id": "text_encoder", "type": "Qwen3VLForConditionalGeneration", "device": "cuda:0"}, "conditioningOffload": "component"}
+[dserver 06:08:30] OOM 상세: {"kind": "cuda", "stage": "디노이징", "error": "CUDA out of memory (fixture)", "devices": [], "pid": 2677695, "allocatorScope": "this_process", "executionMode": "fsdp_cp", "conditioningOffload": "component"}
+ok
+test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu (test_device_boundary.CudaStateBoundaryTest.test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu) ... skipped 'Requires actual CUDA; run separately from the CPU suite'
+test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout (test_device_boundary.CudaStateBoundaryTest.test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout) ... skipped 'Requires actual CUDA; run separately from the CPU suite'
+test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags (test_device_boundary.CudaStateBoundaryTest.test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags) ... skipped 'Requires actual CUDA; run separately from the CPU suite'
+test_cpu_metadata_rng_and_kwargs_mapping_survive_filtered_transfer (test_device_boundary.StateBoundaryTest.test_cpu_metadata_rng_and_kwargs_mapping_survive_filtered_transfer) ... ok
+test_fake_cuda_handoff_moves_encoded_data_but_keeps_cpu_tags (test_device_boundary.StateBoundaryTest.test_fake_cuda_handoff_moves_encoded_data_but_keeps_cpu_tags) ... ok
+test_actual_four_frames_pause_resume_atomic_counts_audio_fps_and_original (test_measured_progress.FramePipelineProgressTest.test_actual_four_frames_pause_resume_atomic_counts_audio_fps_and_original) ... ok
+test_interrupted_saved_job_freezes_at_last_observation (test_measured_progress.FramePipelineProgressTest.test_interrupted_saved_job_freezes_at_last_observation) ... ok
+test_current_frame_is_not_completed_and_cached_frames_do_not_inflate_speed (test_measured_progress.MeasuredProgressTest.test_current_frame_is_not_completed_and_cached_frames_do_not_inflate_speed) ... ok
+test_generation_uses_observed_step_deltas_and_phase_clocks (test_measured_progress.MeasuredProgressTest.test_generation_uses_observed_step_deltas_and_phase_clocks) ... ok
+test_retry_clears_previous_step_rate_and_records_phases (test_measured_progress.MeasuredProgressTest.test_retry_clears_previous_step_rate_and_records_phases) ... ERROR
+test_unknown_warmup_assembly_pause_and_done (test_measured_progress.MeasuredProgressTest.test_unknown_warmup_assembly_pause_and_done) ... ok
+test_speed_and_memory_reach_diffusers_and_invalid_mode_is_rejected (test_serve_mode.ServeModeTest.test_speed_and_memory_reach_diffusers_and_invalid_mode_is_rejected) ... ok
+test_actual_speech_recognition_and_caption_sidecars (test_video_studio.VideoEditingTest.test_actual_speech_recognition_and_caption_sidecars) ... ok
+test_failed_native_candidates_resume_with_lower_size_and_keep_selected_original (test_video_studio.VideoEditingTest.test_failed_native_candidates_resume_with_lower_size_and_keep_selected_original) ... ok
+test_image_animatic_and_saved_reopen (test_video_studio.VideoEditingTest.test_image_animatic_and_saved_reopen) ... ok
+test_inspection_reports_real_black_freeze_silence_and_stale_captions (test_video_studio.VideoEditingTest.test_inspection_reports_real_black_freeze_silence_and_stale_captions) ... 영상 편집 작업 실패: render
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/studio.py", line 985, in execute
+    raise H3Error('장면이 바뀌어 자막 시간이 맞지 않을 수 있습니다. 자막을 다시 인식하거나 시간 수정 후 저장하세요.')
+h3video.client.H3Error: 장면이 바뀌어 자막 시간이 맞지 않을 수 있습니다. 자막을 다시 인식하거나 시간 수정 후 저장하세요.
+ok
+test_native_low_resolution_candidates_selection_and_lock (test_video_studio.VideoEditingTest.test_native_low_resolution_candidates_selection_and_lock) ... ok
+test_real_ai_upscale_correction_checkpoint_resume_audio_and_original_restore (test_video_studio.VideoEditingTest.test_real_ai_upscale_correction_checkpoint_resume_audio_and_original_restore) ... ok
+test_scene_view_exposes_current_native_progress_stage_and_elapsed (test_video_studio.VideoEditingTest.test_scene_view_exposes_current_native_progress_stage_and_elapsed) ... ok
+test_trim_transition_color_multiple_deliveries_and_immutable_originals (test_video_studio.VideoEditingTest.test_trim_transition_color_multiple_deliveries_and_immutable_originals) ... ok
+
+======================================================================
+ERROR: test_retry_clears_previous_step_rate_and_records_phases (test_measured_progress.MeasuredProgressTest.test_retry_clears_previous_step_rate_and_records_phases)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/tests/test_measured_progress.py", line 85, in test_retry_clears_previous_step_rate_and_records_phases
+    self.assertEqual(server.run_with_recovery(job,Path(tmp)/'out.mp4'),'ok')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 981, in run_with_recovery
+    return self._run_with_recovery(job, out, prepared)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/kms/dev/minimax-h3-ref-runtime-20261104/src/h3video/dserver.py", line 993, in _run_with_recovery
+    if self.engine is None or self.engine_status != 'ready':
+                              ^^^^^^^^^^^^^^^^^^
+AttributeError: 'Server' object has no attribute 'engine_status'
+
+----------------------------------------------------------------------
+Ran 82 tests in 30.188s
+
+FAILED (errors=1, skipped=9)

@@ -1,0 +1,22 @@
+test_actual_small_qwen_forward_cpu (test_ref_runtime.ConditioningBlockTest.test_actual_small_qwen_forward_cpu) ... ok
+test_actual_small_qwen_forward_cuda (test_ref_runtime.ConditioningBlockTest.test_actual_small_qwen_forward_cuda) ... /home/kms/dev/storybook-maker/.venv-qwen-turbo/lib/python3.12/site-packages/transformers/generation/utils.py:2957: UserWarning: You are calling .generate() with the `input_ids` being on a device type different than your model's device. `input_ids` is on cuda, whereas the model is on cpu. You may experience unexpected behaviors or slower generation. Please make sure that you have put `input_ids` to the correct device by calling for example input_ids = input_ids.to('cpu') before running `.generate()`.
+  warnings.warn(
+ok
+test_oom_inside_block_releases_weights_and_next_request_matches (test_ref_runtime.ConditioningBlockTest.test_oom_inside_block_releases_weights_and_next_request_matches) ... ok
+test_resident_component_calls_remain_visible_in_diagnostics (test_ref_runtime.ConditioningBlockTest.test_resident_component_calls_remain_visible_in_diagnostics) ... ok
+test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu (test_device_boundary.CudaStateBoundaryTest.test_gpu_tags_from_an_upstream_caller_are_normalized_to_cpu) ... ok
+test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout (test_device_boundary.CudaStateBoundaryTest.test_old_transfer_reproduces_exact_device_mismatch_in_diffusers_layout) ... ok
+test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags (test_device_boundary.CudaStateBoundaryTest.test_real_denoising_for_text_keyframe_and_reference_with_cpu_tags) ...   0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 132.46it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 211.21it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 211.71it/s]
+ok
+test_real_h3_sampling_for_text_keyframe_and_reference (test_parallel_runtime.FSDPRuntimeTest.test_real_h3_sampling_for_text_keyframe_and_reference) ... There are modules in MiniMaxH3Transformer3DModel that should be kept in float32: ['proj_in', 'audio_proj_in', 'time_embedder', 'proj_out', 'audio_proj_out', 'rope']. Casting directly with `to()` can lead to inconsistent results; set `torch_dtype` in `from_pretrained()` instead to keep these modules in float32.
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 110.31it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 154.62it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 153.18it/s]
+ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.825s
+
+OK
