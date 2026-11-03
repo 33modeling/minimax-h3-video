@@ -112,12 +112,38 @@ class Engine:
         from diffusers.modular_pipelines import SequentialPipelineBlocks
 
         self.torch, self.variant = torch, variant
+        self.devices = list(devices)
         dt = getattr(torch, dtype)
         load_wf = "fl2va" if variant == "fl2va" else "ref2va"   # t2va·fl2va 는 transformer/, ref2va 는 transformer_ref/
         blocks = ModularPipeline.from_pretrained(model_dir).blocks
         t0 = time.time()
         self.mode, self._proc, self._conn = "single", None, None
-        if len(devices) >= 3:
+        if len(devices) >= 3 and all(d.startswith("cuda:") for d in devices) and os.environ.get("H3_DSERVER_PARALLEL", "sharded") != "cp":
+            from .placement import load_sharded_transformer
+            from .dworker import geometry
+            from diffusers import AutoencoderKLMiniMaxH3, AutoencoderKLMiniMaxH3Audio
+            self.mode = "sharded"
+            self._cond_dev, self._den_dev = devices[0], devices[1]
+            log(f"GPU {len(devices)}장: 텍스트 인코더·VAE → {devices[0]}, 영상 모델 가중치 한 벌 → {', '.join(devices[1:])} 에 분산 (weight sharding, 복제 없음)")
+            stage = {n: blocks.sub_blocks.pop(n) for n in ("before_encode", "text_encoder", "vae_encoder")}
+            m = ComponentsManager()
+            self.cond = SequentialPipelineBlocks.from_blocks_dict(stage).init_pipeline(model_dir, components_manager=m)
+            self.cond.load_components(dtype=dt)
+            m.enable_auto_cpu_offload(device=devices[0], memory_reserve_margin=MARGIN)
+            self.dec = SequentialPipelineBlocks.from_blocks_dict({"decode": blocks.sub_blocks.pop("decode")}).init_pipeline(model_dir)
+            self.dec.update_components(vae=self.cond.vae, audio_vae=self.cond.audio_vae)
+            self.pipe = blocks.init_pipeline(model_dir)
+            tname = "transformer" if variant == "fl2va" else "transformer_ref"
+            transformer, placement = load_sharded_transformer(model_dir, tname, devices[1:], dt, torch)
+            self.pipe.update_components(**{tname: transformer})
+            self.pipe.load_components(names=["scheduler", "audio_scheduler"], dtype=dt)
+            self.pipe.vae = geometry(AutoencoderKLMiniMaxH3, model_dir, "vae")
+            self.pipe.audio_vae = geometry(AutoencoderKLMiniMaxH3Audio, model_dir, "audio_vae")
+            self.geo = self.cond
+            self.placement = placement
+            for device, size in placement["weightBytes"].items():
+                log(f"영상 모델 가중치 {device}: {size / 2**30:.2f}GiB (한 벌의 일부, 활성값 제외)")
+        elif len(devices) >= 3:
             self.mode = "cp"
             log(f"GPU {len(devices)}장 방식: 텍스트 인코더·VAE → {devices[0]}, 영상 모델 → {', '.join(devices[1:])} 에 나눔 (context parallel)")
             self._start_workers(model_dir, variant, devices[1:], dtype, attn)   # 워커가 영상 모델을 올리는 동안 여기서도 올린다
@@ -177,7 +203,9 @@ class Engine:
         self._te_pipe = self.pipe if self.mode == "single" else self.cond   # 텍스트 인코더(= Qwen3-VL-32B-Instruct)가 있는 쪽
         if self.mode != "cp":   # 영상 모델이 올라갈 장: 전체 - 영상 모델 - CUDA 컨텍스트 등 1.5GB
             self.cp_world, self.headroom = 1, None
-            if str(devices[0]).startswith("cuda"):
+            if self.mode == "sharded":
+                self.headroom = max(0, min(torch.cuda.mem_get_info(torch.device(d))[0] for d in devices[1:]) - int(1.5 * 2**30))
+            elif str(devices[0]).startswith("cuda"):
                 total = torch.cuda.mem_get_info(torch.device(devices[0]))[1]
                 self.headroom = int(total - self.transformer.get_memory_footprint() - 1.5 * 2**30)
         self.guides = load_guides(model_dir)
@@ -555,9 +583,23 @@ class Engine:
         return self._prepare_prompt(dict(plan, rewrite=True), inputs)
 
     def run(self, plan: dict, out_path: Path, on_progress) -> str:
+        from .memory import is_memory_failure, memory_report, GenerationMemoryError
+        from .placement import request_reference_geometry
+        try:
+            with request_reference_geometry(self._te_pipe, plan["short_edge"], plan["task"] == "ref2va"):
+                return self._run(plan, out_path, on_progress)
+        except Exception as error:
+            if not is_memory_failure(error):
+                raise
+            report = memory_report(self.torch, getattr(self, "devices", []), getattr(self, "stage", "준비"), error)
+            log("OOM 상세: " + json.dumps(report, ensure_ascii=False))
+            raise GenerationMemoryError(error, report) from error
+
+    def _run(self, plan: dict, out_path: Path, on_progress) -> str:
         from diffusers.utils.export_utils import encode_video
         torch = self.torch
         t_all = time.time()
+        self._stage("입력 읽기")
         inputs, first_image = self._load_inputs(plan)
         self._stage("다듬는 중")
         inputs["prompt"] = self._prepare_prompt(plan, inputs)
@@ -603,11 +645,17 @@ class Engine:
             if self.mode == "single":
                 self.check_memory(plan, h, w, when=" (생성 전)")
                 r = self.pipe(**inputs, generator=g, output=OUTPUTS)
-            elif self.mode == "split":   # 조건(VAE 장) → 디노이징(영상 모델 장) → 디코딩(VAE 장)
+            elif self.mode in ("split", "sharded"):   # 가중치 분산 모드는 한 벌의 영상 모델을 여러 GPU에서 실행한다.
+                self._stage("조건 인코딩")
                 state = self.cond(**inputs, generator=g)
                 times["조건"] = time.time() - t0
                 self.check_memory(plan, h, w, state, when=" (조건 포함)")
                 t0 = time.time()
+                if self.mode == "sharded":
+                    from .dworker import to_device
+                    state.values.pop("generator", None)
+                    state.values = to_device(state.values, torch.device(self._den_dev))
+                self._stage("디노이징")
                 res = self.pipe(state=state, generator=g, output=["latents", "audio_latents"], **gen)
                 times["디노이징"] = time.time() - t0
                 self._stage("디코딩")
@@ -615,11 +663,13 @@ class Engine:
                 dev = torch.device(self._cond_dev)
                 r = self.dec(latents=res["latents"].to(dev), audio_latents=res["audio_latents"].to(dev), output=OUTPUTS)
                 times["디코딩"] = time.time() - t0
-            else:   # cp: 조건(여기) → 디노이징(워커들) → 디코딩(여기)
+            else:   # cp: 고급 호환 경로, 워커마다 가중치를 복제한다.
+                self._stage("조건 인코딩")
                 state = self.cond(**inputs, generator=g)
                 times["조건"] = time.time() - t0
                 self.check_memory(plan, h, w, state, when=" (조건 포함)")
                 t0 = time.time()
+                self._stage("디노이징")
                 res = self._denoise_remote(state, g, gen)
                 times["디노이징"] = time.time() - t0
                 self._stage("디코딩")
@@ -627,11 +677,6 @@ class Engine:
                 dev = torch.device(self._cond_dev)   # 워커가 CPU 로 돌려준 latents → VAE 가 있는 첫 장으로
                 r = self.dec(latents=res["latents"].to(dev), audio_latents=res["audio_latents"].to(dev), output=OUTPUTS)
                 times["디코딩"] = time.time() - t0
-        except Exception as e:
-            if "out of memory" in str(e).lower() or type(e).__name__ == "OutOfMemoryError":
-                raise RuntimeError(f"GPU 메모리 부족(OOM): {str(e).splitlines()[0][:200]} — 할 일: -s 를 줄이기, --size 576, "
-                                   "또는 GPU 4장 방식(bash scripts/up.sh 를 --ref 없이)") from e
-            raise
         finally:
             stop.set()
             if torch.cuda.is_available():
@@ -755,8 +800,12 @@ class Server:
                 self.engine.on_stage = lambda stage: job.__setitem__('stage', stage)
                 return self.engine.run(job['plan'], out, lambda progress: job.__setitem__('progress', round(progress,3)))
             except Exception as error:
+                if getattr(error, "report", None):
+                    job["memory_failure"] = error.report
                 if not (is_memory_failure(error) or isinstance(error,WorkerDied)) or attempt >= 2:
                     raise
+                if getattr(error, "report", {}).get("kind") == "host":
+                    raise  # Output resizing cannot recover a host-RAM allocation failure.
                 traceback.print_exc()
                 release_request_memory(error, getattr(self.engine,'torch',None))
                 if job.get('cancel_requested'): raise GenerationCancelled('영상 생성을 중지했습니다.') from error
@@ -765,8 +814,11 @@ class Server:
                 job.update(progress=0,stage=f'메모리 복구 · {edge}px로 재시도 {attempt+1}/2',recovery=dict(attempt=attempt+1,short_edge=edge))
                 self.save(job)
                 out.with_suffix('.part.mp4').unlink(missing_ok=True)
-                # Model paths, prompts, seeds, duration and references remain the same.
-                self.reload_engine(error)
+                # The per-request reference geometry follows the smaller edge too.
+                # A sharded engine has no failed collective to rebuild after a CUDA OOM.
+                # Re-loading every model here caused a second large RAM/VRAM allocation.
+                if isinstance(error, WorkerDied) or getattr(self.engine, "mode", None) == "cp":
+                    self.reload_engine(error)
 
     def cancel(self, vid: str) -> dict:
         with self.lock:
@@ -898,7 +950,8 @@ def make_handler(srv: Server):
                 return self._json(200 if srv.engine_status=='ready' else 503,
                                   {"status": srv.engine_status, "engine": "diffusers", "variant": srv.variant,
                                    "error":srv.engine_error,"model_path":(srv.engine_options or {}).get('model_dir'),
-                                   "active":active})
+                                   "active":active,"memory_mode":getattr(srv.engine, "mode", None),
+                                   "placement":getattr(srv.engine, "placement", None)})
             if path == "/v1/models":
                 if srv.engine_status != 'ready': return self._json(503,{'error':srv.engine_error or '영상 모델 복구 중'})
                 return self._json(200, {"object": "list", "data": [{"id": "MiniMaxAI/MiniMax-H3", "object": "model",
@@ -910,7 +963,7 @@ def make_handler(srv: Server):
                     return self._json(404, {"error": f"없는 id: {parts[3]}"})
                 if len(parts) == 4:
                     return self._json(200, {k: job.get(k) for k in ("id", "status", "progress", "error", "created_at",
-                                                                    "started_at", "finished_at", "task", "prompt_used", "stage")})
+                                                                    "started_at", "finished_at", "task", "prompt_used", "stage", "recovery", "memory_failure")})
                 if parts[4] == "content":
                     f = Path(job.get("file") or "")
                     if job.get("status") != "completed" or not f.is_file():

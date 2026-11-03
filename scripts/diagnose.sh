@@ -40,7 +40,7 @@ sec "서버 상태"; bash "$ROOT/scripts/status.sh" 2>&1 | sed 's/\x1b\[[0-9;]*m
 sec "GPU"; nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader 2>&1; python3 "$ROOT/scripts/h3_leftovers.py" --gpu-users 2>&1
 L=$(ls -t "$H3_LOG_DIR"/up-*.log 2>/dev/null | head -1)
 sec "up 로그: ${L:-없음} — 오류·단계 줄"
-[[ -n "$L" ]] && grep -n -E "Error|error|Traceback|실패|끝났다|OOM|out of memory|경고|준비됨|장 방식|워커 연결|생성:|걸린 시간|다듬" "$L" | sed 's/\x1b\[[0-9;]*m//g' | tail -40
+[[ -n "$L" ]] && grep -n -E "Error|error|Traceback|실패|끝났다|OOM|out of memory|경고|준비됨|장 방식|가중치|weight sharding|OOM 상세|워커 연결|생성:|걸린 시간|다듬" "$L" | sed 's/\x1b\[[0-9;]*m//g' | tail -40
 sec "up 로그 마지막 60줄"; [[ -n "$L" ]] && tail -n 60 "$L" | sed 's/\x1b\[[0-9;]*m//g'
 sec "마지막 작업"
 J=$(ls -td "$H3_OUTPUT_DIR"/*/ 2>/dev/null | head -1)
@@ -52,4 +52,4 @@ for s in j.get("scenes", []):
     print(f"  장면{s['index'] + 1} {s.get('task')} {s.get('duration')}초 상태 {s.get('status')} 단계 {s.get('stage')} video_id {s.get('video_id')} 오류 {s.get('error')}")
 PY
 else echo "없음"; fi
-for f in $(ls -t "$STORAGE_ROOT"/dserver/*/*.json 2>/dev/null | head -2); do echo "-- 서버 작업 $f"; python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('status'), d.get('error'))" "$f"; done
+for f in $(ls -t "$STORAGE_ROOT"/dserver/*/*.json 2>/dev/null | head -2); do echo "-- 서버 작업 $f"; python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('status'), d.get('error')); print('memory_failure:', d.get('memory_failure')); print('recovery:', d.get('recovery'))" "$f"; done

@@ -191,7 +191,7 @@ for k in "${!GERR[@]}"; do fail "${GERR[$k]}" "${GHINT[$k]}"; done
 layout() {   # GPU 목록 → 쓰는 방식 (diffusers)
   local n; n=$(tr ',' '\n' <<<"$1" | grep -c .)
   [[ "$H3_ENGINE" != diffusers ]] && return
-  if [[ $n -ge 3 ]]; then echo " — 텍스트 인코더·VAE 1장 + 영상 모델 $((n - 1))장에 나눠 함께"
+  if [[ $n -ge 3 ]]; then echo " — 텍스트 인코더·VAE 1장 + 영상 모델 가중치 한 벌을 $((n - 1))장에 분산 (weight sharding)"
   elif [[ $n -eq 2 ]]; then echo " — 텍스트 인코더 1장 + 영상 모델 1장"
   else echo " — 1장에서 번갈아 올림 (느림)"; fi; }
 if [[ $problems -eq $gpu_problems ]]; then

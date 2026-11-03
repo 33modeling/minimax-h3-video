@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-03",
+  "user_report": {
+    "hardware": "H100 x8",
+    "issue": "OOM also after lowering output size",
+    "rawTraceback": "not provided",
+    "reproductionOnUserH100": "not measured"
+  },
+  "verified_code_defects": [
+    "context-parallel denoisers replicate one full transformer per worker",
+    "reference image 2048 short edge and reference video 768 canvas ignored output size reductions",
+    "every OOM retry rebuilt all models"
+  ],
+  "changes": [
+    "one checkpoint copy with contiguous whole-block placement across denoiser GPUs",
+    "no root device-map assignment that would temporarily place all weights on one GPU",
+    "validate actual tensor devices after loading",
+    "reference image/video encoding follows --size and restores config between requests",
+    "do not reload sharded models on recoverable CUDA OOM",
+    "record failed stage and per-GPU allocation/reservation; host OOM does not repeat output-only resizing"
+  ],
+  "cpuTests": {
+    "testsRun": 71,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "serversStarted": 0,
+    "h100InferenceMeasured": false
+  },
+  "metaCalculation": {
+    "source": "H3 default architecture meta tensors, not measured GPU memory",
+    "copies": 1,
+    "weightGiB": {
+      "cuda:1": 19.642,
+      "cuda:2": 20.442,
+      "cuda:3": 21.644
+    },
+    "totalWeightGiB": 61.72846078872681,
+    "rootDeviceAssignment": false,
+    "blockCounts": {
+      "cuda:1": 15,
+      "cuda:2": 17,
+      "cuda:3": 18
+    }
+  },
+  "bugBoard": {
+    "id": 1149,
+    "status": "doing",
+    "ext_key": "h3-ref-eightgpu-sharding-20261103"
+  },
+  "limitations": [
+    "No actual 8-H100 inference or peak-memory measurement was performed",
+    "Raw user traceback unavailable: exact failure stage remains unconfirmed",
+    "Layer sharding may change latency and floating point results versus context parallelism",
+    "Lower reference encoding resolution can change detail; original files, order, prompt, seed and duration are preserved"
+  ],
+  "requiredUserAction": [
+    "Stop the existing up.sh process with Ctrl+C",
+    "git pull --ff-only origin main",
+    "bash scripts/up.sh --ref",
+    "Confirm weight sharding in the startup log or /health memory_mode=sharded"
+  ],
+  "serversStartedOrRestarted": 0
+}
