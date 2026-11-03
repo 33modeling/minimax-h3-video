@@ -4,7 +4,7 @@
   "scope": "minimax-h3-video 전체 main 이력과 본 대화의 H3 설치/CLI/설명서/77 배포 관련 문제",
   "sourceCutoff": "1d5fdf59de5b37b11af123579bcbff1da94253db",
   "sourceHistoryCount": 181,
-  "caseCount": 33,
+  "caseCount": 35,
   "boardSnapshotItems": 16,
   "responsibleForCurrentWork": "Codex",
   "retention": "기존 사건과 실패 증거를 삭제하지 않는다. 수정·재발·추가 검증은 날짜와 근거를 붙여 사건 이벤트로 추가한다. 이전 스냅샷은 덮어쓰지 않는다.",
@@ -830,6 +830,52 @@
         "전환 시 기존 모델을 내리는 정책으로 수정; 현재 모델 연속 호출은 유지",
         "실제 H100 전체 모델·4/8장 충분 여부를 검증했다고 보고하지 않음"
       ]
+    },
+    {
+      "id": "H3-034",
+      "title": "참고 영상 원본·전처리 프레임을 denoiser worker마다 중복 전송",
+      "kind": "메모리·직렬화",
+      "boardIds": [
+        1208
+      ],
+      "responsibility": "Codex가 현재 소스 감사·CPU 대조 재현으로 확인. 최초 유입·실행 작성자는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "7b705452056e93f55ed07a9ef94d64ac2919bd9d",
+      "fixCommits": [],
+      "evidence": [
+        "docs/ADDITIONAL-REF-AUDIT-20261104.md",
+        "bug-ledger/evidence/additional-ref-reproductions-20261104.json",
+        "bug-ledger/evidence/additional-ref-reproduce-20261104.py"
+      ],
+      "status": "CPU 대조 재현·현황판 open / 미수정·사용자 H100 원인 일치 미확인",
+      "details": [
+        "실제 Engine._denoise_remote CPU 캡처에서 원본·전처리 배열 모두 잔존",
+        "전송 2,367,201바이트; 메타데이터 예시 7,521바이트는 크기 비교만 검증",
+        "host RAM·직렬화 개선 대상; 사용자 VRAM OOM 직접 원인 미확정"
+      ]
+    },
+    {
+      "id": "H3-035",
+      "title": "worker OOM이 상세 결과 전송 전에 재발생해 API 오류 정보를 잃음",
+      "kind": "오류 진단·프로세스 수명",
+      "boardIds": [
+        1209
+      ],
+      "responsibility": "Codex가 현재 소스 감사·CPU 대조 재현으로 확인. 최초 유입·실행 작성자는 미확정",
+      "introducedCommit": null,
+      "knownBadSnapshot": "7b705452056e93f55ed07a9ef94d64ac2919bd9d",
+      "fixCommits": [],
+      "evidence": [
+        "docs/ADDITIONAL-REF-AUDIT-20261104.md",
+        "bug-ledger/evidence/additional-ref-reproductions-20261104.json",
+        "bug-ledger/evidence/additional-ref-reproduce-20261104.py"
+      ],
+      "status": "CPU 대조 재현·현황판 open / 미수정·사용자 H100 원인 일치 미확인",
+      "details": [
+        "실제 worker 요청 문장을 추출해 모의 계산으로 대조: OOM DONE 0회, 일반 오류 1회",
+        "stderr traceback은 유지되지만 구조화 오류·rank별 메모리 기록은 유실",
+        "전체 분산 worker·실제 H100 OOM 검증 아님"
+      ]
     }
   ],
   "snapshotHashes": {
@@ -852,7 +898,10 @@
     "evidence/performance-fix-validation-20261103.json": "9654bdbe860ad9378532d356101d3148c780d96027fac0e2087ecca44d376056",
     "evidence/performance-wrong-source-publication-20261103.json": "bb4e3fd30b7ac7f8dd66515b6ccffb944d2741220c37072525634385703e96db",
     "evidence/performance-fix-publication-20261103.json": "7a478eba9bb6049d912522fd0a5315d9407c3f552a7841b77d7459466c75b7cf",
-    "evidence/ref-conditioning-memory-20261103.json": "511b715b33c75fee8abe6d20b6f6d5bb6bccf9143a32f4235c98ea0d555aa118"
+    "evidence/ref-conditioning-memory-20261103.json": "511b715b33c75fee8abe6d20b6f6d5bb6bccf9143a32f4235c98ea0d555aa118",
+    "evidence/additional-ref-reproduce-20261104.py": "cc4f19e6d25ad3e196a3fbc6e88ee9c64046488c19fdaf60f2b6ad15806d0437",
+    "evidence/additional-ref-reproductions-20261104.json": "c9807645ae072faa6ff1c6e087fb94bdfd726057c69d869936867fa1e81433fe",
+    "evidence/rpc-reference-reproduction-20261104.json": "1a25b9f365bd1d93ef64829067cb4247b16212023bf061afd385a7529e482056"
   },
   "archiveBoard": {
     "id": 1153,
@@ -930,6 +979,15 @@
       "action": "ref-oom-user-report-and-component-memory-fix",
       "case": "H3-033",
       "note": "사용자 현재 Ref OOM 보고 보존. 실제 오류 로그 요청 중. 4장 충분·8장 완주를 주장하지 않음."
+    },
+    {
+      "at": "2026-11-03T20:51:20.656150+00:00",
+      "action": "additional-ref-audit",
+      "cases": [
+        "H3-034",
+        "H3-035"
+      ],
+      "note": "새 결함 두 건만 open 기록. 실행 코드 변경 없음. 기존 33항목과 실패 증거·H100 미확인 상태를 보존."
     }
   ]
 }

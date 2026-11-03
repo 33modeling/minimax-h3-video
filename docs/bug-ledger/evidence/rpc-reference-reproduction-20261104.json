@@ -1,0 +1,18 @@
+{
+  "sourceCommit": "7b705452056e93f55ed07a9ef94d64ac2919bd9d",
+  "reproduction": "Actual Engine._denoise_remote with a captured connection and synthetic CPU reference arrays; no server/model inference",
+  "originalArrayBytes": 1179648,
+  "normalizedArrayBytes": 1179648,
+  "actualRPCPayloadBytes": 2367645,
+  "illustrativeMetadataOnlyPayloadBytes": 8029,
+  "rawOriginalAndNormalizedFramesSurviveRPC": true,
+  "transportedReferenceKeys": [
+    "references",
+    "normalized_references"
+  ],
+  "workersDecodeSamePayloadInCurrentCode": true,
+  "metadataReplacementCompatibilityValidated": false,
+  "userH100OOMCauseConfirmed": false,
+  "H100MemoryOrPerformanceMeasured": false,
+  "serversStarted": 0
+}

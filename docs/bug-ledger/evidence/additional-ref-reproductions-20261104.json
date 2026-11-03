@@ -1,0 +1,38 @@
+{
+  "sourceCommit": "7b705452056e93f55ed07a9ef94d64ac2919bd9d",
+  "scope": "CPU code-path audit; synthetic arrays; captured transport; extracted worker request statements",
+  "rpc": {
+    "originalArrayBytes": 1179648,
+    "normalizedArrayBytes": 1179648,
+    "actualPayloadBytes": 2367201,
+    "illustrativeMetadataOnlyPayloadBytes": 7521,
+    "rawOriginalAndNormalizedFramesSurviveRPC": true,
+    "metadataReplacementCompatibilityValidated": false
+  },
+  "workerErrorReply": {
+    "oom": {
+      "doneMessages": 0,
+      "raised": "CUDA out of memory (synthetic audit failure)",
+      "finallyRan": true,
+      "cleanupCalls": 1
+    },
+    "nonMemoryControl": {
+      "doneMessages": 1,
+      "raised": null,
+      "finallyRan": true,
+      "cleanupCalls": 2
+    },
+    "fullDistributedWorkerExecuted": false,
+    "stderrTracebackStillExistsInProduction": true
+  },
+  "sourceHashes": {
+    "src/h3video/dserver.py": "0664e00d656a79fdd7c08ae3a273b13177cd9b3aea025e233a887af1e4c889d2",
+    "src/h3video/dworker.py": "9bd1ae6ec309fb1adf1fb0dfd576c8914f5c79cd489b85dec44b29fb17fa2c87"
+  },
+  "limits": {
+    "H100InferenceMeasured": false,
+    "userOOMCauseConfirmed": false,
+    "runtimeCodeChanged": false,
+    "serversStartedOrRestarted": 0
+  }
+}
