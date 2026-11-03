@@ -1,0 +1,23 @@
+{
+  "at": "2026-11-03T04:28:36.034662+00:00",
+  "actor": "Codex",
+  "userClarification": "1080p・16초는 입력 영상이다.",
+  "incorrectPreviousInterpretation": "입력 길이를 출력 목표 길이로 오인해 CLI 출력 8초+8초 계획을 사용자 작업의 원인으로 적용했다.",
+  "correctedFacts": {
+    "inputResolution": "1080p",
+    "inputDurationSeconds": 16,
+    "outputDurationSeconds": null,
+    "inputSplitIntoTwo8SecondClipsConfirmed": false,
+    "actualCommandKnown": false,
+    "actualWorkflowKnown": false,
+    "nodeLogsAvailable": false
+  },
+  "sourceInspection": [
+    "Ref2VA 입력 로더는 MiniMaxH3VideoReference.from_file로 원본 프레임과 FPS를 디코딩한다.",
+    "이 로더는 입력 파일을 8초짜리 두 클립으로 나누지 않는다.",
+    "이후 조건 정규화·인코딩과 출력 디노이징은 서로 다른 단계다.",
+    "레이어 분산의 순차 실행은 코드상 확인되지만 사용자 90분의 어느 단계가 병목인지 아직 미확인이다."
+  ],
+  "supersededEvidence": "low-utilization-report-20261103.json의 userReport.output 레이블과 사용자 작업에 적용한 8+8 설명",
+  "performanceFixImplemented": false
+}
