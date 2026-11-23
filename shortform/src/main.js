@@ -67,6 +67,11 @@ const state = {
 };
 
 let recoveryId=LS.get('shorts.recovery.current')||crypto.randomUUID(),recoveryReady=false,recoveryWrites=Promise.resolve();
+let fileReadSequence = 0, typing = null;
+function beginFileRead() {
+  const read = ++fileReadSequence, project = recoveryId;
+  return () => read === fileReadSequence && project === recoveryId && !state.busy;
+}
 LS.set('shorts.recovery.current',recoveryId);
 async function saveCurrent(){if(!recoveryReady||!state.jsonText.trim())return;const draft={id:recoveryId,jsonText:state.jsonText,files:[...state.files],paused:Boolean(state.paused)};recoveryWrites=recoveryWrites.then(()=>saveDraft(draft)).catch(()=>{el.recoveryMessage.textContent='기기 저장 공간을 확인해 주세요. 현재 작업은 유지하며 결과를 내려받을 수 있습니다.';});await recoveryWrites;await refreshLibrary();}
 async function refreshLibrary(){try{const rows=await listProjects();el.recoveryLibrary.replaceChildren(new Option('저장한 영상 작업', ''),...rows.map(row=>new Option(row.title+(row.paused?' · 일시중지':''),row.id)));el.recoveryLibrary.value=recoveryId;}catch{}}
@@ -316,6 +321,7 @@ function parseJsonText() {
 }
 
 function setJsonText(text, name) {
+  clearTimeout(typing);
   state.jsonText = text;
   el.jsonText.value = text;
   if (name != null) state.jsonLabel = name;
@@ -341,6 +347,7 @@ function writeFields(changes, { quiet = false } = {}) {
 
 // 이야기 JSON 이 아닌 작업 JSON 을 바로 넣을 때(예시·Claude)
 function useJson(text, label) {
+  fileReadSequence++;
   story.src = null;
   story.note = null;
   story.unused = new Set();
@@ -647,6 +654,7 @@ let engine = null;
 const ext = () => (engine && engine.container) || 'mp4';
 
 function setBusy(b) {
+  if (b) fileReadSequence++;
   state.busy = b;
   for (const id of ['jsonFile', 'mediaFiles', 'firstImage', 'refFiles', 'allFiles', 'jsonText', 'importFile', 'planBtn', 'pickAll', 'startExample', 'startStory', 'startIdea']) el[id].disabled = b;
   document.querySelectorAll('#settingsPanel select, #settingsPanel input, #aiPanel input, #aiPanel select, .slot-pick').forEach((x) => (x.disabled = b));
@@ -870,16 +878,20 @@ function convertStory() {
 
 async function loadJsonFile(f) {
   if (!f) return;
-  const text = await f.text();
+  const current = beginFileRead();
   el.importFile.value = '';
+  let text;
+  try { text = await f.text(); }
+  catch (error) { if (current()) showDropNote(`파일을 읽지 못했다. ${error.message}`, 'error'); return; }
+  if (!current()) return;
   if (takeStory(text, f.name)) return analyze();
   setJsonText(text, f.name);
   analyze();
 }
 el.importFile.addEventListener('change', () => loadJsonFile(el.importFile.files[0]));
 
-let typing = null;
 el.jsonText.addEventListener('input', () => {
+  fileReadSequence++;
   clearTimeout(typing);
   typing = setTimeout(() => {
     if (takeStory(el.jsonText.value, '직접 입력')) return analyze();
@@ -922,6 +934,7 @@ function refsToJson(files) {
 
 // 칩의 × : 칸에서 빼고, 3·4번 칸이면 JSON 에서도 그 이름을 지운다
 function removeFile(slot, name) {
+  fileReadSequence++;
   if (state.busy) return;
   showDropNote([]);
   if (slot === 'json') {
@@ -961,13 +974,19 @@ function currentCtx() {
 // 한꺼번에 놓기(또는 칸에 놓기·고르기). target 이 있으면 JSON 이 아닌 파일은 그 칸으로.
 // zip 은 풀어서 안의 파일을 하나씩 놓은 것처럼 다룬다.
 const SLOT_KO = { media: '내 영상·그림·음악', image: '첫 장면 그림', refs: '참고 자료' };
-async function takeDrop(list, target = null) {
-  let files = [...list];
-  if (!files.length) return;
+function takeDrop(list, target = null, current = beginFileRead()) {
   if (state.busy) {
-    showDropNote('만드는 중에는 파일을 바꿀 수 없어요. 끝나거나 취소한 뒤 넣어 주세요.', 'warn');
+    showDropNote('영상 제작 중에는 파일을 바꿀 수 없다. 제작을 끝내거나 중지한 뒤 다시 선택한다.', 'warn');
     return;
   }
+  return applyDrop(list, target, current).catch((error) => {
+    if (current()) showDropNote(`파일을 읽지 못했다. ${error.message}`, 'error');
+  });
+}
+
+async function applyDrop(list, target, current) {
+  let files = [...list];
+  if (!files.length || !current()) return;
   const zipNotes = [];
   const notes = [];
   let level = 'info';
@@ -983,14 +1002,29 @@ async function takeDrop(list, target = null) {
         zipNotes.push(`${z.name}: ${e.message}`);
         level = 'error';
       }
+      if (!current()) return;
     }
     target = null; // zip 안의 파일은 늘 알아서 나눈다
   }
   // 받아쓰기 자막(SRT·VTT·받아쓰기 JSON)은 칸에 넣지 않고 작업 JSON 의 captions 로 바꾼다
   const capFiles = [];
+  const jsonTexts = new Map();
   for (const f of files) {
-    if (isCaptionFileName(f.name) || (isJsonFile(f) && looksLikeTranscriptText(await f.text()))) capFiles.push(f);
+    if (isCaptionFileName(f.name)) capFiles.push(f);
+    else if (isJsonFile(f)) {
+      const text = await f.text();
+      if (!current()) return;
+      jsonTexts.set(f, text);
+      if (looksLikeTranscriptText(text)) capFiles.push(f);
+    }
   }
+  const captionFile = capFiles.at(-1);
+  let caption, captionError;
+  if (captionFile) {
+    try { caption = parseCaptionFile(jsonTexts.get(captionFile) ?? await captionFile.text(), captionFile.name); }
+    catch (error) { captionError = error.message; }
+  }
+  if (!current()) return;
   files = files.filter((f) => !capFiles.includes(f));
   const { json, others } = pickJson(files);
   if (others.length) notes.push(`JSON은 하나만 써요: ${json.name}을 쓰고 ${others.map((f) => f.name).join(', ')}은 뺐어요`);
@@ -998,7 +1032,7 @@ async function takeDrop(list, target = null) {
   let text = null;
   let ctx = currentCtx();
   if (json) {
-    text = await json.text();
+    text = jsonTexts.get(json);
     let v;
     try {
       v = JSON.parse(text.replace(/^﻿/, ''));
@@ -1028,11 +1062,11 @@ async function takeDrop(list, target = null) {
     writeFields({ image: sorted.image[0].name }, { quiet: true });
   }
   let capOk = false;
-  if (capFiles.length) {
-    const r = await takeCaptions(capFiles.at(-1));
+  if (captionFile) {
+    const r = captionError === undefined ? putCaptions(caption, captionFile.name) : { error: true, text: captionError };
     capOk = !r.error;
     notes.push(r.text);
-    if (capFiles.length > 1) notes.push(`자막 파일은 하나만 써요: ${capFiles.at(-1).name}`);
+    if (capFiles.length > 1) notes.push(`선택한 자막 파일 중 마지막 파일을 사용한다. ${captionFile.name}`);
     if (r.error) level = 'error';
   }
   if (sorted.refs.length) {
@@ -1053,7 +1087,7 @@ async function takeDrop(list, target = null) {
   if (placed.length && (!target || zips.length || files.length > 1)) notes.unshift(`${target ? '넣었어요' : '나눠 넣었어요'}: ${placed.join(', ')}`);
   showDropNote([...zipNotes, ...notes], level);
   await analyze();
-  if (capFiles.length) warnLongCaptions();
+  if (captionFile && current()) warnLongCaptions();
 }
 
 // ---------- 받아쓰기 자막 → captions ----------
@@ -1066,13 +1100,6 @@ function putCaptions({ captions, title }, label) {
   writeFields(changes, { quiet: true });
   if (!state.jsonLabel || state.jsonLabel === '화면 설정에서 만듦') state.jsonLabel = `${label} 자막`;
   return { error: false, text: `${label}에서 자막 ${captionSummary(captions)}을 넣었어요${obj && (obj.captions || []).length ? ' (전에 있던 자막은 바꿨어요 · 되돌리려면 "수정 전 JSON 복원")' : ''}` };
-}
-async function takeCaptions(file) {
-  try {
-    return putCaptions(parseCaptionFile(await file.text(), file.name), file.name);
-  } catch (e) {
-    return { error: true, text: e.message };
-  }
 }
 // 영상보다 늦게 시작하는 자막은 합성에서 빠진다 → 미리 알린다
 function warnLongCaptions() {
@@ -1175,13 +1202,14 @@ window.addEventListener('drop', (e) => {
   e.preventDefault();
   endDrag();
   const slotEl = e.target && e.target.closest ? e.target.closest('[data-slot]') : null;
+  const current = beginFileRead();
   // DataTransfer 는 이 이벤트 안에서만 읽힌다: 폴더 항목과 파일 목록을 먼저 잡아 둔다
   const entries = [...(e.dataTransfer.items || [])].filter((it) => it.kind === 'file').map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null));
   const plain = [...(e.dataTransfer.files || [])];
   const useEntries = entries.length && entries.every(Boolean) && entries.some((en) => en.isDirectory);
   (useEntries ? readEntries(entries) : Promise.resolve(plain))
-    .then((files) => takeDrop(files, slotEl ? slotEl.dataset.slot : null))
-    .catch((err) => showDropNote(`파일을 읽지 못했어요: ${err.message}`, 'error'));
+    .then((files) => { if (current()) return takeDrop(files, slotEl ? slotEl.dataset.slot : null, current); })
+    .catch((err) => { if (current()) showDropNote(`파일을 읽지 못했다. ${err.message}`, 'error'); });
 });
 
 document.querySelectorAll('input[name=tpl]').forEach((r) =>
@@ -1255,11 +1283,11 @@ el.againBtn.addEventListener('click', make);
 el.cancelBtn.addEventListener('click', () => state.abort && state.abort.abort());
 el.pauseBtn.onclick=()=>{state.pauseRequested=true;el.pauseBtn.disabled=true;if(state.phase==='generate')setProgress(0,'현재 장면 저장 후 일시중지…');else state.abort?.abort();};
 el.recoverySave.onclick=()=>saveCurrent().then(()=>{el.recoveryMessage.textContent='작업·원본 파일·완료한 장면을 저장했습니다.';});
-el.recoveryLibrary.onchange=async()=>{if(state.busy||!el.recoveryLibrary.value)return;const selected=el.recoveryLibrary.value;await saveCurrent();await restoreSaved(await loadProject(selected));};
+el.recoveryLibrary.onchange=async()=>{if(state.busy||!el.recoveryLibrary.value)return;fileReadSequence++;const selected=el.recoveryLibrary.value;await saveCurrent();await restoreSaved(await loadProject(selected));};
 // 수정 전 JSON 복원: 화면의 지금 JSON 을 먼저 저장(그래야 그 직전 판이 '수정 전'이 된다). 이전 판이 없으면 그렇다고 알린다.
-el.recoveryRestore.onclick=async()=>{if(state.busy)return;await saveCurrent();const saved=await restorePrevious(recoveryId);if(!saved?.restored){el.recoveryMessage.textContent='되돌릴 수정 전 JSON이 없습니다. JSON을 고친 뒤에 쓸 수 있어요.';return;}await restoreSaved(saved);el.recoveryMessage.textContent='수정 전 JSON으로 되돌렸습니다. 한 번 더 누르면 방금 판으로 돌아갑니다.';};
+el.recoveryRestore.onclick=async()=>{if(state.busy)return;fileReadSequence++;await saveCurrent();const saved=await restorePrevious(recoveryId);if(!saved?.restored){el.recoveryMessage.textContent='되돌릴 수정 전 JSON이 없습니다. JSON을 고친 뒤에 쓸 수 있어요.';return;}await restoreSaved(saved);el.recoveryMessage.textContent='수정 전 JSON으로 되돌렸습니다. 한 번 더 누르면 방금 판으로 돌아갑니다.';};
 // 새 작업: 칸의 파일·이야기·결과까지 비운다(전에는 2번 칸 파일과 '준비됐어요' 안내가 남아 다음 JSON 에 옛 파일이 섞였다)
-async function startNewJob(){await saveCurrent();recoveryId=crypto.randomUUID();LS.set('shorts.recovery.current',recoveryId);slotFiles.media=[];slotFiles.image=[];slotFiles.refs=[];state.files=[];state.generated=new Map();state.paused=false;story.src=null;story.note=null;story.unused=new Set();showDropNote([]);setJsonText('','');el.resultBox.hidden=true;el.resultEmpty.hidden=false;}
+async function startNewJob(){fileReadSequence++;await saveCurrent();recoveryId=crypto.randomUUID();LS.set('shorts.recovery.current',recoveryId);slotFiles.media=[];slotFiles.image=[];slotFiles.refs=[];state.files=[];state.generated=new Map();state.paused=false;story.src=null;story.note=null;story.unused=new Set();showDropNote([]);setJsonText('','');el.resultBox.hidden=true;el.resultEmpty.hidden=false;}
 el.recoveryNew.onclick=async()=>{if(state.busy)return;await startNewJob();await analyze();await refreshLibrary();el.recoveryMessage.textContent='새 작업을 시작했습니다. 앞 작업은 작업 목록에 있어요.';};
 el.notifyChk.addEventListener('change', () => {
   if (el.notifyChk.checked && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
