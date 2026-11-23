@@ -12,15 +12,15 @@
   <header class="top">
     <a class="home" href="/">← Home</a>
     <span class="top-title">숏폼 제작</span>
-    <span class="local-badge" title="고른 파일은 업로드하지 않습니다">기기 안에서만 처리</span>
+    <span class="local-badge" title="영상 합성은 브라우저에서 한다. AI 기능을 쓰면 필요한 자료를 선택한 서버나 제공자에 보낸다.">브라우저에서 합성</span>
     <button type="button" class="help-btn" id="helpBtn" aria-label="도움말" aria-haspopup="dialog">?</button>
   </header>
   <main id="app" class="layout">
     <div class="col-main">
       <section class="intro" id="intro">
         <span class="studio-kicker">SHORTFORM STUDIO</span>
-        <h1>이야기를 담은, 짧은 한 편.</h1>
-        <p>템플릿으로 장면을 기획하고, 영상·그림·글에 자막과 음악을 더하세요. 이 브라우저에서 한 편의 숏폼으로 완성합니다.</p>
+        <h1>숏폼 영상 만들기</h1>
+        <p>영상과 그림을 배치하고 자막과 음악을 넣는다. 완성본은 브라우저에서 합성한다.</p>
         <div class="tour-hint" id="tourHint" hidden>
           <button type="button" class="tour-hint-go" id="tourHintGo">처음이세요? <b>1분 둘러보기</b></button>
           <button type="button" class="tour-hint-x" id="tourHintClose" aria-label="둘러보기 안내 닫기">×</button>
@@ -28,12 +28,12 @@
       </section>
 
       <section class="start" id="startArea" aria-labelledby="start-h">
-        <h2 id="start-h" class="sec-title">어떻게 시작할까요?</h2>
+        <h2 id="start-h" class="sec-title">제작 시작</h2>
         <div class="start-grid">
           <button type="button" class="start-card" id="startExample">
             <svg class="start-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
             <strong>예시로 해 보기</strong>
-            <small>예시 영상을 바로 만들어 봐요. 파일이 없어도 돼요.</small>
+            <small>준비된 파일로 예시 영상을 만든다.</small>
           </button>
           <button type="button" class="start-card" id="startStory">
             <svg class="start-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C6.5 4.3 9.3 4.3 12 6c2.7-1.7 5.5-1.7 8-.5v13c-2.5-1.2-5.3-1.2-8 .5-2.7-1.7-5.5-1.7-8-.5z" fill="none" stroke-width="1.8"/><path d="M12 6v13" fill="none" stroke-width="1.8"/></svg>
@@ -43,10 +43,10 @@
           <button type="button" class="start-card" id="startIdea">
             <svg class="start-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-3.5 10.9V17h7v-3.1A6 6 0 0 0 12 3zM9.5 20h5" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
             <strong>아이디어로 AI 기획</strong>
-            <small>아이디어를 적으면 Claude가 작업 JSON을 써 줘요. API 키가 필요해요.</small>
+            <small>선택한 모델로 장면과 자막을 기획한다. 모델 연결이나 API 키가 필요하다.</small>
           </button>
         </div>
-        <p class="term"><b>작업 JSON</b>은 무엇을 만들지(영상·자막·제목·음악) 적어 둔 설정 파일이에요. 직접 쓰지 않아도 돼요.</p>
+        <p class="term"><b>작업 JSON</b>에 영상, 자막, 제목, 음악 설정을 담는다. 화면에서도 설정할 수 있다.</p>
       </section>
 
       <div id="promptLibrary"></div>
@@ -55,8 +55,8 @@
         <div class="dropzone" id="dropZone">
           <svg class="drop-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div class="drop-text">
-            <strong>파일을 한꺼번에 놓으세요</strong>
-            <small>작업 JSON·영상·그림·음악·zip·자막(SRT·VTT)을 같이 놓으면 알맞은 칸에 나눠 넣어요</small>
+            <strong>여기에 파일 놓기</strong>
+            <small>JSON·영상·그림·음악·ZIP·자막(SRT·VTT)을 종류별로 분류한다.</small>
           </div>
           <button type="button" class="ghost small" id="pickAll">파일 고르기</button>
           <input id="allFiles" type="file" multiple hidden accept=".json,.zip,.srt,.vtt,application/json,application/zip,video/*,audio/*,image/*">
@@ -66,7 +66,7 @@
           <div class="slot" id="slotJson" data-slot="json">
             <div class="slot-head">
               <span class="slot-num" aria-hidden="true">1</span>
-              <div class="slot-text"><strong>작업 JSON</strong><small>무엇을 만들지 적은 파일 · 이야기 JSON도 돼요</small></div>
+              <div class="slot-text"><strong>작업 JSON</strong><small>작업 설정 또는 이야기 JSON</small></div>
               <button type="button" class="slot-pick" data-input="jsonFile" aria-label="1번 칸 작업 JSON 고르기">고르기</button>
             </div>
             <input id="jsonFile" type="file" accept=".json,application/json" hidden>
@@ -75,7 +75,7 @@
           <div class="slot" id="slotMedia" data-slot="media">
             <div class="slot-head">
               <span class="slot-num" aria-hidden="true">2</span>
-              <div class="slot-text"><strong>내 영상·그림·음악</strong><small>JSON에 적힌 파일, 쪽 그림, 배경음 · 없어도 돼요</small></div>
+              <div class="slot-text"><strong>내 영상·그림·음악</strong><small>JSON에서 참조하는 파일, 쪽 그림, 배경음</small></div>
               <button type="button" class="slot-pick" data-input="mediaFiles" aria-label="2번 칸 내 영상·그림·음악 고르기">고르기</button>
             </div>
             <input id="mediaFiles" type="file" accept="video/*,audio/*,image/*" multiple hidden>
@@ -84,7 +84,7 @@
           <div class="slot" id="slotImage" data-slot="image">
             <div class="slot-head">
               <span class="slot-num" aria-hidden="true">3</span>
-              <div class="slot-text"><strong>첫 장면 그림 <em class="optional">선택</em></strong><small>AI 영상이 이 그림에서 시작해요 (JSON의 image)</small></div>
+              <div class="slot-text"><strong>첫 장면 그림 <em class="optional">선택</em></strong><small>AI 영상의 첫 프레임 (JSON의 image)</small></div>
               <button type="button" class="slot-pick" data-input="firstImage" aria-label="3번 칸 첫 장면 그림 고르기">고르기</button>
             </div>
             <input id="firstImage" type="file" accept="image/*" hidden>
@@ -93,7 +93,7 @@
           <div class="slot" id="slotRefs" data-slot="refs">
             <div class="slot-head">
               <span class="slot-num" aria-hidden="true">4</span>
-              <div class="slot-text"><strong>참고 자료 <em class="optional">선택</em></strong><small>인물·동작·목소리를 참고해 AI가 만들어요 (JSON의 sources)</small></div>
+              <div class="slot-text"><strong>참고 자료 <em class="optional">선택</em></strong><small>인물·동작·목소리 참고 자료 (JSON의 sources)</small></div>
               <button type="button" class="slot-pick" data-input="refFiles" aria-label="4번 칸 참고 자료 고르기">고르기</button>
             </div>
             <input id="refFiles" type="file" accept="image/*,video/*,audio/*" multiple hidden>
@@ -210,7 +210,7 @@
 
       <section class="panel" id="recoveryPanel"><h2 class="panel-title">저장한 영상 작업 · 중간 수정</h2><div class="settings"><label>작업 목록<select id="recoveryLibrary"><option value="">저장한 영상 작업</option></select></label><button id="recoverySave" type="button" class="ghost small">지금 작업 저장</button><button id="recoveryRestore" type="button" class="ghost small">수정 전 JSON 복원</button><button id="recoveryNew" type="button" class="ghost small">새 작업</button></div><p id="recoveryMessage" role="status">원본 파일과 완료한 AI 장면을 기기에 저장합니다. 일시중지한 뒤 JSON·자막·배치를 수정하고 이어 만들기를 누르세요.</p></section>
     <details class="panel fold" id="claudePanel">
-        <summary><span class="panel-title">아이디어로 기획 (Claude)</span> <small>선택 · 아이디어로 작업 JSON 쓰기</small></summary>
+        <summary><span class="panel-title">AI 기획</span> <small>작업 JSON 생성</small></summary>
         <div class="fold-body">
           <label class="block">기획 모델<select id="llmModel"><option value="claude-opus-5-5">Claude Opus 5.5</option><option value="gpt-6.1-terra">OpenAI GPT-6.1 Terra · 내 키</option><option value="gpt-6-astra">OpenAI GPT-6 Astra · 내 키</option><option value="Qwen/Qwen3.8-27B">Qwen3.8-27B · LLM</option></select></label><label class="block">Qwen LLM 서버<input id="qwenLlmUrl" type="url" value="http://127.0.0.1:8000/v1"></label><label class="block">Qwen 서버 키 · 선택<input id="qwenLlmKey" type="password" autocomplete="off"></label><label class="block">아이디어
             <textarea id="idea" rows="3" placeholder="예: 비 오는 날 창가에서 커피 내리는 30초 브이로그, 잔잔한 분위기"></textarea>
@@ -226,10 +226,10 @@
               <span class="key-row"><input id="openaiKey" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="sk-..."><button type="button" class="ghost small" id="openaiKeyClear">키 지우기</button></span>
             </label>
             <p class="hint" data-key-nostore>키는 저장하지 않습니다. 새로고침하면 다시 붙여 넣어야 합니다.</p>
-            <p class="hint">OpenAI 키는 이 화면이 api.openai.com으로 직접 보내요. 로컬 서버로는 보내지 않아요. 사용 요금은 키 주인의 OpenAI 계정에 청구돼요. OpenAI가 2026년 9월 24일에 영상 API(Sora 2)를 닫아서, 이 키로는 작업 JSON(장면 글·자막)만 쓰고 장면 영상은 지금처럼 영상 서버가 만들어요.</p>
+            <p class="hint">작업 JSON을 만들 때 OpenAI API에 키를 보낸다. 비용은 해당 OpenAI 계정에 청구된다. 장면 영상은 설정한 영상 서버에서 만든다.</p>
           </div>
-          <div class="check-row"><button type="button" class="ghost" id="planBtn">Claude에게 기획 요청</button><span id="planOut" class="check-out" aria-live="polite"></span></div>
-          <p class="hint" id="planHint">claude-opus-5-5가 작업 JSON을 써서 1번 칸을 채워요. 2번 칸에 영상이 있으면 프레임 몇 장을 함께 보내요. 연결된 Claude로 기획하며 참고 프레임도 함께 전달합니다.</p>
+          <div class="check-row"><button type="button" class="ghost" id="planBtn">기획 요청</button><span id="planOut" class="check-out" aria-live="polite"></span></div>
+          <p class="hint" id="planHint">선택한 모델이 작업 JSON을 만든다. 영상이 있으면 일부 프레임을 참고 자료로 보낸다.</p>
         </div>
       </details>
     </div>
